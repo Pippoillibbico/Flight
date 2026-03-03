@@ -1,0 +1,4 @@
+origin_iata,destination_iata,departure_date,return_date,currency,total_price,provider,cabin_class,trip_type,observed_at,source
+MXP,LIS,2026-05-12,2026-05-17,EUR,158.90,partner_feed_a,economy,round_trip,2026-03-01T07:30:00.000Z,csv_manual
+MXP,LIS,2026-05-12,2026-05-17,EUR,164.40,partner_feed_b,economy,round_trip,2026-03-01T12:20:00.000Z,csv_manual
+FCO,ATH,2026-06-03,2026-06-09,EUR,179.00,partner_feed_a,economy,round_trip,2026-03-02T08:00:00.000Z,csv_manual
