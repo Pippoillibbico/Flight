@@ -1,0 +1,29 @@
+{
+  "destinations": {
+    "LIS": {
+      "region": "eu",
+      "seasonBoost": { "winter": 0.92, "spring": 1.08, "summer": 1.12, "autumn": 1.02 },
+      "moodBoost": { "relax": 1.12, "adventure": 0.96, "culture": 1.1, "nature": 1.04, "nightlife": 1.08 }
+    },
+    "BCN": {
+      "region": "eu",
+      "seasonBoost": { "winter": 0.9, "spring": 1.06, "summer": 1.14, "autumn": 1.04 },
+      "moodBoost": { "relax": 1.0, "adventure": 0.95, "culture": 1.08, "nature": 0.9, "nightlife": 1.16 }
+    },
+    "ATH": {
+      "region": "eu",
+      "seasonBoost": { "winter": 0.88, "spring": 1.1, "summer": 1.16, "autumn": 1.0 },
+      "moodBoost": { "relax": 1.1, "adventure": 1.02, "culture": 1.12, "nature": 0.98, "nightlife": 1.02 }
+    },
+    "BER": {
+      "region": "eu",
+      "seasonBoost": { "winter": 0.84, "spring": 1.02, "summer": 1.08, "autumn": 1.0 },
+      "moodBoost": { "relax": 0.84, "adventure": 1.08, "culture": 1.06, "nature": 0.96, "nightlife": 1.08 }
+    }
+  },
+  "defaults": {
+    "region": "all",
+    "seasonBoost": { "winter": 1.0, "spring": 1.0, "summer": 1.0, "autumn": 1.0 },
+    "moodBoost": { "relax": 1.0, "adventure": 1.0, "culture": 1.0, "nature": 1.0, "nightlife": 1.0 }
+  }
+}
