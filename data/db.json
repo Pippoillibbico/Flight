@@ -1511,7 +1511,7 @@
       "monthlyEur": 92.99
     },
     "updatedAt": "2026-03-03T16:55:05.160Z",
-    "lastCostCheckAt": "2026-03-03T23:00:00.131Z",
+    "lastCostCheckAt": "2026-03-03T23:12:24.677Z",
     "marginTarget": 0.72,
     "usageGrowthFactor": 1.15
   },
@@ -2243,6 +2243,49 @@
         },
         "updatedAt": "2026-03-03T16:55:05.160Z",
         "lastCostCheckAt": "2026-03-03T23:00:00.131Z",
+        "marginTarget": 0.72,
+        "usageGrowthFactor": 1.15
+      }
+    },
+    {
+      "id": "6plEkKG77Q",
+      "at": "2026-03-03T23:12:24.677Z",
+      "reason": "startup",
+      "source": "env-default",
+      "tokenCosts": {
+        "openai": {
+          "inputPer1M": 0.15,
+          "outputPer1M": 0.6
+        },
+        "claude": {
+          "inputPer1M": 3,
+          "outputPer1M": 15
+        }
+      },
+      "usageGrowthFactor": 1.15,
+      "recommended": {
+        "free": {
+          "monthlyEur": 0
+        },
+        "pro": {
+          "monthlyEur": 30.99
+        },
+        "creator": {
+          "monthlyEur": 92.99
+        }
+      },
+      "applied": {
+        "free": {
+          "monthlyEur": 0
+        },
+        "pro": {
+          "monthlyEur": 30.99
+        },
+        "creator": {
+          "monthlyEur": 92.99
+        },
+        "updatedAt": "2026-03-03T16:55:05.160Z",
+        "lastCostCheckAt": "2026-03-03T23:12:24.677Z",
         "marginTarget": 0.72,
         "usageGrowthFactor": 1.15
       }
@@ -46633,8 +46676,8 @@
     {
       "originIata": "MXP",
       "destinationIata": "TYO",
-      "strategicWindowStart": "2026-03-21",
-      "strategicWindowEnd": "2026-03-30",
+      "strategicWindowStart": "2026-03-22",
+      "strategicWindowEnd": "2026-03-31",
       "anomalyPriceThreshold": 515.13,
       "trendDirection": "down",
       "scoreDate": "2026-03-03"
@@ -46642,8 +46685,8 @@
     {
       "originIata": "MXP",
       "destinationIata": "OSA",
-      "strategicWindowStart": "2026-03-21",
-      "strategicWindowEnd": "2026-04-03",
+      "strategicWindowStart": "2026-03-22",
+      "strategicWindowEnd": "2026-04-04",
       "anomalyPriceThreshold": 437.1,
       "trendDirection": "down",
       "scoreDate": "2026-03-03"
@@ -46651,8 +46694,8 @@
     {
       "originIata": "MXP",
       "destinationIata": "SPK",
-      "strategicWindowStart": "2026-03-28",
-      "strategicWindowEnd": "2026-04-01",
+      "strategicWindowStart": "2026-03-29",
+      "strategicWindowEnd": "2026-04-02",
       "anomalyPriceThreshold": 554.35,
       "trendDirection": "down",
       "scoreDate": "2026-03-03"
@@ -46660,8 +46703,8 @@
     {
       "originIata": "MXP",
       "destinationIata": "BKK",
-      "strategicWindowStart": "2026-03-19",
-      "strategicWindowEnd": "2026-03-25",
+      "strategicWindowStart": "2026-03-20",
+      "strategicWindowEnd": "2026-03-26",
       "anomalyPriceThreshold": 420.22,
       "trendDirection": "flat",
       "scoreDate": "2026-03-03"
@@ -46669,8 +46712,8 @@
     {
       "originIata": "MXP",
       "destinationIata": "HKT",
-      "strategicWindowStart": "2026-03-30",
-      "strategicWindowEnd": "2026-04-07",
+      "strategicWindowStart": "2026-03-31",
+      "strategicWindowEnd": "2026-04-08",
       "anomalyPriceThreshold": 397.75,
       "trendDirection": "up",
       "scoreDate": "2026-03-03"
@@ -46678,8 +46721,8 @@
     {
       "originIata": "MXP",
       "destinationIata": "SIN",
-      "strategicWindowStart": "2026-03-17",
-      "strategicWindowEnd": "2026-03-30",
+      "strategicWindowStart": "2026-03-18",
+      "strategicWindowEnd": "2026-03-31",
       "anomalyPriceThreshold": 461.33,
       "trendDirection": "flat",
       "scoreDate": "2026-03-03"
@@ -46687,8 +46730,8 @@
     {
       "originIata": "MXP",
       "destinationIata": "BCN",
-      "strategicWindowStart": "2026-03-19",
-      "strategicWindowEnd": "2026-03-30",
+      "strategicWindowStart": "2026-03-20",
+      "strategicWindowEnd": "2026-03-31",
       "anomalyPriceThreshold": 76.06,
       "trendDirection": "up",
       "scoreDate": "2026-03-03"
@@ -46696,8 +46739,8 @@
     {
       "originIata": "MXP",
       "destinationIata": "PAR",
-      "strategicWindowStart": "2026-03-29",
-      "strategicWindowEnd": "2026-04-03",
+      "strategicWindowStart": "2026-03-30",
+      "strategicWindowEnd": "2026-04-04",
       "anomalyPriceThreshold": 89.32,
       "trendDirection": "flat",
       "scoreDate": "2026-03-03"
@@ -46705,8 +46748,8 @@
     {
       "originIata": "MXP",
       "destinationIata": "ATH",
-      "strategicWindowStart": "2026-03-21",
-      "strategicWindowEnd": "2026-03-31",
+      "strategicWindowStart": "2026-03-22",
+      "strategicWindowEnd": "2026-04-01",
       "anomalyPriceThreshold": 74.41,
       "trendDirection": "up",
       "scoreDate": "2026-03-03"
@@ -46714,8 +46757,8 @@
     {
       "originIata": "MXP",
       "destinationIata": "LIS",
-      "strategicWindowStart": "2026-03-27",
-      "strategicWindowEnd": "2026-03-31",
+      "strategicWindowStart": "2026-03-28",
+      "strategicWindowEnd": "2026-04-01",
       "anomalyPriceThreshold": 98.67,
       "trendDirection": "down",
       "scoreDate": "2026-03-03"
@@ -46723,8 +46766,8 @@
     {
       "originIata": "MXP",
       "destinationIata": "NYC",
-      "strategicWindowStart": "2026-03-28",
-      "strategicWindowEnd": "2026-04-01",
+      "strategicWindowStart": "2026-03-29",
+      "strategicWindowEnd": "2026-04-02",
       "anomalyPriceThreshold": 367.8,
       "trendDirection": "down",
       "scoreDate": "2026-03-03"
@@ -46732,8 +46775,8 @@
     {
       "originIata": "MXP",
       "destinationIata": "LAX",
-      "strategicWindowStart": "2026-03-27",
-      "strategicWindowEnd": "2026-04-07",
+      "strategicWindowStart": "2026-03-28",
+      "strategicWindowEnd": "2026-04-08",
       "anomalyPriceThreshold": 385.26,
       "trendDirection": "down",
       "scoreDate": "2026-03-03"
@@ -46741,8 +46784,8 @@
     {
       "originIata": "MXP",
       "destinationIata": "YYZ",
-      "strategicWindowStart": "2026-03-30",
-      "strategicWindowEnd": "2026-04-05",
+      "strategicWindowStart": "2026-03-31",
+      "strategicWindowEnd": "2026-04-06",
       "anomalyPriceThreshold": 369.83,
       "trendDirection": "flat",
       "scoreDate": "2026-03-03"
@@ -46750,8 +46793,8 @@
     {
       "originIata": "MXP",
       "destinationIata": "SAO",
-      "strategicWindowStart": "2026-03-16",
-      "strategicWindowEnd": "2026-03-27",
+      "strategicWindowStart": "2026-03-17",
+      "strategicWindowEnd": "2026-03-28",
       "anomalyPriceThreshold": 431.68,
       "trendDirection": "up",
       "scoreDate": "2026-03-03"
@@ -46759,8 +46802,8 @@
     {
       "originIata": "MXP",
       "destinationIata": "SCL",
-      "strategicWindowStart": "2026-03-15",
-      "strategicWindowEnd": "2026-03-25",
+      "strategicWindowStart": "2026-03-16",
+      "strategicWindowEnd": "2026-03-26",
       "anomalyPriceThreshold": 414.79,
       "trendDirection": "down",
       "scoreDate": "2026-03-03"
@@ -46768,8 +46811,8 @@
     {
       "originIata": "MXP",
       "destinationIata": "SYD",
-      "strategicWindowStart": "2026-03-14",
-      "strategicWindowEnd": "2026-03-26",
+      "strategicWindowStart": "2026-03-15",
+      "strategicWindowEnd": "2026-03-27",
       "anomalyPriceThreshold": 621.76,
       "trendDirection": "up",
       "scoreDate": "2026-03-03"
@@ -46777,8 +46820,8 @@
     {
       "originIata": "MXP",
       "destinationIata": "MEL",
-      "strategicWindowStart": "2026-03-28",
-      "strategicWindowEnd": "2026-04-10",
+      "strategicWindowStart": "2026-03-29",
+      "strategicWindowEnd": "2026-04-11",
       "anomalyPriceThreshold": 585.54,
       "trendDirection": "down",
       "scoreDate": "2026-03-03"
@@ -46786,8 +46829,8 @@
     {
       "originIata": "MXP",
       "destinationIata": "AKL",
-      "strategicWindowStart": "2026-03-29",
-      "strategicWindowEnd": "2026-04-04",
+      "strategicWindowStart": "2026-03-30",
+      "strategicWindowEnd": "2026-04-05",
       "anomalyPriceThreshold": 550.52,
       "trendDirection": "up",
       "scoreDate": "2026-03-03"
@@ -46795,8 +46838,8 @@
     {
       "originIata": "FCO",
       "destinationIata": "TYO",
-      "strategicWindowStart": "2026-03-28",
-      "strategicWindowEnd": "2026-04-03",
+      "strategicWindowStart": "2026-03-29",
+      "strategicWindowEnd": "2026-04-04",
       "anomalyPriceThreshold": 466.14,
       "trendDirection": "up",
       "scoreDate": "2026-03-03"
@@ -46804,8 +46847,8 @@
     {
       "originIata": "FCO",
       "destinationIata": "OSA",
-      "strategicWindowStart": "2026-03-24",
-      "strategicWindowEnd": "2026-04-01",
+      "strategicWindowStart": "2026-03-25",
+      "strategicWindowEnd": "2026-04-02",
       "anomalyPriceThreshold": 445.22,
       "trendDirection": "flat",
       "scoreDate": "2026-03-03"
@@ -46813,8 +46856,8 @@
     {
       "originIata": "FCO",
       "destinationIata": "SPK",
-      "strategicWindowStart": "2026-03-21",
-      "strategicWindowEnd": "2026-03-28",
+      "strategicWindowStart": "2026-03-22",
+      "strategicWindowEnd": "2026-03-29",
       "anomalyPriceThreshold": 475.19,
       "trendDirection": "up",
       "scoreDate": "2026-03-03"
@@ -46822,8 +46865,8 @@
     {
       "originIata": "FCO",
       "destinationIata": "BKK",
-      "strategicWindowStart": "2026-03-18",
-      "strategicWindowEnd": "2026-03-22",
+      "strategicWindowStart": "2026-03-19",
+      "strategicWindowEnd": "2026-03-23",
       "anomalyPriceThreshold": 410.69,
       "trendDirection": "down",
       "scoreDate": "2026-03-03"
@@ -46831,8 +46874,8 @@
     {
       "originIata": "FCO",
       "destinationIata": "HKT",
-      "strategicWindowStart": "2026-03-19",
-      "strategicWindowEnd": "2026-03-28",
+      "strategicWindowStart": "2026-03-20",
+      "strategicWindowEnd": "2026-03-29",
       "anomalyPriceThreshold": 445.41,
       "trendDirection": "down",
       "scoreDate": "2026-03-03"
@@ -46840,8 +46883,8 @@
     {
       "originIata": "FCO",
       "destinationIata": "SIN",
-      "strategicWindowStart": "2026-03-13",
-      "strategicWindowEnd": "2026-03-23",
+      "strategicWindowStart": "2026-03-14",
+      "strategicWindowEnd": "2026-03-24",
       "anomalyPriceThreshold": 416.46,
       "trendDirection": "flat",
       "scoreDate": "2026-03-03"
@@ -46849,8 +46892,8 @@
     {
       "originIata": "FCO",
       "destinationIata": "BCN",
-      "strategicWindowStart": "2026-03-30",
-      "strategicWindowEnd": "2026-04-05",
+      "strategicWindowStart": "2026-03-31",
+      "strategicWindowEnd": "2026-04-06",
       "anomalyPriceThreshold": 73.55,
       "trendDirection": "up",
       "scoreDate": "2026-03-03"
@@ -46858,8 +46901,8 @@
     {
       "originIata": "FCO",
       "destinationIata": "PAR",
-      "strategicWindowStart": "2026-03-15",
-      "strategicWindowEnd": "2026-03-21",
+      "strategicWindowStart": "2026-03-16",
+      "strategicWindowEnd": "2026-03-22",
       "anomalyPriceThreshold": 81.27,
       "trendDirection": "down",
       "scoreDate": "2026-03-03"
@@ -46867,8 +46910,8 @@
     {
       "originIata": "FCO",
       "destinationIata": "ATH",
-      "strategicWindowStart": "2026-03-24",
-      "strategicWindowEnd": "2026-03-28",
+      "strategicWindowStart": "2026-03-25",
+      "strategicWindowEnd": "2026-03-29",
       "anomalyPriceThreshold": 76.7,
       "trendDirection": "down",
       "scoreDate": "2026-03-03"
@@ -46876,8 +46919,8 @@
     {
       "originIata": "FCO",
       "destinationIata": "LIS",
-      "strategicWindowStart": "2026-03-20",
-      "strategicWindowEnd": "2026-03-24",
+      "strategicWindowStart": "2026-03-21",
+      "strategicWindowEnd": "2026-03-25",
       "anomalyPriceThreshold": 93.67,
       "trendDirection": "down",
       "scoreDate": "2026-03-03"
@@ -46885,8 +46928,8 @@
     {
       "originIata": "FCO",
       "destinationIata": "NYC",
-      "strategicWindowStart": "2026-03-21",
-      "strategicWindowEnd": "2026-03-30",
+      "strategicWindowStart": "2026-03-22",
+      "strategicWindowEnd": "2026-03-31",
       "anomalyPriceThreshold": 374.53,
       "trendDirection": "down",
       "scoreDate": "2026-03-03"
@@ -46894,8 +46937,8 @@
     {
       "originIata": "FCO",
       "destinationIata": "LAX",
-      "strategicWindowStart": "2026-03-14",
-      "strategicWindowEnd": "2026-03-20",
+      "strategicWindowStart": "2026-03-15",
+      "strategicWindowEnd": "2026-03-21",
       "anomalyPriceThreshold": 379.9,
       "trendDirection": "up",
       "scoreDate": "2026-03-03"
@@ -46903,8 +46946,8 @@
     {
       "originIata": "FCO",
       "destinationIata": "YYZ",
-      "strategicWindowStart": "2026-03-14",
-      "strategicWindowEnd": "2026-03-24",
+      "strategicWindowStart": "2026-03-15",
+      "strategicWindowEnd": "2026-03-25",
       "anomalyPriceThreshold": 335.85,
       "trendDirection": "up",
       "scoreDate": "2026-03-03"
@@ -46912,8 +46955,8 @@
     {
       "originIata": "FCO",
       "destinationIata": "SAO",
-      "strategicWindowStart": "2026-03-13",
-      "strategicWindowEnd": "2026-03-26",
+      "strategicWindowStart": "2026-03-14",
+      "strategicWindowEnd": "2026-03-27",
       "anomalyPriceThreshold": 441.18,
       "trendDirection": "flat",
       "scoreDate": "2026-03-03"
@@ -46921,8 +46964,8 @@
     {
       "originIata": "FCO",
       "destinationIata": "SCL",
-      "strategicWindowStart": "2026-03-20",
-      "strategicWindowEnd": "2026-03-24",
+      "strategicWindowStart": "2026-03-21",
+      "strategicWindowEnd": "2026-03-25",
       "anomalyPriceThreshold": 434.39,
       "trendDirection": "down",
       "scoreDate": "2026-03-03"
@@ -46930,8 +46973,8 @@
     {
       "originIata": "FCO",
       "destinationIata": "SYD",
-      "strategicWindowStart": "2026-03-25",
-      "strategicWindowEnd": "2026-04-01",
+      "strategicWindowStart": "2026-03-26",
+      "strategicWindowEnd": "2026-04-02",
       "anomalyPriceThreshold": 541.19,
       "trendDirection": "down",
       "scoreDate": "2026-03-03"
@@ -46939,8 +46982,8 @@
     {
       "originIata": "FCO",
       "destinationIata": "MEL",
-      "strategicWindowStart": "2026-03-27",
-      "strategicWindowEnd": "2026-04-02",
+      "strategicWindowStart": "2026-03-28",
+      "strategicWindowEnd": "2026-04-03",
       "anomalyPriceThreshold": 594.99,
       "trendDirection": "down",
       "scoreDate": "2026-03-03"
@@ -46948,8 +46991,8 @@
     {
       "originIata": "FCO",
       "destinationIata": "AKL",
-      "strategicWindowStart": "2026-03-30",
-      "strategicWindowEnd": "2026-04-08",
+      "strategicWindowStart": "2026-03-31",
+      "strategicWindowEnd": "2026-04-09",
       "anomalyPriceThreshold": 647.98,
       "trendDirection": "up",
       "scoreDate": "2026-03-03"
@@ -46957,8 +47000,8 @@
     {
       "originIata": "BLQ",
       "destinationIata": "TYO",
-      "strategicWindowStart": "2026-03-14",
-      "strategicWindowEnd": "2026-03-22",
+      "strategicWindowStart": "2026-03-15",
+      "strategicWindowEnd": "2026-03-23",
       "anomalyPriceThreshold": 452.08,
       "trendDirection": "up",
       "scoreDate": "2026-03-03"
@@ -46966,8 +47009,8 @@
     {
       "originIata": "BLQ",
       "destinationIata": "OSA",
-      "strategicWindowStart": "2026-03-15",
-      "strategicWindowEnd": "2026-03-22",
+      "strategicWindowStart": "2026-03-16",
+      "strategicWindowEnd": "2026-03-23",
       "anomalyPriceThreshold": 468.24,
       "trendDirection": "up",
       "scoreDate": "2026-03-03"
@@ -46975,8 +47018,8 @@
     {
       "originIata": "BLQ",
       "destinationIata": "SPK",
-      "strategicWindowStart": "2026-03-18",
-      "strategicWindowEnd": "2026-03-22",
+      "strategicWindowStart": "2026-03-19",
+      "strategicWindowEnd": "2026-03-23",
       "anomalyPriceThreshold": 511.83,
       "trendDirection": "down",
       "scoreDate": "2026-03-03"
@@ -46984,8 +47027,8 @@
     {
       "originIata": "BLQ",
       "destinationIata": "BKK",
-      "strategicWindowStart": "2026-03-14",
-      "strategicWindowEnd": "2026-03-23",
+      "strategicWindowStart": "2026-03-15",
+      "strategicWindowEnd": "2026-03-24",
       "anomalyPriceThreshold": 427.32,
       "trendDirection": "up",
       "scoreDate": "2026-03-03"
@@ -46993,8 +47036,8 @@
     {
       "originIata": "BLQ",
       "destinationIata": "HKT",
-      "strategicWindowStart": "2026-03-12",
-      "strategicWindowEnd": "2026-03-20",
+      "strategicWindowStart": "2026-03-13",
+      "strategicWindowEnd": "2026-03-21",
       "anomalyPriceThreshold": 387.24,
       "trendDirection": "flat",
       "scoreDate": "2026-03-03"
@@ -47002,8 +47045,8 @@
     {
       "originIata": "BLQ",
       "destinationIata": "SIN",
-      "strategicWindowStart": "2026-03-18",
-      "strategicWindowEnd": "2026-03-26",
+      "strategicWindowStart": "2026-03-19",
+      "strategicWindowEnd": "2026-03-27",
       "anomalyPriceThreshold": 408,
       "trendDirection": "down",
       "scoreDate": "2026-03-03"
@@ -47011,8 +47054,8 @@
     {
       "originIata": "BLQ",
       "destinationIata": "BCN",
-      "strategicWindowStart": "2026-03-22",
-      "strategicWindowEnd": "2026-04-01",
+      "strategicWindowStart": "2026-03-23",
+      "strategicWindowEnd": "2026-04-02",
       "anomalyPriceThreshold": 71.83,
       "trendDirection": "up",
       "scoreDate": "2026-03-03"
@@ -47020,8 +47063,8 @@
     {
       "originIata": "BLQ",
       "destinationIata": "PAR",
-      "strategicWindowStart": "2026-03-30",
-      "strategicWindowEnd": "2026-04-08",
+      "strategicWindowStart": "2026-03-31",
+      "strategicWindowEnd": "2026-04-09",
       "anomalyPriceThreshold": 83.99,
       "trendDirection": "up",
       "scoreDate": "2026-03-03"
@@ -47029,8 +47072,8 @@
     {
       "originIata": "BLQ",
       "destinationIata": "ATH",
-      "strategicWindowStart": "2026-03-24",
-      "strategicWindowEnd": "2026-04-05",
+      "strategicWindowStart": "2026-03-25",
+      "strategicWindowEnd": "2026-04-06",
       "anomalyPriceThreshold": 84.75,
       "trendDirection": "flat",
       "scoreDate": "2026-03-03"
@@ -47038,8 +47081,8 @@
     {
       "originIata": "BLQ",
       "destinationIata": "LIS",
-      "strategicWindowStart": "2026-03-30",
-      "strategicWindowEnd": "2026-04-07",
+      "strategicWindowStart": "2026-03-31",
+      "strategicWindowEnd": "2026-04-08",
       "anomalyPriceThreshold": 100.25,
       "trendDirection": "up",
       "scoreDate": "2026-03-03"
@@ -47047,8 +47090,8 @@
     {
       "originIata": "BLQ",
       "destinationIata": "NYC",
-      "strategicWindowStart": "2026-03-17",
-      "strategicWindowEnd": "2026-03-30",
+      "strategicWindowStart": "2026-03-18",
+      "strategicWindowEnd": "2026-03-31",
       "anomalyPriceThreshold": 404.11,
       "trendDirection": "down",
       "scoreDate": "2026-03-03"
@@ -47056,8 +47099,8 @@
     {
       "originIata": "BLQ",
       "destinationIata": "LAX",
-      "strategicWindowStart": "2026-03-20",
-      "strategicWindowEnd": "2026-03-27",
+      "strategicWindowStart": "2026-03-21",
+      "strategicWindowEnd": "2026-03-28",
       "anomalyPriceThreshold": 383.87,
       "trendDirection": "up",
       "scoreDate": "2026-03-03"
@@ -47065,8 +47108,8 @@
     {
       "originIata": "BLQ",
       "destinationIata": "YYZ",
-      "strategicWindowStart": "2026-03-25",
-      "strategicWindowEnd": "2026-04-01",
+      "strategicWindowStart": "2026-03-26",
+      "strategicWindowEnd": "2026-04-02",
       "anomalyPriceThreshold": 351.79,
       "trendDirection": "down",
       "scoreDate": "2026-03-03"
@@ -47074,8 +47117,8 @@
     {
       "originIata": "BLQ",
       "destinationIata": "SAO",
-      "strategicWindowStart": "2026-03-20",
-      "strategicWindowEnd": "2026-04-01",
+      "strategicWindowStart": "2026-03-21",
+      "strategicWindowEnd": "2026-04-02",
       "anomalyPriceThreshold": 459.38,
       "trendDirection": "down",
       "scoreDate": "2026-03-03"
@@ -47083,8 +47126,8 @@
     {
       "originIata": "BLQ",
       "destinationIata": "SCL",
-      "strategicWindowStart": "2026-03-11",
-      "strategicWindowEnd": "2026-03-24",
+      "strategicWindowStart": "2026-03-12",
+      "strategicWindowEnd": "2026-03-25",
       "anomalyPriceThreshold": 408.53,
       "trendDirection": "up",
       "scoreDate": "2026-03-03"
@@ -47092,8 +47135,8 @@
     {
       "originIata": "BLQ",
       "destinationIata": "SYD",
-      "strategicWindowStart": "2026-03-24",
-      "strategicWindowEnd": "2026-04-06",
+      "strategicWindowStart": "2026-03-25",
+      "strategicWindowEnd": "2026-04-07",
       "anomalyPriceThreshold": 542.74,
       "trendDirection": "up",
       "scoreDate": "2026-03-03"
@@ -47101,8 +47144,8 @@
     {
       "originIata": "BLQ",
       "destinationIata": "MEL",
-      "strategicWindowStart": "2026-03-22",
-      "strategicWindowEnd": "2026-04-04",
+      "strategicWindowStart": "2026-03-23",
+      "strategicWindowEnd": "2026-04-05",
       "anomalyPriceThreshold": 589.13,
       "trendDirection": "down",
       "scoreDate": "2026-03-03"
@@ -47110,8 +47153,8 @@
     {
       "originIata": "BLQ",
       "destinationIata": "AKL",
-      "strategicWindowStart": "2026-03-27",
-      "strategicWindowEnd": "2026-03-31",
+      "strategicWindowStart": "2026-03-28",
+      "strategicWindowEnd": "2026-04-01",
       "anomalyPriceThreshold": 601.84,
       "trendDirection": "up",
       "scoreDate": "2026-03-03"
@@ -47119,8 +47162,8 @@
     {
       "originIata": "VCE",
       "destinationIata": "TYO",
-      "strategicWindowStart": "2026-03-12",
-      "strategicWindowEnd": "2026-03-20",
+      "strategicWindowStart": "2026-03-13",
+      "strategicWindowEnd": "2026-03-21",
       "anomalyPriceThreshold": 505.64,
       "trendDirection": "down",
       "scoreDate": "2026-03-03"
@@ -47128,8 +47171,8 @@
     {
       "originIata": "VCE",
       "destinationIata": "OSA",
-      "strategicWindowStart": "2026-03-12",
-      "strategicWindowEnd": "2026-03-24",
+      "strategicWindowStart": "2026-03-13",
+      "strategicWindowEnd": "2026-03-25",
       "anomalyPriceThreshold": 486.71,
       "trendDirection": "flat",
       "scoreDate": "2026-03-03"
@@ -47137,8 +47180,8 @@
     {
       "originIata": "VCE",
       "destinationIata": "SPK",
-      "strategicWindowStart": "2026-03-25",
-      "strategicWindowEnd": "2026-04-07",
+      "strategicWindowStart": "2026-03-26",
+      "strategicWindowEnd": "2026-04-08",
       "anomalyPriceThreshold": 498.35,
       "trendDirection": "down",
       "scoreDate": "2026-03-03"
@@ -47146,8 +47189,8 @@
     {
       "originIata": "VCE",
       "destinationIata": "BKK",
-      "strategicWindowStart": "2026-03-28",
-      "strategicWindowEnd": "2026-04-04",
+      "strategicWindowStart": "2026-03-29",
+      "strategicWindowEnd": "2026-04-05",
       "anomalyPriceThreshold": 415.06,
       "trendDirection": "up",
       "scoreDate": "2026-03-03"
@@ -47155,8 +47198,8 @@
     {
       "originIata": "VCE",
       "destinationIata": "HKT",
-      "strategicWindowStart": "2026-03-29",
-      "strategicWindowEnd": "2026-04-03",
+      "strategicWindowStart": "2026-03-30",
+      "strategicWindowEnd": "2026-04-04",
       "anomalyPriceThreshold": 399.41,
       "trendDirection": "up",
       "scoreDate": "2026-03-03"
@@ -47164,8 +47207,8 @@
     {
       "originIata": "VCE",
       "destinationIata": "SIN",
-      "strategicWindowStart": "2026-03-17",
-      "strategicWindowEnd": "2026-03-26",
+      "strategicWindowStart": "2026-03-18",
+      "strategicWindowEnd": "2026-03-27",
       "anomalyPriceThreshold": 446.87,
       "trendDirection": "up",
       "scoreDate": "2026-03-03"
@@ -47173,8 +47216,8 @@
     {
       "originIata": "VCE",
       "destinationIata": "BCN",
-      "strategicWindowStart": "2026-03-29",
-      "strategicWindowEnd": "2026-04-11",
+      "strategicWindowStart": "2026-03-30",
+      "strategicWindowEnd": "2026-04-12",
       "anomalyPriceThreshold": 79.77,
       "trendDirection": "down",
       "scoreDate": "2026-03-03"
@@ -47182,8 +47225,8 @@
     {
       "originIata": "VCE",
       "destinationIata": "PAR",
-      "strategicWindowStart": "2026-03-21",
-      "strategicWindowEnd": "2026-03-26",
+      "strategicWindowStart": "2026-03-22",
+      "strategicWindowEnd": "2026-03-27",
       "anomalyPriceThreshold": 92,
       "trendDirection": "down",
       "scoreDate": "2026-03-03"
@@ -47191,8 +47234,8 @@
     {
       "originIata": "VCE",
       "destinationIata": "ATH",
-      "strategicWindowStart": "2026-03-11",
-      "strategicWindowEnd": "2026-03-17",
+      "strategicWindowStart": "2026-03-12",
+      "strategicWindowEnd": "2026-03-18",
       "anomalyPriceThreshold": 73.48,
       "trendDirection": "up",
       "scoreDate": "2026-03-03"
@@ -47200,8 +47243,8 @@
     {
       "originIata": "VCE",
       "destinationIata": "LIS",
-      "strategicWindowStart": "2026-03-30",
-      "strategicWindowEnd": "2026-04-10",
+      "strategicWindowStart": "2026-03-31",
+      "strategicWindowEnd": "2026-04-11",
       "anomalyPriceThreshold": 100.11,
       "trendDirection": "up",
       "scoreDate": "2026-03-03"
@@ -47209,8 +47252,8 @@
     {
       "originIata": "VCE",
       "destinationIata": "NYC",
-      "strategicWindowStart": "2026-03-22",
-      "strategicWindowEnd": "2026-04-02",
+      "strategicWindowStart": "2026-03-23",
+      "strategicWindowEnd": "2026-04-03",
       "anomalyPriceThreshold": 347.69,
       "trendDirection": "up",
       "scoreDate": "2026-03-03"
@@ -47218,8 +47261,8 @@
     {
       "originIata": "VCE",
       "destinationIata": "LAX",
-      "strategicWindowStart": "2026-03-10",
-      "strategicWindowEnd": "2026-03-16",
+      "strategicWindowStart": "2026-03-11",
+      "strategicWindowEnd": "2026-03-17",
       "anomalyPriceThreshold": 439.97,
       "trendDirection": "down",
       "scoreDate": "2026-03-03"
@@ -47227,8 +47270,8 @@
     {
       "originIata": "VCE",
       "destinationIata": "YYZ",
-      "strategicWindowStart": "2026-03-11",
-      "strategicWindowEnd": "2026-03-22",
+      "strategicWindowStart": "2026-03-12",
+      "strategicWindowEnd": "2026-03-23",
       "anomalyPriceThreshold": 361.74,
       "trendDirection": "up",
       "scoreDate": "2026-03-03"
@@ -47236,8 +47279,8 @@
     {
       "originIata": "VCE",
       "destinationIata": "SAO",
-      "strategicWindowStart": "2026-03-10",
-      "strategicWindowEnd": "2026-03-18",
+      "strategicWindowStart": "2026-03-11",
+      "strategicWindowEnd": "2026-03-19",
       "anomalyPriceThreshold": 451.41,
       "trendDirection": "flat",
       "scoreDate": "2026-03-03"
@@ -47245,8 +47288,8 @@
     {
       "originIata": "VCE",
       "destinationIata": "SCL",
-      "strategicWindowStart": "2026-03-19",
-      "strategicWindowEnd": "2026-03-26",
+      "strategicWindowStart": "2026-03-20",
+      "strategicWindowEnd": "2026-03-27",
       "anomalyPriceThreshold": 435.76,
       "trendDirection": "down",
       "scoreDate": "2026-03-03"
@@ -47254,8 +47297,8 @@
     {
       "originIata": "VCE",
       "destinationIata": "SYD",
-      "strategicWindowStart": "2026-03-20",
-      "strategicWindowEnd": "2026-04-01",
+      "strategicWindowStart": "2026-03-21",
+      "strategicWindowEnd": "2026-04-02",
       "anomalyPriceThreshold": 586.19,
       "trendDirection": "up",
       "scoreDate": "2026-03-03"
@@ -47263,8 +47306,8 @@
     {
       "originIata": "VCE",
       "destinationIata": "MEL",
-      "strategicWindowStart": "2026-03-13",
-      "strategicWindowEnd": "2026-03-20",
+      "strategicWindowStart": "2026-03-14",
+      "strategicWindowEnd": "2026-03-21",
       "anomalyPriceThreshold": 569.42,
       "trendDirection": "down",
       "scoreDate": "2026-03-03"
@@ -47272,8 +47315,8 @@
     {
       "originIata": "VCE",
       "destinationIata": "AKL",
-      "strategicWindowStart": "2026-03-21",
-      "strategicWindowEnd": "2026-03-28",
+      "strategicWindowStart": "2026-03-22",
+      "strategicWindowEnd": "2026-03-29",
       "anomalyPriceThreshold": 605.67,
       "trendDirection": "up",
       "scoreDate": "2026-03-03"
@@ -47281,8 +47324,8 @@
     {
       "originIata": "NAP",
       "destinationIata": "TYO",
-      "strategicWindowStart": "2026-03-26",
-      "strategicWindowEnd": "2026-04-06",
+      "strategicWindowStart": "2026-03-27",
+      "strategicWindowEnd": "2026-04-07",
       "anomalyPriceThreshold": 442.81,
       "trendDirection": "flat",
       "scoreDate": "2026-03-03"
@@ -47290,8 +47333,8 @@
     {
       "originIata": "NAP",
       "destinationIata": "OSA",
-      "strategicWindowStart": "2026-03-29",
-      "strategicWindowEnd": "2026-04-04",
+      "strategicWindowStart": "2026-03-30",
+      "strategicWindowEnd": "2026-04-05",
       "anomalyPriceThreshold": 427.47,
       "trendDirection": "up",
       "scoreDate": "2026-03-03"
@@ -47299,8 +47342,8 @@
     {
       "originIata": "NAP",
       "destinationIata": "SPK",
-      "strategicWindowStart": "2026-03-29",
-      "strategicWindowEnd": "2026-04-08",
+      "strategicWindowStart": "2026-03-30",
+      "strategicWindowEnd": "2026-04-09",
       "anomalyPriceThreshold": 542.49,
       "trendDirection": "flat",
       "scoreDate": "2026-03-03"
@@ -47308,8 +47351,8 @@
     {
       "originIata": "NAP",
       "destinationIata": "BKK",
-      "strategicWindowStart": "2026-03-15",
-      "strategicWindowEnd": "2026-03-20",
+      "strategicWindowStart": "2026-03-16",
+      "strategicWindowEnd": "2026-03-21",
       "anomalyPriceThreshold": 375.34,
       "trendDirection": "down",
       "scoreDate": "2026-03-03"
@@ -47317,8 +47360,8 @@
     {
       "originIata": "NAP",
       "destinationIata": "HKT",
-      "strategicWindowStart": "2026-03-10",
-      "strategicWindowEnd": "2026-03-17",
+      "strategicWindowStart": "2026-03-11",
+      "strategicWindowEnd": "2026-03-18",
       "anomalyPriceThreshold": 427.29,
       "trendDirection": "down",
       "scoreDate": "2026-03-03"
@@ -47326,8 +47369,8 @@
     {
       "originIata": "NAP",
       "destinationIata": "SIN",
-      "strategicWindowStart": "2026-03-20",
-      "strategicWindowEnd": "2026-03-31",
+      "strategicWindowStart": "2026-03-21",
+      "strategicWindowEnd": "2026-04-01",
       "anomalyPriceThreshold": 474.62,
       "trendDirection": "up",
       "scoreDate": "2026-03-03"
@@ -47335,8 +47378,8 @@
     {
       "originIata": "NAP",
       "destinationIata": "BCN",
-      "strategicWindowStart": "2026-03-18",
-      "strategicWindowEnd": "2026-03-31",
+      "strategicWindowStart": "2026-03-19",
+      "strategicWindowEnd": "2026-04-01",
       "anomalyPriceThreshold": 72.89,
       "trendDirection": "up",
       "scoreDate": "2026-03-03"
@@ -47344,8 +47387,8 @@
     {
       "originIata": "NAP",
       "destinationIata": "PAR",
-      "strategicWindowStart": "2026-03-11",
-      "strategicWindowEnd": "2026-03-23",
+      "strategicWindowStart": "2026-03-12",
+      "strategicWindowEnd": "2026-03-24",
       "anomalyPriceThreshold": 92.53,
       "trendDirection": "down",
       "scoreDate": "2026-03-03"
@@ -47353,8 +47396,8 @@
     {
       "originIata": "NAP",
       "destinationIata": "ATH",
-      "strategicWindowStart": "2026-03-17",
-      "strategicWindowEnd": "2026-03-29",
+      "strategicWindowStart": "2026-03-18",
+      "strategicWindowEnd": "2026-03-30",
       "anomalyPriceThreshold": 79.49,
       "trendDirection": "down",
       "scoreDate": "2026-03-03"
@@ -47362,8 +47405,8 @@
     {
       "originIata": "NAP",
       "destinationIata": "LIS",
-      "strategicWindowStart": "2026-03-17",
-      "strategicWindowEnd": "2026-03-28",
+      "strategicWindowStart": "2026-03-18",
+      "strategicWindowEnd": "2026-03-29",
       "anomalyPriceThreshold": 98.85,
       "trendDirection": "down",
       "scoreDate": "2026-03-03"
@@ -47371,8 +47414,8 @@
     {
       "originIata": "NAP",
       "destinationIata": "NYC",
-      "strategicWindowStart": "2026-03-13",
-      "strategicWindowEnd": "2026-03-20",
+      "strategicWindowStart": "2026-03-14",
+      "strategicWindowEnd": "2026-03-21",
       "anomalyPriceThreshold": 399.04,
       "trendDirection": "up",
       "scoreDate": "2026-03-03"
@@ -47380,8 +47423,8 @@
     {
       "originIata": "NAP",
       "destinationIata": "LAX",
-      "strategicWindowStart": "2026-03-25",
-      "strategicWindowEnd": "2026-04-07",
+      "strategicWindowStart": "2026-03-26",
+      "strategicWindowEnd": "2026-04-08",
       "anomalyPriceThreshold": 402.95,
       "trendDirection": "down",
       "scoreDate": "2026-03-03"
@@ -47389,8 +47432,8 @@
     {
       "originIata": "NAP",
       "destinationIata": "YYZ",
-      "strategicWindowStart": "2026-03-18",
-      "strategicWindowEnd": "2026-03-28",
+      "strategicWindowStart": "2026-03-19",
+      "strategicWindowEnd": "2026-03-29",
       "anomalyPriceThreshold": 351.7,
       "trendDirection": "down",
       "scoreDate": "2026-03-03"
@@ -47398,8 +47441,8 @@
     {
       "originIata": "NAP",
       "destinationIata": "SAO",
-      "strategicWindowStart": "2026-03-16",
-      "strategicWindowEnd": "2026-03-20",
+      "strategicWindowStart": "2026-03-17",
+      "strategicWindowEnd": "2026-03-21",
       "anomalyPriceThreshold": 390.5,
       "trendDirection": "flat",
       "scoreDate": "2026-03-03"
@@ -47407,8 +47450,8 @@
     {
       "originIata": "NAP",
       "destinationIata": "SCL",
-      "strategicWindowStart": "2026-03-13",
-      "strategicWindowEnd": "2026-03-18",
+      "strategicWindowStart": "2026-03-14",
+      "strategicWindowEnd": "2026-03-19",
       "anomalyPriceThreshold": 448.17,
       "trendDirection": "flat",
       "scoreDate": "2026-03-03"
@@ -47416,8 +47459,8 @@
     {
       "originIata": "NAP",
       "destinationIata": "SYD",
-      "strategicWindowStart": "2026-03-13",
-      "strategicWindowEnd": "2026-03-17",
+      "strategicWindowStart": "2026-03-14",
+      "strategicWindowEnd": "2026-03-18",
       "anomalyPriceThreshold": 622.26,
       "trendDirection": "flat",
       "scoreDate": "2026-03-03"
@@ -47425,8 +47468,8 @@
     {
       "originIata": "NAP",
       "destinationIata": "MEL",
-      "strategicWindowStart": "2026-03-26",
-      "strategicWindowEnd": "2026-03-31",
+      "strategicWindowStart": "2026-03-27",
+      "strategicWindowEnd": "2026-04-01",
       "anomalyPriceThreshold": 608.31,
       "trendDirection": "flat",
       "scoreDate": "2026-03-03"
@@ -47434,8 +47477,8 @@
     {
       "originIata": "NAP",
       "destinationIata": "AKL",
-      "strategicWindowStart": "2026-03-27",
-      "strategicWindowEnd": "2026-04-06",
+      "strategicWindowStart": "2026-03-28",
+      "strategicWindowEnd": "2026-04-07",
       "anomalyPriceThreshold": 595.51,
       "trendDirection": "down",
       "scoreDate": "2026-03-03"
