@@ -1,4 +1,5 @@
 import Redis from 'ioredis';
+import { logger } from './logger.js';
 
 function nowSec() {
   return Math.floor(Date.now() / 1000);
@@ -73,13 +74,14 @@ export function getCacheClient() {
     singleton = new Redis(process.env.REDIS_URL, {
       lazyConnect: true,
       maxRetriesPerRequest: 2,
-      enableOfflineQueue: false
+      // Allow short startup buffering so workers don't fail before Redis is ready.
+      enableOfflineQueue: true
     });
     singleton.on('error', (error) => {
-      console.error('free-cache-redis-error', error?.message || error);
+      logger.warn({ err: error }, 'free_cache_redis_error');
     });
     singleton.connect().catch((error) => {
-      console.error('free-cache-redis-connect-failed', error?.message || error);
+      logger.warn({ err: error }, 'free_cache_redis_connect_failed');
     });
     return singleton;
   }
@@ -87,3 +89,15 @@ export function getCacheClient() {
   return singleton;
 }
 
+export async function closeCacheClient() {
+  if (!singleton) return;
+  const client = singleton;
+  singleton = null;
+  if (typeof client.quit !== 'function') return;
+  try {
+    await client.quit();
+    logger.info({}, 'free_cache_redis_closed');
+  } catch (error) {
+    logger.warn({ err: error }, 'free_cache_redis_close_failed');
+  }
+}

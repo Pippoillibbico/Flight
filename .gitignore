@@ -1,1 +1,21 @@
+# database locali
+*.db
+*.db-shm
+*.db-wal
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/db.json
+data/audit-log.ndjson
+data/*.ndjson
+data/logs/
+data/logs/*.log
+
+# variabili ambiente
+.env
+
+# node
 node_modules
+
+# build
+dist

@@ -3,6 +3,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 const PORT = process.env.SECURITY_TEST_PORT || '3100';
 const BASE_URL = `http://127.0.0.1:${PORT}`;
+const ORIGIN = process.env.SECURITY_TEST_ORIGIN || 'http://localhost:5173';
 
 function mergeSetCookie(existing, setCookieHeaders = []) {
   const map = new Map();
@@ -57,19 +58,19 @@ try {
 
   const noCsrfRes = await fetch(`${BASE_URL}/api/notifications/read-all`, {
     method: 'POST',
-    headers: { Cookie: cookie }
+    headers: { Cookie: cookie, Origin: ORIGIN }
   });
   if (noCsrfRes.status !== 403) throw new Error(`expected 403 without csrf, got ${noCsrfRes.status}`);
 
   const withCsrfRes = await fetch(`${BASE_URL}/api/notifications/read-all`, {
     method: 'POST',
-    headers: { Cookie: cookie, 'X-CSRF-Token': csrf }
+    headers: { Cookie: cookie, Origin: ORIGIN, 'X-CSRF-Token': csrf }
   });
   if (withCsrfRes.status !== 204) throw new Error(`expected 204 with csrf, got ${withCsrfRes.status}`);
 
   const refreshRes = await fetch(`${BASE_URL}/api/auth/refresh`, {
     method: 'POST',
-    headers: { Cookie: cookie, 'X-CSRF-Token': csrf }
+    headers: { Cookie: cookie, Origin: ORIGIN, 'X-CSRF-Token': csrf }
   });
   if (!refreshRes.ok) throw new Error(`refresh failed: ${refreshRes.status}`);
   cookie = mergeSetCookie(cookie, refreshRes.headers.getSetCookie?.() || []);

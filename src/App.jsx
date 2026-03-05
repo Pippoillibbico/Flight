@@ -9,6 +9,7 @@ import AuthSection from './components/AuthSection';
 import SearchSection from './components/SearchSection';
 
 const AdvancedAnalyticsSection = lazy(() => import('./components/AdvancedAnalyticsSection'));
+const prefetchAdvancedAnalyticsChunk = () => import('./components/AdvancedAnalyticsSection');
 
 const defaultFrom = format(addDays(new Date(), 14), 'yyyy-MM-dd');
 const defaultTo = format(addDays(new Date(), 18), 'yyyy-MM-dd');
@@ -70,6 +71,10 @@ const QUICK_INTAKE_PROMPTS_I18N = {
     '7 giorni cultura da FCO con budget 700 euro, clima temperato.'
   ]
 };
+
+const POST_AUTH_ACTION_STORAGE_KEY = 'flight_post_auth_action';
+const POST_AUTH_MODE_STORAGE_KEY = 'flight_post_auth_mode';
+const POST_AUTH_VIEW_STORAGE_KEY = 'flight_post_auth_view';
 
 function App() {
   const [language, setLanguage] = useState('en');
@@ -212,6 +217,57 @@ function App() {
     directOnly: false
   });
   const [onboardingSaving, setOnboardingSaving] = useState(false);
+  const [pendingPostAuthAction, setPendingPostAuthAction] = useState(null);
+
+  function persistPostAuthAction(action) {
+    setPendingPostAuthAction(action || null);
+    if (typeof window === 'undefined') return;
+    try {
+      if (action) window.localStorage.setItem(POST_AUTH_ACTION_STORAGE_KEY, String(action));
+      else window.localStorage.removeItem(POST_AUTH_ACTION_STORAGE_KEY);
+    } catch {
+      // Ignore storage restrictions.
+    }
+  }
+
+  function persistAuthFunnelState({ authMode: nextAuthMode, authView: nextAuthView }) {
+    if (typeof window === 'undefined') return;
+    try {
+      if (nextAuthMode) window.localStorage.setItem(POST_AUTH_MODE_STORAGE_KEY, String(nextAuthMode));
+      if (nextAuthView) window.localStorage.setItem(POST_AUTH_VIEW_STORAGE_KEY, String(nextAuthView));
+    } catch {
+      // Ignore storage restrictions.
+    }
+  }
+
+  function clearAuthFunnelState() {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.removeItem(POST_AUTH_MODE_STORAGE_KEY);
+      window.localStorage.removeItem(POST_AUTH_VIEW_STORAGE_KEY);
+    } catch {
+      // Ignore storage restrictions.
+    }
+  }
+
+  function beginAuthFlow({ action, authMode: nextAuthMode = 'login', authView: nextAuthView = 'email', keepLandingVisible = true } = {}) {
+    setShowLandingPage(keepLandingVisible);
+    setShowAccountPanel(true);
+    setAuthMode(nextAuthMode);
+    setAuthView(nextAuthView);
+    setAuthError('');
+    persistPostAuthAction(action || null);
+    persistAuthFunnelState({ authMode: nextAuthMode, authView: nextAuthView });
+  }
+
+  function beginSetAlertAuthFlow({ keepLandingVisible = true } = {}) {
+    beginAuthFlow({
+      action: 'set_alert',
+      authMode: 'register',
+      authView: 'email',
+      keepLandingVisible
+    });
+  }
 
   function InfoTip({ text }) {
     return (
@@ -291,6 +347,22 @@ function App() {
   }, [user]);
 
   useEffect(() => {
+    if (!user || !pendingPostAuthAction) return;
+    if (pendingPostAuthAction === 'enter_app') {
+      setShowLandingPage(false);
+      setShowAccountPanel(false);
+      setSubMessage(t('postAuthEnterAppReady'));
+    }
+    if (pendingPostAuthAction === 'set_alert') {
+      setShowLandingPage(false);
+      setShowAccountPanel(false);
+      setSubMessage(t('postAuthSetAlertHint'));
+    }
+    persistPostAuthAction(null);
+    clearAuthFunnelState();
+  }, [user, pendingPostAuthAction]);
+
+  useEffect(() => {
     if (!user) {
       setShowOnboarding(false);
       return;
@@ -342,6 +414,7 @@ function App() {
       setShowAccountPanel(true);
     }
     if (oauth === 'success') {
+      setToken(COOKIE_SESSION_TOKEN);
       setShowAccountPanel(false);
     }
     if (oauth === 'error' || oauth === 'success') {
@@ -350,6 +423,20 @@ function App() {
       params.delete('provider');
       const cleaned = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ''}${window.location.hash || ''}`;
       window.history.replaceState({}, '', cleaned);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const pending = window.localStorage.getItem(POST_AUTH_ACTION_STORAGE_KEY);
+      const storedMode = window.localStorage.getItem(POST_AUTH_MODE_STORAGE_KEY);
+      const storedView = window.localStorage.getItem(POST_AUTH_VIEW_STORAGE_KEY);
+      if (pending) setPendingPostAuthAction(pending);
+      if (storedMode === 'login' || storedMode === 'register') setAuthMode(storedMode);
+      if (storedView === 'options' || storedView === 'email') setAuthView(storedView);
+    } catch {
+      // Ignore storage restrictions.
     }
   }, []);
 
@@ -368,17 +455,48 @@ function App() {
 
   useEffect(() => {
     if (typeof document === 'undefined') return;
-    const className = 'landing-dark-active';
-    const shouldEnable = showLandingPage && darkMode;
-    document.body.classList.toggle(className, shouldEnable);
+    const landingClass = 'landing-dark-active';
+    const appClass = 'app-dark-active';
+    document.body.classList.toggle(landingClass, showLandingPage && darkMode);
+    document.body.classList.toggle(appClass, !showLandingPage && darkMode);
     return () => {
-      document.body.classList.remove(className);
+      document.body.classList.remove(landingClass);
+      document.body.classList.remove(appClass);
     };
   }, [showLandingPage, darkMode]);
 
   const isAuthenticated = Boolean(user);
   const isMfaChallengeActive = Boolean(authMfa.ticket);
   const isAdvancedMode = uiMode === 'advanced';
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (isAdvancedMode) return;
+    const connection = navigator?.connection || navigator?.mozConnection || navigator?.webkitConnection;
+    const saveData = Boolean(connection?.saveData);
+    const effectiveType = String(connection?.effectiveType || '').toLowerCase();
+    if (saveData || effectiveType.includes('2g')) return;
+
+    let cancelled = false;
+    let timeoutId = null;
+    let idleId = null;
+    const warmup = () => {
+      if (cancelled) return;
+      prefetchAdvancedAnalyticsChunk().catch(() => {});
+    };
+
+    if (typeof window.requestIdleCallback === 'function') {
+      idleId = window.requestIdleCallback(warmup, { timeout: 4000 });
+    } else {
+      timeoutId = window.setTimeout(warmup, 1200);
+    }
+
+    return () => {
+      cancelled = true;
+      if (timeoutId) window.clearTimeout(timeoutId);
+      if (idleId && typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(idleId);
+    };
+  }, [isAdvancedMode]);
   const quickIntakePrompts = QUICK_INTAKE_PROMPTS_I18N[language] || QUICK_INTAKE_PROMPTS_I18N.en;
   const heroSubText = t('landingHeroEyebrow');
   const authTitle = authMode === 'login' ? t('signIn') : t('register');
@@ -386,7 +504,7 @@ function App() {
     ? {
         welcomeTitle: 'Accedi a tutte le funzionalita',
         welcomeSub: "Usa l'AI per organizzare il tuo viaggio.",
-        email: 'Continua con l e-mail',
+        email: "Continua con l'email",
         facebook: 'Facebook',
         google: 'Google',
         apple: 'Apple',
@@ -825,6 +943,7 @@ function App() {
   function startSocialLogin(provider) {
     setAuthError('');
     setOauthLoading(provider);
+    persistAuthFunnelState({ authMode, authView });
     window.location.assign(`/api/auth/oauth/${provider}/start`);
   }
 
@@ -1112,7 +1231,11 @@ function App() {
   }
 
   async function createAlertForFlight(flight) {
-    if (!isAuthenticated) return setSubMessage(t('loginRequiredAlert'));
+    if (!isAuthenticated) {
+      beginSetAlertAuthFlow({ keepLandingVisible: showLandingPage });
+      setSubMessage(t('loginRequiredAlert'));
+      return;
+    }
 
     const stayDays = Math.max(2, differenceInCalendarDays(parseISO(searchForm.dateTo), parseISO(searchForm.dateFrom)));
     const daysFromNow = Math.max(1, differenceInCalendarDays(parseISO(searchForm.dateFrom), new Date()));
@@ -1277,6 +1400,8 @@ function App() {
     try {
       await api.logout(token);
     } catch {}
+    persistPostAuthAction(null);
+    clearAuthFunnelState();
     setCsrfToken('');
     setToken('');
     setUser(null);
@@ -1440,6 +1565,31 @@ function App() {
     { icon: '\u{1F4CD}', label: t('landingAddressLabel'), value: 'Milano, Italia' }
   ];
 
+  function handleLandingPrimaryCta() {
+    if (isAuthenticated) {
+      setShowLandingPage(false);
+      setShowAccountPanel(false);
+      setSubMessage(t('postAuthEnterAppReady'));
+      return;
+    }
+    beginAuthFlow({
+      action: 'enter_app',
+      authMode: 'login',
+      authView: 'email',
+      keepLandingVisible: false
+    });
+  }
+
+  function handleLandingSecondaryCta() {
+    if (isAuthenticated) {
+      setShowLandingPage(false);
+      setShowAccountPanel(false);
+      setSubMessage(t('postAuthSetAlertHint'));
+      return;
+    }
+    beginSetAlertAuthFlow({ keepLandingVisible: false });
+  }
+
   return (
     <AppProvider value={appContextValue}>
       {showLandingPage ? (
@@ -1454,24 +1604,32 @@ function App() {
         landingValueCards={landingValueCards}
         landingPricingPlans={landingPricingPlans}
         landingContactCards={landingContactCards}
+        onHeroPrimaryCta={handleLandingPrimaryCta}
+        onHeroSecondaryCta={handleLandingSecondaryCta}
       />
     ) : (
-    <main className="page">
+    <main className={`page app-shell${darkMode ? ' app-dark' : ''}`}>
       <header className="hero">
         <div className="hero-top-row">
           <p className="eyebrow">{t('landingTitle')}</p>
           <div className="hero-controls">
-            <label className="lang-pick">
-              {t('language')}
-              <select value={language} onChange={(e) => setLanguage(e.target.value)}>
+            <button type="button" className="landing-ctrl-btn app-ctrl-btn" onClick={() => setDarkMode((prev) => !prev)}>
+              {darkMode ? 'Dark' : 'Light'}
+            </button>
+            <label className="landing-ctrl-btn landing-lang-btn app-ctrl-btn" title={t('language')}>
+              <span className="landing-ctrl-label">{language.toUpperCase()}</span>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+              <select className="landing-lang-inner" value={language} onChange={(e) => setLanguage(e.target.value)} aria-label={t('language')}>
                 {LANGUAGE_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>
-                    {option.value.toUpperCase()}
+                    {option.label}
                   </option>
                 ))}
               </select>
             </label>
-            <button type="button" className="ghost account-toggle" onClick={() => setShowAccountPanel((prev) => !prev)}>
+            <button type="button" className="landing-accedi-btn app-account-btn" onClick={() => setShowAccountPanel((prev) => !prev)}>
               {isAuthenticated ? user?.name || t('account') : t('account')}
             </button>
           </div>
@@ -1570,6 +1728,9 @@ function App() {
         authError={authError}
       />
 
+      {isAuthenticated ? (
+        <>
+
       <SearchSection
         uiMode={uiMode}
         setUiMode={setUiMode}
@@ -1599,6 +1760,7 @@ function App() {
         searchError={searchError}
         searchResult={searchResult}
         autoFixSearchFilters={autoFixSearchFilters}
+        prefetchAdvancedAnalyticsChunk={prefetchAdvancedAnalyticsChunk}
       />
 
       {isAdvancedMode ? (
@@ -1676,7 +1838,7 @@ function App() {
                     target="_blank"
                     rel="noreferrer"
                   >
-                    {t('skyscanner')}
+                    {t('partnerCta')}
                   </a>
                   <button type="button" onClick={() => addToWatchlist(cheapestFlight)}>
                     {t('save')}
@@ -1698,7 +1860,7 @@ function App() {
                     target="_blank"
                     rel="noreferrer"
                   >
-                    {t('skyscanner')}
+                    {t('partnerCta')}
                   </a>
                   <button type="button" className="ghost" onClick={() => createAlertForFlight(bestValueFlight)}>
                     {t('alertAtPrice')}
@@ -1752,7 +1914,7 @@ function App() {
                   target="_blank"
                   rel="noreferrer"
                 >
-                  {t('skyscanner')}
+                  {t('partnerCta')}
                 </a>
                 <button type="button" onClick={() => addToWatchlist(flight)}>{t('save')}</button>
                 <button type="button" className="ghost" onClick={() => createAlertForFlight(flight)}>{t('alertAtPrice')}</button>
@@ -1798,7 +1960,7 @@ function App() {
                         target="_blank"
                         rel="noreferrer"
                       >
-                        {t('skyscanner')}
+                        {t('partnerCta')}
                       </a>
                     </div>
                   ))}
@@ -1838,7 +2000,7 @@ function App() {
                     target="_blank"
                     rel="noreferrer"
                   >
-                    {t('skyscanner')}
+                    {t('partnerCta')}
                   </a>
                   <button type="button" onClick={() => addToWatchlist(flight)}>
                     {t('save')}
@@ -1990,7 +2152,7 @@ function App() {
                     target="_blank"
                     rel="noreferrer"
                   >
-                    {t('skyscanner')}
+                    {t('partnerCta')}
                   </a>
                   <button className="ghost" type="button" onClick={() => removeWatchlistItem(item.id)}>{t('remove')}</button>
                 </div>
@@ -1999,6 +2161,48 @@ function App() {
           </div>
         </article>
       </section>
+      </>
+      ) : (
+        <section className="panel app-lock-panel">
+          <div className="panel-head">
+            <h2 className="app-lock-title">Accesso richiesto</h2>
+          </div>
+          <p className="muted app-lock-sub">Per usare la piattaforma devi accedere o registrarti.</p>
+          <p className="muted app-lock-note">Dopo il login torni subito al flusso che hai scelto: ricerca affari o creazione alert.</p>
+          <div className="item-actions app-lock-actions">
+            <button
+              type="button"
+              onClick={() =>
+                beginAuthFlow({
+                  action: 'enter_app',
+                  authMode: 'login',
+                  authView: 'email',
+                  keepLandingVisible: false
+                })
+              }
+            >
+              Accedi
+            </button>
+            <button
+              type="button"
+              className="ghost"
+              onClick={() =>
+                beginAuthFlow({
+                  action: 'enter_app',
+                  authMode: 'register',
+                  authView: 'email',
+                  keepLandingVisible: false
+                })
+              }
+            >
+              Registrati
+            </button>
+            <button type="button" className="ghost" onClick={() => { setShowLandingPage(true); setShowAccountPanel(false); }}>
+              Torna alla home
+            </button>
+          </div>
+        </section>
+      )}
     </main>
     )}
     </AppProvider>

@@ -78,7 +78,8 @@ function SearchSection(props) {
     upgradeToPremium,
     searchError,
     searchResult,
-    autoFixSearchFilters
+    autoFixSearchFilters,
+    prefetchAdvancedAnalyticsChunk
   } = validateProps(SearchSectionPropsSchema, props, 'SearchSection');
   return (
 <section className="panel search-panel">
@@ -90,7 +91,13 @@ function SearchSection(props) {
                 <button type="button" className={uiMode === 'simple' ? 'tab active' : 'tab'} onClick={() => setUiMode('simple')}>
                   {t('simpleMode')}
                 </button>
-                <button type="button" className={uiMode === 'advanced' ? 'tab active' : 'tab'} onClick={() => setUiMode('advanced')}>
+                <button
+                  type="button"
+                  className={uiMode === 'advanced' ? 'tab active' : 'tab'}
+                  onMouseEnter={() => prefetchAdvancedAnalyticsChunk?.()}
+                  onFocus={() => prefetchAdvancedAnalyticsChunk?.()}
+                  onClick={() => setUiMode('advanced')}
+                >
                   {t('advancedMode')}
                 </button>
                 <InfoTip text={tt('mode_help')} />

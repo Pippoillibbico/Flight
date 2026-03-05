@@ -6,12 +6,20 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        manualChunks: {
-          'vendor-react': ['react', 'react-dom'],
-          'vendor-date': ['date-fns']
+        manualChunks(id) {
+          const normalized = id.replaceAll('\\', '/');
+          if (normalized.includes('/src/components/AdvancedAnalyticsSection.jsx')) return 'advanced-analytics';
+          if (normalized.includes('/node_modules/react')) return 'vendor-react';
+          if (normalized.includes('/node_modules/date-fns')) return 'vendor-date';
+          if (normalized.includes('/src/i18n/')) return 'app-i18n';
+          if (normalized.includes('/src/components/')) return 'app-components';
+          if (normalized.includes('/src/context/')) return 'app-context';
+          if (normalized.includes('/src/api.js') || normalized.includes('/src/utils/')) return 'app-core';
+          return undefined;
         }
       }
-    }
+    },
+    chunkSizeWarningLimit: 400
   },
   server: {
     host: '0.0.0.0',

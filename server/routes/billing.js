@@ -17,8 +17,9 @@
 import { Router } from 'express';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { getOrCreateSubscription, upsertSubscriptionFromStripe } from '../lib/saas-db.js';
-import { readDb } from '../lib/db.js';
+import { readDb, withDb } from '../lib/db.js';
 import { appendImmutableAudit } from '../lib/audit-log.js';
+import { logger } from '../lib/logger.js';
 
 // Map Stripe price IDs → internal plan IDs
 function planFromStripePrice(priceId) {
@@ -76,7 +77,7 @@ export function buildBillingRouter({ authGuard }) {
       const secret = process.env.STRIPE_WEBHOOK_SECRET;
 
       if (!secret) {
-        console.warn('[billing] STRIPE_WEBHOOK_SECRET not set — webhook ignored');
+        logger.warn({ endpoint: '/api/billing/webhook' }, 'stripe_webhook_secret_missing');
         return res.json({ received: true });
       }
 
@@ -84,6 +85,7 @@ export function buildBillingRouter({ authGuard }) {
       const rawBody = req.rawBody ?? JSON.stringify(req.body);
 
       if (!verifyStripeSignature(rawBody, sig ?? '', secret)) {
+        logger.warn({ endpoint: '/api/billing/webhook' }, 'stripe_webhook_signature_invalid');
         return res.status(400).json({ error: 'Invalid Stripe signature.' });
       }
 
@@ -91,13 +93,31 @@ export function buildBillingRouter({ authGuard }) {
       try {
         event = JSON.parse(rawBody);
       } catch {
+        logger.warn({ endpoint: '/api/billing/webhook' }, 'stripe_webhook_malformed_json');
         return res.status(400).json({ error: 'Malformed JSON.' });
       }
 
       try {
+        const eventId = String(event?.id || '').trim();
+        if (!eventId) {
+          logger.warn({ endpoint: '/api/billing/webhook' }, 'stripe_webhook_missing_event_id');
+          return res.json({ received: true, deduped: false });
+        }
+        const alreadyProcessed = await claimStripeEvent({
+          id: eventId,
+          type: String(event?.type || 'unknown')
+        });
+        if (alreadyProcessed) {
+          logger.info({ stripe_event_id: eventId, stripe_event_type: event?.type }, 'stripe_webhook_deduped');
+          return res.json({ received: true, deduped: true });
+        }
         await handleStripeEvent(event);
+        await finalizeStripeEvent({ id: eventId, status: 'processed' });
+        logger.info({ stripe_event_id: eventId, stripe_event_type: event?.type }, 'stripe_webhook_processed');
       } catch (err) {
-        console.error('[billing] webhook handler error:', err?.message);
+        const eventId = String(event?.id || '').trim();
+        if (eventId) await finalizeStripeEvent({ id: eventId, status: 'failed' });
+        logger.error({ err, endpoint: '/api/billing/webhook', stripe_event_type: event?.type }, 'stripe_webhook_handler_error');
         // Return 200 so Stripe does not retry for application errors
       }
 
@@ -142,7 +162,10 @@ async function handleStripeEvent(event) {
     case 'customer.subscription.updated': {
       const sub = data.object;
       const userId = sub.metadata?.user_id ?? await resolveUserIdFromCustomer(sub.customer);
-      if (!userId) { console.warn('[billing] No user_id for subscription', sub.id); return; }
+      if (!userId) {
+        logger.warn({ stripe_subscription_id: sub.id, stripe_event_type: type }, 'stripe_subscription_user_missing');
+        return;
+      }
 
       const priceId = sub.items?.data?.[0]?.price?.id;
       await upsertSubscriptionFromStripe({
@@ -199,8 +222,47 @@ async function handleStripeEvent(event) {
 
     default:
       // Unhandled events are ignored gracefully
+      logger.info({ stripe_event_type: type }, 'stripe_webhook_event_ignored');
       break;
   }
+}
+
+async function claimStripeEvent({ id, type }) {
+  let alreadyProcessed = false;
+  await withDb((db) => {
+    db.stripeWebhookEvents = db.stripeWebhookEvents || [];
+    const existing = db.stripeWebhookEvents.find((item) => item.id === id);
+    alreadyProcessed = Boolean(existing && existing.status === 'processed');
+    if (!existing) {
+      db.stripeWebhookEvents.push({
+        id,
+        type,
+        status: 'processing',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+      db.stripeWebhookEvents = db.stripeWebhookEvents.slice(-10000);
+    } else if (existing.status !== 'processed') {
+      existing.status = 'processing';
+      existing.updatedAt = new Date().toISOString();
+    }
+    return db;
+  });
+  return alreadyProcessed;
+}
+
+async function finalizeStripeEvent({ id, status }) {
+  await withDb((db) => {
+    db.stripeWebhookEvents = db.stripeWebhookEvents || [];
+    for (const entry of db.stripeWebhookEvents) {
+      if (entry.id !== id) continue;
+      entry.status = status;
+      entry.updatedAt = new Date().toISOString();
+      if (status === 'processed') entry.processedAt = entry.updatedAt;
+      break;
+    }
+    return db;
+  });
 }
 
 async function resolveUserIdFromCustomer(stripeCustomerId) {

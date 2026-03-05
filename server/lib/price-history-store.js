@@ -521,6 +521,34 @@ export async function initPriceHistoryStore() {
   }
 }
 
+/**
+ * Lightweight dataset status for engine health/status endpoints.
+ */
+export async function getPriceDatasetStatus() {
+  await ensureInitialized();
+  if (getMode() === 'postgres') {
+    const [obs, routes, last] = await Promise.all([
+      pgPool.query('SELECT COUNT(*)::int AS c FROM price_observations'),
+      pgPool.query('SELECT COUNT(*)::int AS c FROM routes'),
+      pgPool.query('SELECT MAX(observed_at) AS ts FROM price_observations')
+    ]);
+    return {
+      mode: 'postgres',
+      observations: Number(obs.rows[0]?.c || 0),
+      routes: Number(routes.rows[0]?.c || 0),
+      lastIngestionAt: last.rows[0]?.ts || null
+    };
+  }
+  const obsRow = sqliteDb.prepare('SELECT COUNT(*) AS c, MAX(observed_at) AS ts FROM price_observations').get() || {};
+  const routesRow = sqliteDb.prepare('SELECT COUNT(*) AS c FROM routes').get() || {};
+  return {
+    mode: 'sqlite',
+    observations: Number(obsRow.c || 0),
+    routes: Number(routesRow.c || 0),
+    lastIngestionAt: obsRow.ts || null
+  };
+}
+
 export function buildSyntheticObservationFromCsvRow(row) {
   const parsed = observationSchema.safeParse({
     origin: row.origin || row.origin_iata,
@@ -539,4 +567,3 @@ export function buildSyntheticObservationFromCsvRow(row) {
   if (!parsed.success) throw new Error(parsed.error.issues[0]?.message || 'Invalid CSV row.');
   return parsed.data;
 }
-
