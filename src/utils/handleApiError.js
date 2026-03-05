@@ -3,7 +3,7 @@ export function handleApiError(error, { t }) {
   const resetAt = String(error?.resetAt || '').trim();
 
   if (code === 'limit_exceeded') {
-    return t('upgradePremium');
+    return t('quotaExceededFriendly');
   }
 
   if (code === 'premium_required') {
@@ -11,7 +11,7 @@ export function handleApiError(error, { t }) {
   }
 
   if (code === 'auth_required' || code === 'auth_invalid' || code === 'token_revoked') {
-    return t('authRequiredFriendly');
+    return t('sessionExpiredFriendly');
   }
 
   return `${t('genericErrorTitle')}. ${t('genericErrorSubtext')}`;

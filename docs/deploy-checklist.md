@@ -18,6 +18,8 @@
 2. `npm run lint`
 3. `npm test`
 4. `npm run build`
+5. `npm run test:security`
+6. `npm run test:go-live` (with server up)
 
 ## 3) Run prod-like locally (docker compose)
 1. `docker compose up --build`
@@ -34,9 +36,14 @@
    - free alert worker
    - route baseline job
    - discovery alert worker
+5. Check logs summary:
+   - `npm run show:report`
+6. Legal pages published:
+   - Privacy Policy
+   - Terms of Service
+   - Cookie Policy
 
 ## 5) Backups
 1. Run `npm run backup:postgres`.
 2. Confirm both Postgres dump and audit log copy exist in `backups/`.
 3. Perform periodic restore drill in staging.
-

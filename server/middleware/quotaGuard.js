@@ -1,5 +1,6 @@
 import { checkAndIncrementQuota, verifyApiKey } from '../lib/saas-db.js';
 import { readDb } from '../lib/db.js';
+import { logger } from '../lib/logger.js';
 
 const SCOPE_SET = new Set(['read', 'search', 'alerts', 'export']);
 
@@ -29,7 +30,11 @@ export function quotaGuard(cost = { counter: 'search', amount: 1 }) {
   return createQuotaGuard({ cost });
 }
 
-export function createQuotaGuard({ cost = { counter: 'search', amount: 1 }, checkQuota = checkAndIncrementQuota, warn = console.warn } = {}) {
+export function createQuotaGuard({
+  cost = { counter: 'search', amount: 1 },
+  checkQuota = checkAndIncrementQuota,
+  warn = (message, detail) => logger.warn({ detail }, message)
+} = {}) {
   return async function _quotaGuard(req, res, next) {
     const userId = req.user?.id || req.user?.sub;
     if (!userId) return next();
@@ -42,6 +47,18 @@ export function createQuotaGuard({ cost = { counter: 'search', amount: 1 }, chec
       });
 
       if (!result.allowed) {
+        logger.warn(
+          {
+            request_id: req.id || null,
+            user_id: userId,
+            endpoint: req.originalUrl || req.url,
+            status_code: 429,
+            quota_counter: result.counter,
+            quota_limit: result.limit,
+            quota_used: result.used
+          },
+          'quota_limit_exceeded'
+        );
         return res.status(429).json({
           error: 'limit_exceeded',
           message: humanLimitMessage(result.counter),
@@ -56,6 +73,19 @@ export function createQuotaGuard({ cost = { counter: 'search', amount: 1 }, chec
       res.set('X-Quota-Used', String(result.used));
       res.set('X-Quota-Remaining', String(result.remaining));
       res.set('X-Quota-Reset', String(result.resetAt));
+      logger.info(
+        {
+          request_id: req.id || null,
+          user_id: userId,
+          endpoint: req.originalUrl || req.url,
+          status_code: 200,
+          quota_counter: result.counter,
+          quota_limit: result.limit,
+          quota_used: result.used,
+          quota_remaining: result.remaining
+        },
+        'quota_usage_recorded'
+      );
       return next();
     } catch (error) {
       if (process.env.NODE_ENV !== 'production') {

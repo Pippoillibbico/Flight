@@ -31,11 +31,13 @@ const initialData = {
   monthlyQuotas: [],
   usageEvents: [],
   usageCounters: [],
+  alertIntelligenceDedupe: [],
   passwordResetTokens: [],
   freeAlerts: [],
   freePrecomputedRankings: [],
   freeTravelScores: [],
-  freeAlertSignals: []
+  freeAlertSignals: [],
+  stripeWebhookEvents: []
 };
 
 let queue = Promise.resolve();
@@ -70,11 +72,13 @@ export async function readDb() {
     monthlyQuotas: parsed.monthlyQuotas ?? [],
     usageEvents: parsed.usageEvents ?? [],
     usageCounters: parsed.usageCounters ?? [],
+    alertIntelligenceDedupe: parsed.alertIntelligenceDedupe ?? [],
     passwordResetTokens: parsed.passwordResetTokens ?? [],
     freeAlerts: parsed.freeAlerts ?? [],
     freePrecomputedRankings: parsed.freePrecomputedRankings ?? [],
     freeTravelScores: parsed.freeTravelScores ?? [],
-    freeAlertSignals: parsed.freeAlertSignals ?? []
+    freeAlertSignals: parsed.freeAlertSignals ?? [],
+    stripeWebhookEvents: parsed.stripeWebhookEvents ?? []
   };
 }
 

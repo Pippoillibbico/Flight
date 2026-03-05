@@ -1,21 +1,7 @@
 import { differenceInCalendarDays, getDay, parseISO } from 'date-fns';
-import { DESTINATIONS } from '../data/flights-data.js';
-
-const MOOD_WEIGHTS = {
-  relax: { price: 0.2, climate: 0.26, crowding: 0.2, trend: 0.1, pace: 0.12, comfort: 0.12 },
-  natura: { price: 0.18, climate: 0.25, crowding: 0.22, trend: 0.1, pace: 0.1, comfort: 0.15 },
-  party: { price: 0.28, climate: 0.14, crowding: 0.06, trend: 0.16, pace: 0.14, comfort: 0.22 },
-  cultura: { price: 0.24, climate: 0.18, crowding: 0.14, trend: 0.12, pace: 0.12, comfort: 0.2 },
-  avventura: { price: 0.2, climate: 0.2, crowding: 0.14, trend: 0.14, pace: 0.14, comfort: 0.18 }
-};
-
-const DESTINATION_DATA = {
-  LIS: { dailyCost: 72, baseCrowding: 56, overTourism: 41, seasonality: 78, trendBias: -0.04, climateTemp: 22, climateRain: 22 },
-  ATH: { dailyCost: 69, baseCrowding: 67, overTourism: 62, seasonality: 76, trendBias: 0.08, climateTemp: 25, climateRain: 12 },
-  VLC: { dailyCost: 66, baseCrowding: 62, overTourism: 47, seasonality: 79, trendBias: -0.02, climateTemp: 24, climateRain: 17 },
-  MLA: { dailyCost: 75, baseCrowding: 61, overTourism: 53, seasonality: 77, trendBias: 0.03, climateTemp: 26, climateRain: 11 },
-  PRG: { dailyCost: 58, baseCrowding: 49, overTourism: 33, seasonality: 72, trendBias: -0.01, climateTemp: 19, climateRain: 28 }
-};
+import { ROUTES } from '../data/local-flight-data.js';
+import { detectDeal } from './deal-detector.js';
+import { logger } from './logger.js';
 
 function normalizeText(text) {
   return String(text || '')
@@ -25,65 +11,43 @@ function normalizeText(text) {
     .trim();
 }
 
-function destinationMatchesQuery(destination, query) {
-  if (!query) return true;
-  const needle = normalizeText(query);
-  if (!needle) return true;
-
-  const haystack = [
-    destination.city,
-    destination.iata,
-    destination.country,
-    destination.area,
-    ...(destination.keywords || [])
-  ]
-    .map((part) => normalizeText(part))
-    .join(' ');
-
-  return haystack.includes(needle);
-}
-
-function destinationMatchesCountry(destination, country) {
-  if (!country) return true;
-  const needle = normalizeText(country);
-  const haystack = normalizeText(destination.country);
-  return haystack.includes(needle) || needle.includes(haystack);
-}
-
-function seededPrice(basePrice, fromCode, toCode, travelDate, returnDate, travellers, cabinClass) {
-  const str = `${fromCode}-${toCode}-${travelDate}-${returnDate}-${cabinClass}`;
-  let hash = 0;
-  for (let i = 0; i < str.length; i += 1) hash = (hash * 31 + str.charCodeAt(i)) % 9973;
-  const variation = (hash % 140) - 70;
-  const cabinFactor = cabinClass === 'business' ? 2.1 : cabinClass === 'premium' ? 1.5 : 1;
-  return Math.max(40, Math.round((basePrice + variation) * travellers * cabinFactor));
-}
-
 function seededInt(seed, modulo) {
   let hash = 0;
   for (let i = 0; i < seed.length; i += 1) hash = (hash * 31 + seed.charCodeAt(i)) % 104729;
   return hash % modulo;
 }
 
-function buildRouteVariants(destination, origin, dateFrom, dateTo, travellers, cabinClass) {
-  const seed = `${origin}-${destination.iata}-${dateFrom}-${dateTo}-${cabinClass}`;
-  const baseDuration = Math.max(2, Math.round(destination.basePrice / 90));
-  const oneStopDelta = seededInt(`${seed}-one`, 80) - 40;
-  const twoStopDelta = seededInt(`${seed}-two`, 120) - 60;
+function clamp(n, min = 0, max = 100) {
+  return Math.max(min, Math.min(max, n));
+}
 
-  const directBase = Math.max(40, destination.basePrice + 35);
-  const oneStopBase = Math.max(40, destination.basePrice + oneStopDelta);
-  const twoStopBase = Math.max(40, destination.basePrice - 25 + twoStopDelta);
+function mean(values) {
+  const list = values.filter((v) => Number.isFinite(v));
+  if (list.length === 0) return 0;
+  return list.reduce((sum, v) => sum + v, 0) / list.length;
+}
 
-  return [
-    { stopCount: 0, base: directBase, durationHours: baseDuration + 1, routeType: 'direct' },
-    { stopCount: 1, base: oneStopBase, durationHours: baseDuration + 3, routeType: 'one_stop' },
-    { stopCount: 2, base: twoStopBase, durationHours: baseDuration + 6, routeType: 'multi_stop' }
-  ].map((variant) => ({
-    ...variant,
-    price: seededPrice(variant.base, origin, destination.iata, dateFrom, dateTo, travellers, cabinClass),
-    durationHours: Math.round(variant.durationHours * 10) / 10
-  }));
+function destinationMatchesQuery(route, query) {
+  if (!query) return true;
+  const needle = normalizeText(query);
+  if (!needle) return true;
+  const haystack = [
+    route.destinationName,
+    route.destinationIata,
+    route.country,
+    route.region,
+    ...(route.keywords || [])
+  ]
+    .map((part) => normalizeText(part))
+    .join(' ');
+  return haystack.includes(needle);
+}
+
+function destinationMatchesCountry(route, country) {
+  if (!country) return true;
+  const needle = normalizeText(country);
+  const haystack = normalizeText(route.country);
+  return haystack.includes(needle) || needle.includes(haystack);
 }
 
 function formatStops(stopCount) {
@@ -92,17 +56,87 @@ function formatStops(stopCount) {
   return `${stopCount} stops`;
 }
 
-function computeComfortScore({ stopCount, durationHours, price, avg2024 }) {
-  const stopPenalty = stopCount * 24;
-  const durationPenalty = Math.max(0, durationHours - 3) * 4.5;
-  const priceBonus = avg2024 > 0 ? ((avg2024 - price) / avg2024) * 30 : 0;
-  const score = 100 - stopPenalty - durationPenalty + priceBonus;
-  return Math.max(1, Math.min(100, Math.round(score)));
-}
-
 function formatHour(hour) {
   const safe = ((hour % 24) + 24) % 24;
   return `${String(safe).padStart(2, '0')}:00`;
+}
+
+function getMonthBand(route, month) {
+  const bands = route.seasonalPriceBands || {};
+  return bands[String(month)] || bands['1'] || { avgPrice: 200, low: 160, high: 260 };
+}
+
+function getStopWeights(route) {
+  const dist = route.comfortMetadata?.stopCountDistribution || {};
+  const direct = Number(dist[0]) || 0.34;
+  const oneStop = Number(dist[1]) || 0.46;
+  const twoStop = Number(dist[2]) || 0.2;
+  const total = Math.max(0.01, direct + oneStop + twoStop);
+  return { direct: direct / total, oneStop: oneStop / total, twoStop: twoStop / total };
+}
+
+export function computeAvg2024(route) {
+  const bands = route.seasonalPriceBands || {};
+  const monthly = [];
+  for (let month = 1; month <= 12; month += 1) {
+    const avgPrice = Number(bands[String(month)]?.avgPrice);
+    if (Number.isFinite(avgPrice)) monthly.push(avgPrice);
+  }
+  return Math.round(mean(monthly));
+}
+
+export function computeHighSeasonAvg(route) {
+  const months = route.seasonality?.highSeasonMonths || [];
+  const values = months.map((month) => Number(route.seasonalPriceBands?.[String(month)]?.avgPrice));
+  return Math.round(mean(values.length > 0 ? values : [computeAvg2024(route)]));
+}
+
+export function computeSavingVs2024(price, avg2024) {
+  return Math.round((Number(avg2024) || 0) - (Number(price) || 0));
+}
+
+export function computeComfortScore({ stopCount, isNightFlight, departureHour, route }) {
+  const weights = getStopWeights(route);
+  const stopComponent =
+    stopCount === 0 ? 100 * weights.direct : stopCount === 1 ? 100 * weights.oneStop * 0.86 : 100 * weights.twoStop * 0.68;
+  const nightBias = Number(route?.comfortMetadata?.nightFlightProbability || 0.25);
+  const nightPenalty = isNightFlight ? (12 + nightBias * 16) : 0;
+  const departureComfort =
+    departureHour >= 6 && departureHour <= 10 ? 10 : departureHour >= 11 && departureHour <= 18 ? 6 : departureHour >= 19 && departureHour <= 22 ? 2 : -6;
+  const score = stopComponent + departureComfort + 22 - nightPenalty;
+  return Math.round(clamp(score, 1, 100));
+}
+
+function buildRouteVariants(route, origin, dateFrom, dateTo, travellers, cabinClass, month) {
+  const band = getMonthBand(route, month);
+  const base = Number(band.avgPrice || 200);
+  const travellerFactor = Math.max(1, Number(travellers) || 1);
+  const cabinFactor = cabinClass === 'business' ? 2.1 : cabinClass === 'premium' ? 1.45 : 1;
+  const seed = `${origin}-${route.destinationIata}-${dateFrom}-${dateTo}-${travellerFactor}-${cabinClass}`;
+  const weights = getStopWeights(route);
+
+  return [0, 1, 2].map((stopCount) => {
+    const distributionFactor = stopCount === 0 ? 1 + (1 - weights.direct) * 0.1 : stopCount === 1 ? 1 - weights.oneStop * 0.08 : 1 - weights.twoStop * 0.15;
+    const stopFactor = stopCount === 0 ? 1.06 : stopCount === 1 ? 1 : 0.93;
+    const jitter = seededInt(`${seed}-${stopCount}`, 31) - 15;
+    const unitPrice = Math.max(40, Math.round(base * distributionFactor * stopFactor + jitter));
+    const price = Math.round(unitPrice * travellerFactor * cabinFactor);
+    const departureWindow = route.comfortMetadata?.typicalDepartureWindow || { startHour: 6, endHour: 22 };
+    const span = Math.max(1, Number(departureWindow.endHour) - Number(departureWindow.startHour) + 1);
+    const departureHour = Number(departureWindow.startHour) + seededInt(`${seed}-${stopCount}-dep`, span);
+    const isNightByHour = departureHour >= 22 || departureHour <= 5;
+    const isNightByProb = seededInt(`${seed}-${stopCount}-night`, 100) < Math.round(Number(route.comfortMetadata?.nightFlightProbability || 0.25) * 100);
+    const isNightFlight = isNightByHour || isNightByProb;
+
+    return {
+      stopCount,
+      stopLabel: formatStops(stopCount),
+      price,
+      departureHour,
+      departureTimeLabel: formatHour(departureHour),
+      isNightFlight
+    };
+  });
 }
 
 export function buildBookingLink({ origin, destinationIata, dateFrom, dateTo, travellers, cabinClass }) {
@@ -115,32 +149,6 @@ export function buildBookingLink({ origin, destinationIata, dateFrom, dateTo, tr
   url.searchParams.set('travellers', String(travellers));
   url.searchParams.set('cabin', cabinClass);
   return url.toString();
-}
-
-function clamp(n, min = 0, max = 100) {
-  return Math.max(min, Math.min(max, n));
-}
-
-function climateFitScore(preference, tempC, rainProb) {
-  const fit =
-    preference === 'warm'
-      ? 100 - Math.abs(tempC - 27) * 7
-      : preference === 'cold'
-      ? 100 - Math.abs(tempC - 8) * 7
-      : preference === 'mild'
-      ? 100 - Math.abs(tempC - 21) * 7
-      : 82;
-  return clamp(fit * 0.72 + (100 - rainProb) * 0.28);
-}
-
-function trendScore(trendBias) {
-  return clamp(62 - trendBias * 100);
-}
-
-function paceScore(pace, crowding) {
-  if (pace === 'slow') return clamp(100 - crowding * 0.85);
-  if (pace === 'fast') return clamp(60 + (100 - crowding) * 0.25);
-  return clamp(72 + (100 - crowding) * 0.12);
 }
 
 export function searchFlights({
@@ -156,79 +164,69 @@ export function searchFlights({
   maxStops,
   travelTime = 'all',
   minComfortScore,
-  travellers,
-  cabinClass
+  travellers = 1,
+  cabinClass = 'economy'
 }) {
   const fromDate = parseISO(dateFrom);
   const toDate = parseISO(dateTo);
   const stayDays = differenceInCalendarDays(toDate, fromDate);
+  const month = fromDate.getMonth() + 1;
 
-  const isEuropeWeekendRule =
-    getDay(fromDate) === 5 && getDay(toDate) === 1 && fromDate.getFullYear() <= 2030 && toDate.getFullYear() <= 2030;
-
+  const isEuropeWeekendRule = getDay(fromDate) === 5 && getDay(toDate) === 1 && fromDate.getFullYear() <= 2030 && toDate.getFullYear() <= 2030;
   const isAsiaLongStayRule = region === 'asia' && stayDays >= 20;
 
-  let list = DESTINATIONS.filter((d) => region === 'all' || d.region === region);
-  list = list.filter((d) => destinationMatchesCountry(d, country));
-  list = list.filter((d) => destinationMatchesQuery(d, destinationQuery));
+  const safeOrigin = String(origin || '').toUpperCase().trim();
+  let list = ROUTES.filter((r) => !safeOrigin || r.origin === safeOrigin);
+  list = list.filter((r) => region === 'all' || !region || r.region === region);
+  list = list.filter((r) => destinationMatchesCountry(r, country));
+  list = list.filter((r) => destinationMatchesQuery(r, destinationQuery));
 
-  if (isEuropeWeekendRule) {
-    list = list.filter((d) => d.region === 'eu');
-  }
+  if (isEuropeWeekendRule) list = list.filter((r) => r.region === 'eu');
+  if (isAsiaLongStayRule) list = list.filter((r) => r.region === 'asia');
 
-  if (isAsiaLongStayRule) {
-    list = list.filter((d) => d.region === 'asia');
-  }
-
-  let flights = list.flatMap((d) => {
-    const avg2024 = Math.round(d.avg2024 * travellers);
-    const highSeasonAvg = Math.round(d.highSeasonAvg * travellers);
+  let flights = list.flatMap((route) => {
+    const avg2024 = Math.round(computeAvg2024(route) * travellers);
+    const highSeasonAvg = Math.round(computeHighSeasonAvg(route) * travellers);
     const bookingLink = buildBookingLink({
-      origin,
-      destinationIata: d.iata,
+      origin: route.origin,
+      destinationIata: route.destinationIata,
       dateFrom,
       dateTo,
       travellers,
       cabinClass
     });
 
-    return buildRouteVariants(d, origin, dateFrom, dateTo, travellers, cabinClass).map((variant) => {
-      const cheaperThan2024 = variant.price < avg2024;
-      const cheaperThanHighSeason = variant.price < highSeasonAvg;
-      const departureHour = seededInt(`${origin}-${d.iata}-${dateFrom}-${variant.stopCount}-dep`, 24);
-      const arrivalHour = Math.round((departureHour + variant.durationHours) % 24);
-      const isNightFlight = departureHour >= 22 || departureHour <= 5;
+    return buildRouteVariants(route, route.origin, dateFrom, dateTo, travellers, cabinClass, month).map((variant) => {
       const comfortScore = computeComfortScore({
         stopCount: variant.stopCount,
-        durationHours: variant.durationHours,
-        price: variant.price,
-        avg2024
+        isNightFlight: variant.isNightFlight,
+        departureHour: variant.departureHour,
+        route
       });
+      const savingVs2024 = computeSavingVs2024(variant.price, avg2024);
+
       return {
-        id: `${origin}-${d.iata}-${dateFrom}-${dateTo}-${travellers}-${cabinClass}-${variant.stopCount}`,
-        origin,
-        destination: d.city,
-        destinationIata: d.iata,
-        region: d.region,
-        area: d.area,
-        climate: d.climate,
+        id: `${route.origin}-${route.destinationIata}-${dateFrom}-${dateTo}-${travellers}-${cabinClass}-${variant.stopCount}`,
+        origin: route.origin,
+        destination: route.destinationName,
+        destinationIata: route.destinationIata,
+        region: route.region,
+        area: route.decisionMetadata?.area || route.region,
+        climate: route.decisionMetadata?.climateProfile || 'mixed',
+        country: route.country,
         price: variant.price,
         avg2024,
         highSeasonAvg,
-        cheaperThan2024,
-        cheaperThanHighSeason,
-        savingVs2024: avg2024 - variant.price,
+        cheaperThan2024: variant.price < avg2024,
+        cheaperThanHighSeason: variant.price < highSeasonAvg,
+        savingVs2024,
         stopCount: variant.stopCount,
-        stopLabel: formatStops(variant.stopCount),
+        stopLabel: variant.stopLabel,
         isDirect: variant.stopCount === 0,
-        durationHours: variant.durationHours,
-        departureHour,
-        arrivalHour,
-        departureTimeLabel: formatHour(departureHour),
-        arrivalTimeLabel: formatHour(arrivalHour),
-        isNightFlight,
+        departureHour: variant.departureHour,
+        departureTimeLabel: variant.departureTimeLabel,
+        isNightFlight: variant.isNightFlight,
         comfortScore,
-        routeType: variant.routeType,
         link: bookingLink,
         bookingLink
       };
@@ -241,29 +239,14 @@ export function searchFlights({
     flights = flights.filter((f) => f.stopCount > 0);
   }
 
-  if (Number.isFinite(maxStops)) {
-    flights = flights.filter((f) => f.stopCount <= maxStops);
-  }
+  if (Number.isFinite(maxStops)) flights = flights.filter((f) => f.stopCount <= maxStops);
+  if (travelTime === 'day') flights = flights.filter((f) => !f.isNightFlight);
+  if (travelTime === 'night') flights = flights.filter((f) => f.isNightFlight);
+  if (Number.isFinite(minComfortScore)) flights = flights.filter((f) => f.comfortScore >= minComfortScore);
+  if (cheapOnly) flights = flights.filter((f) => f.cheaperThan2024 && f.cheaperThanHighSeason);
+  if (Number.isFinite(maxBudget) && maxBudget > 0) flights = flights.filter((f) => f.price <= maxBudget);
 
-  if (travelTime === 'day') {
-    flights = flights.filter((f) => !f.isNightFlight);
-  } else if (travelTime === 'night') {
-    flights = flights.filter((f) => f.isNightFlight);
-  }
-
-  if (Number.isFinite(minComfortScore)) {
-    flights = flights.filter((f) => f.comfortScore >= minComfortScore);
-  }
-
-  if (cheapOnly) {
-    flights = flights.filter((f) => f.cheaperThan2024 && f.cheaperThanHighSeason);
-  }
-
-  if (Number.isFinite(maxBudget) && maxBudget > 0) {
-    flights = flights.filter((f) => f.price <= maxBudget);
-  }
-
-  flights.sort((a, b) => b.savingVs2024 - a.savingVs2024);
+  flights.sort((a, b) => a.price - b.price || b.savingVs2024 - a.savingVs2024 || a.id.localeCompare(b.id));
 
   const alerts = flights
     .filter((f) => f.area === 'japan' || f.area === 'sea')
@@ -286,6 +269,25 @@ export function searchFlights({
   };
 }
 
+function climateScore(preference, climateProfile) {
+  const pref = normalizeText(preference || 'indifferent');
+  const profile = normalizeText(climateProfile || 'mixed');
+  if (pref === 'indifferent') return 76;
+  if (pref === 'warm') return profile === 'warm' ? 95 : profile === 'mild' || profile === 'mixed' ? 78 : 55;
+  if (pref === 'cold') return profile === 'cold' ? 95 : profile === 'mild' || profile === 'mixed' ? 76 : 52;
+  if (pref === 'mild') return profile === 'mild' ? 94 : profile === 'mixed' ? 82 : 64;
+  return 72;
+}
+
+function paceScore(pace, paceProfile) {
+  const target = normalizeText(pace || 'normal');
+  const profile = normalizeText(paceProfile || 'normal');
+  if (target === profile) return 92;
+  if ((target === 'slow' && profile === 'normal') || (target === 'normal' && profile === 'slow')) return 75;
+  if ((target === 'fast' && profile === 'normal') || (target === 'normal' && profile === 'fast')) return 78;
+  return 58;
+}
+
 export function decideTrips({
   origin,
   region = 'all',
@@ -293,19 +295,19 @@ export function decideTrips({
   dateFrom,
   dateTo,
   tripLengthDays,
+  budget,
   budgetMax,
   travellers = 1,
   cabinClass = 'economy',
-  mood = 'relax',
   climatePreference = 'indifferent',
   pace = 'normal',
   avoidOvertourism = false,
   packageCount = 3
 }) {
-  const safeMood = String(mood || 'relax').toLowerCase();
-  const safePreference = String(climatePreference || 'indifferent').toLowerCase();
-  const safePace = String(pace || 'normal').toLowerCase();
-  const weights = MOOD_WEIGHTS[safeMood] || MOOD_WEIGHTS.relax;
+  const budgetCap = Number.isFinite(Number(budget)) ? Number(budget) : Number(budgetMax);
+  const safeBudget = Number.isFinite(budgetCap) && budgetCap > 0 ? budgetCap : 1200;
+  const safeDays = Math.max(1, Number(tripLengthDays) || 5);
+  const safePackages = packageCount === 4 ? 4 : 3;
 
   const baseSearch = searchFlights({
     origin,
@@ -324,100 +326,64 @@ export function decideTrips({
     cabinClass
   });
 
-  const groupedByDestination = new Map();
-  for (const flight of baseSearch.flights || []) {
-    const prev = groupedByDestination.get(flight.destinationIata);
-    if (!prev || flight.price < prev.price) groupedByDestination.set(flight.destinationIata, flight);
+  const bestByDestination = new Map();
+  for (const flight of baseSearch.flights) {
+    const previous = bestByDestination.get(flight.destinationIata);
+    if (!previous || flight.price < previous.price) bestByDestination.set(flight.destinationIata, flight);
   }
 
-  const safePackageCount = packageCount === 4 ? 4 : 3;
-
-  const candidates = Array.from(groupedByDestination.values())
+  const recommendations = Array.from(bestByDestination.values())
     .map((flight) => {
-      const extra = DESTINATION_DATA[flight.destinationIata] || {
-        dailyCost: 70,
-        baseCrowding: 55,
-        overTourism: 45,
-        seasonality: 74,
-        trendBias: 0,
-        climateTemp: 22,
-        climateRain: 20
-      };
-
-      const hotelEstimate = Math.round((extra.dailyCost * 0.95 + 18) * tripLengthDays);
-      const dailyCost = Math.round(extra.dailyCost * travellers);
-      const buffer = Math.round((flight.price + hotelEstimate + dailyCost * tripLengthDays) * 0.1);
-      const totalCost = flight.price + hotelEstimate + dailyCost * tripLengthDays + buffer;
-
-      const priceNorm = clamp(100 - (totalCost / Math.max(1, budgetMax)) * 100);
-      const climateNorm = climateFitScore(safePreference, extra.climateTemp, extra.climateRain);
-      const crowdingNorm = clamp(100 - extra.baseCrowding);
-      const trendNorm = trendScore(extra.trendBias);
-      const paceNorm = paceScore(safePace, extra.baseCrowding);
-      const comfortNorm = clamp(flight.comfortScore);
-
-      let score =
-        priceNorm * weights.price +
-        climateNorm * weights.climate +
-        crowdingNorm * weights.crowding +
-        trendNorm * weights.trend +
-        paceNorm * weights.pace +
-        comfortNorm * weights.comfort;
-
-      if (avoidOvertourism && extra.overTourism > 65) score -= 10;
-      if (totalCost > budgetMax) score -= 8;
-      if (priceNorm > 70 && climateNorm > 74 && crowdingNorm > 58) score += 5;
-
-      score = clamp(Math.round(score * 10) / 10);
-
-      const reasons = [
-        { text: 'Costo totale competitivo sul tuo budget.', value: priceNorm },
-        { text: 'Clima favorevole nel periodo selezionato.', value: climateNorm },
-        { text: 'Affollamento gestibile per il tipo di viaggio.', value: crowdingNorm },
-        { text: 'Trend prezzo stabile o in miglioramento.', value: trendNorm },
-        { text: 'Esperienza di viaggio coerente con il ritmo scelto.', value: paceNorm }
-      ]
-        .sort((a, b) => b.value - a.value)
-        .slice(0, 3)
-        .map((x) => x.text);
+      const route = ROUTES.find((r) => r.origin === flight.origin && r.destinationIata === flight.destinationIata);
+      const decision = route?.decisionMetadata || {};
+      const overtourism = Number(decision.overtourismIndex || 50);
+      const estimatedDaily = 58 + Math.round((overtourism / 100) * 38);
+      const groundCost = estimatedDaily * safeDays * Math.max(1, travellers);
+      const totalCost = flight.price + groundCost;
+      const budgetScore = clamp(100 - (totalCost / safeBudget) * 100);
+      const cScore = climateScore(climatePreference, decision.climateProfile);
+      const pScore = paceScore(pace, decision.paceProfile);
+      const overtourismScore = clamp(100 - overtourism);
+      let travelScore = budgetScore * 0.34 + cScore * 0.24 + pScore * 0.2 + overtourismScore * 0.1 + clamp(flight.comfortScore) * 0.12;
+      if (avoidOvertourism && overtourism > 65) travelScore -= 14;
+      if (totalCost > safeBudget) travelScore -= 10;
+      travelScore = Math.round(clamp(travelScore) * 10) / 10;
 
       return {
         ...flight,
-        travelScore: score,
-        trendScore: trendNorm,
+        travelScore,
         climateInPeriod: {
-          avgTempC: extra.climateTemp,
-          rainProb: extra.climateRain,
-          comfort: climateNorm > 75 ? 'high' : climateNorm > 55 ? 'medium' : 'low'
+          preference: climatePreference,
+          profile: decision.climateProfile || 'mixed'
         },
         crowding: {
-          index: extra.baseCrowding,
-          overTourism: extra.overTourism,
-          seasonality: extra.seasonality
+          overTourism: overtourism
         },
         costBreakdown: {
           flight: flight.price,
-          hotelEstimate,
-          dailyCost: dailyCost * tripLengthDays,
-          buffer,
+          groundEstimate: groundCost,
           total: totalCost
         },
-        reasons
+        reasons: [
+          budgetScore >= 60 ? 'Compatibile con il budget impostato.' : 'Prezzo vicino al limite del budget.',
+          cScore >= 75 ? 'Clima coerente con la tua preferenza.' : 'Clima meno allineato alla preferenza.',
+          pScore >= 75 ? 'Ritmo del viaggio adatto al profilo selezionato.' : 'Ritmo meno adatto al profilo selezionato.'
+        ]
       };
     })
-    .filter((item) => item.costBreakdown.total <= budgetMax * 1.15)
-    .sort((a, b) => b.travelScore - a.travelScore || a.costBreakdown.total - b.costBreakdown.total)
-    .slice(0, safePackageCount);
+    .filter((item) => item.costBreakdown.total <= safeBudget * 1.2)
+    .sort((a, b) => b.travelScore - a.travelScore || a.price - b.price)
+    .slice(0, safePackages);
 
   return {
     meta: {
-      count: candidates.length,
+      count: recommendations.length,
       origin,
-      budgetMax,
-      tripLengthDays,
-      packageCount: safePackageCount
+      budgetMax: safeBudget,
+      tripLengthDays: safeDays,
+      packageCount: safePackages
     },
-    recommendations: candidates
+    recommendations
   };
 }
 
@@ -427,26 +393,114 @@ export function getDestinationSuggestions({ query, region = 'all', country, limi
 
   const seen = new Set();
   const out = [];
-
-  for (const d of DESTINATIONS) {
-    if (region !== 'all' && d.region !== region) continue;
-    if (!destinationMatchesCountry(d, country)) continue;
-    if (!destinationMatchesQuery(d, q)) continue;
+  for (const route of ROUTES) {
+    if (region !== 'all' && route.region !== region) continue;
+    if (!destinationMatchesCountry(route, country)) continue;
+    if (!destinationMatchesQuery(route, q)) continue;
 
     const candidates = [
-      { type: 'city', value: d.city, label: `${d.city} (${d.country})` },
-      { type: 'country', value: d.country, label: `${d.country}` },
-      { type: 'iata', value: d.iata, label: `${d.iata} (${d.city})` }
+      { type: 'city', value: route.destinationName, label: `${route.destinationName} (${route.country})` },
+      { type: 'country', value: route.country, label: route.country },
+      { type: 'iata', value: route.destinationIata, label: `${route.destinationIata} (${route.destinationName})` }
     ];
 
-    for (const c of candidates) {
-      const key = `${c.type}:${normalizeText(c.value)}`;
+    for (const candidate of candidates) {
+      const key = `${candidate.type}:${normalizeText(candidate.value)}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      out.push(c);
+      out.push(candidate);
       if (out.length >= limit) return out;
     }
   }
-
   return out;
+}
+
+export async function searchFlightsWithIntelligence(input, { includeIntelligence = true, maxDeals = 24 } = {}) {
+  const base = searchFlights(input);
+  if (!includeIntelligence || !Array.isArray(base?.flights) || base.flights.length === 0) {
+    return {
+      ...base,
+      intelligence: {
+        enabled: false,
+        processed: 0
+      }
+    };
+  }
+
+  const safeMaxDeals = Math.max(1, Math.min(60, Number(maxDeals) || 24));
+  const rankedBySavings = [...base.flights].sort((a, b) => b.savingVs2024 - a.savingVs2024);
+  const candidateIds = new Set(rankedBySavings.slice(0, safeMaxDeals).map((f) => f.id));
+
+  const enrichedFlights = await Promise.all(
+    base.flights.map(async (flight) => {
+      if (!candidateIds.has(flight.id)) return { ...flight };
+      try {
+        const deal = await detectDeal({
+          origin: flight.origin,
+          destination: flight.destinationIata,
+          date: input.dateFrom,
+          price: flight.price
+        });
+        return {
+          ...flight,
+          intelligence: {
+            deal_score: deal.deal_score,
+            deal_type: deal.deal_type,
+            confidence: deal.confidence,
+            deviation_pct: Number(deal?.deviation?.percent || 0)
+          }
+        };
+      } catch (error) {
+        logger.warn({ err: error, flightId: flight.id }, 'search_intelligence_enrichment_failed');
+        return { ...flight };
+      }
+    })
+  );
+
+  const dealCount = enrichedFlights.filter((f) => Number.isFinite(f?.intelligence?.deal_score)).length;
+  return {
+    ...base,
+    flights: enrichedFlights,
+    intelligence: {
+      enabled: true,
+      processed: dealCount
+    }
+  };
+}
+
+export async function decideTripsWithIntelligence(input, options = {}) {
+  const base = decideTrips(input);
+  if (!Array.isArray(base?.recommendations) || base.recommendations.length === 0) return base;
+  const safeDate = String(input?.dateFrom || new Date().toISOString().slice(0, 10)).slice(0, 10);
+  const recommendations = await Promise.all(
+    base.recommendations.map(async (item) => {
+      try {
+        const deal = await detectDeal({
+          origin: item.origin,
+          destination: item.destinationIata,
+          date: safeDate,
+          price: item.price
+        });
+        return {
+          ...item,
+          intelligence: {
+            deal_score: deal.deal_score,
+            deal_type: deal.deal_type,
+            confidence: deal.confidence
+          }
+        };
+      } catch (error) {
+        logger.warn({ err: error, destinationIata: item.destinationIata }, 'trip_intelligence_enrichment_failed');
+        return item;
+      }
+    })
+  );
+  return {
+    ...base,
+    recommendations,
+    intelligence: {
+      enabled: options?.includeIntelligence !== false,
+      processed: recommendations.filter((r) => Number.isFinite(r?.intelligence?.deal_score)).length
+    }
+  };
 }

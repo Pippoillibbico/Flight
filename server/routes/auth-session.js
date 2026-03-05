@@ -1,0 +1,322 @@
+import { Router } from 'express';
+
+export function buildAuthSessionRouter({
+  authGuard,
+  csrfGuard,
+  withDb,
+  readDb,
+  logAuthEvent,
+  userIsLocked,
+  onboardingCompleteSchema,
+  revokeJwt,
+  getRefreshTokenFromCookie,
+  verifyRefreshToken,
+  revokeRefreshFamily,
+  ACCESS_COOKIE_NAME,
+  REFRESH_COOKIE_NAME,
+  authCookieOptions,
+  ACCESS_COOKIE_TTL_MS,
+  REFRESH_COOKIE_TTL_MS,
+  AUTH_COOKIE_DOMAIN,
+  sendMachineError,
+  refreshCsrfGuard,
+  logger,
+  rotateRefreshSession,
+  signRefreshToken,
+  signAccessToken,
+  speakeasy,
+  QRCode,
+  mfaCodeSchema
+}) {
+  const router = Router();
+
+  router.get('/auth/me', authGuard, async (req, res) => {
+    let user = null;
+    await withDb(async (db) => {
+      user = db.users.find((u) => u.id === req.user.sub) ?? null;
+      return null;
+    });
+
+    if (!user) return res.status(404).json({ error: 'User not found.' });
+    return res.json({
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        mfaEnabled: Boolean(user.mfaEnabled),
+        isPremium: Boolean(user.isPremium),
+        onboardingDone: Boolean(user.onboardingDone),
+        authChannel: String(user.authChannel || 'direct')
+      },
+      session: {
+        cookie: req.authSource === 'cookie',
+        csrfToken: req.user?.csrf || null
+      },
+      security: {
+        lockUntil: user.lockUntil || null,
+        failedLoginCount: Number.isFinite(user.failedLoginCount) ? user.failedLoginCount : 0,
+        isLocked: userIsLocked(user)
+      }
+    });
+  });
+
+  router.post('/user/onboarding/complete', authGuard, csrfGuard, async (req, res) => {
+    const parsed = onboardingCompleteSchema.safeParse(req.body || {});
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid onboarding payload.' });
+
+    let updated = null;
+    await withDb(async (db) => {
+      const user = db.users.find((item) => item.id === req.user.sub);
+      if (!user) return db;
+      user.onboardingDone = true;
+      user.onboardingProfile = {
+        ...(user.onboardingProfile || {}),
+        ...parsed.data,
+        completedAt: new Date().toISOString()
+      };
+      updated = user;
+      return db;
+    });
+    if (!updated) return res.status(404).json({ error: 'User not found.' });
+    return res.json({ ok: true, user: { onboardingDone: true, onboardingProfile: updated.onboardingProfile } });
+  });
+
+  router.post('/billing/upgrade-demo', authGuard, csrfGuard, async (req, res) => {
+    let user = null;
+    await withDb(async (db) => {
+      user = db.users.find((item) => item.id === req.user.sub) || null;
+      if (!user) return db;
+      user.isPremium = true;
+      user.premiumSince = new Date().toISOString();
+      return db;
+    });
+    if (!user) return res.status(404).json({ error: 'User not found.' });
+    await logAuthEvent({ userId: user.id, email: user.email, type: 'billing_upgrade_demo', success: true, req });
+    return res.json({ ok: true, isPremium: true });
+  });
+
+  router.post('/auth/logout', authGuard, csrfGuard, async (req, res) => {
+    await revokeJwt(req.user);
+    const refreshCookie = getRefreshTokenFromCookie(req);
+    if (refreshCookie) {
+      try {
+        const refreshPayload = verifyRefreshToken(refreshCookie);
+        await revokeRefreshFamily(refreshPayload.family, 'logout');
+      } catch {}
+    }
+    res.clearCookie(ACCESS_COOKIE_NAME, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: authCookieOptions(req, ACCESS_COOKIE_TTL_MS).secure,
+      path: '/',
+      ...(AUTH_COOKIE_DOMAIN ? { domain: AUTH_COOKIE_DOMAIN } : {})
+    });
+    res.clearCookie(REFRESH_COOKIE_NAME, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: authCookieOptions(req, REFRESH_COOKIE_TTL_MS).secure,
+      path: '/',
+      ...(AUTH_COOKIE_DOMAIN ? { domain: AUTH_COOKIE_DOMAIN } : {})
+    });
+    return res.status(204).send();
+  });
+
+  router.post('/auth/refresh', async (req, res) => {
+    const refreshToken = getRefreshTokenFromCookie(req);
+    if (!refreshToken) return res.status(401).json({ error: 'Missing refresh token.' });
+
+    let payload = null;
+    try {
+      payload = verifyRefreshToken(refreshToken);
+    } catch {
+      return res.status(401).json({ error: 'Invalid refresh token.' });
+    }
+
+    const csrfCheck = refreshCsrfGuard(req, payload);
+    if (!csrfCheck.ok) return sendMachineError(req, res, 403, csrfCheck.code || 'csrf_failed');
+
+    const nowSec = Math.floor(Date.now() / 1000);
+    const db = await readDb();
+    const session = (db.refreshSessions || []).find((item) => item.jti === payload.jti && item.userId === payload.sub);
+
+    if (!session || session.revokedAt || (Number.isFinite(session.exp) && session.exp <= nowSec)) {
+      if (payload.family) await revokeRefreshFamily(payload.family, 'reuse_or_invalid');
+      logger.warn(
+        {
+          request_id: req.id || null,
+          method: req.method,
+          path: req.originalUrl || req.url,
+          status: 401,
+          user_id: payload.sub || null,
+          family: payload.family || null
+        },
+        'security_refresh_reuse_or_invalid'
+      );
+      await logAuthEvent({
+        userId: payload.sub || null,
+        email: '',
+        type: 'refresh_rejected',
+        success: false,
+        req,
+        detail: 'missing/revoked/expired refresh session'
+      });
+      return res.status(401).json({ error: 'Refresh session invalidated.' });
+    }
+
+    let user = null;
+    await withDb(async (state) => {
+      user = state.users.find((item) => item.id === payload.sub) || null;
+      return null;
+    });
+    if (!user) return res.status(401).json({ error: 'User not found.' });
+
+    const nextRefreshToken = signRefreshToken({ sub: user.id, family: payload.family, csrf: payload.csrf });
+    const nextPayload = verifyRefreshToken(nextRefreshToken);
+    const rotated = await rotateRefreshSession({
+      oldJti: payload.jti,
+      newJti: nextPayload.jti,
+      userId: user.id,
+      family: payload.family,
+      exp: Number(nextPayload.exp || 0)
+    });
+    if (!rotated) {
+      await revokeRefreshFamily(payload.family, 'reuse_detected');
+      logger.warn(
+        {
+          request_id: req.id || null,
+          method: req.method,
+          path: req.originalUrl || req.url,
+          status: 401,
+          user_id: payload.sub || null,
+          family: payload.family || null
+        },
+        'security_refresh_reuse_detected'
+      );
+      return res.status(401).json({ error: 'Refresh token reuse detected. Session family revoked.' });
+    }
+
+    const authChannel = String(payload.authChannel || user.authChannel || 'direct');
+    user.authChannel = authChannel;
+    const accessToken = signAccessToken({
+      sub: user.id,
+      email: user.email,
+      name: user.name,
+      csrf: payload.csrf,
+      amr: user.mfaEnabled ? ['pwd', 'otp'] : ['pwd'],
+      authChannel
+    });
+    res.cookie(ACCESS_COOKIE_NAME, accessToken, authCookieOptions(req, ACCESS_COOKIE_TTL_MS));
+    res.cookie(REFRESH_COOKIE_NAME, nextRefreshToken, authCookieOptions(req, REFRESH_COOKIE_TTL_MS));
+    await logAuthEvent({
+      userId: user.id,
+      email: user.email,
+      type: 'refresh_rotated',
+      success: true,
+      req
+    });
+    return res.json({
+      token: accessToken,
+      session: { cookie: true, csrfToken: payload.csrf },
+      user: { id: user.id, name: user.name, email: user.email, mfaEnabled: Boolean(user.mfaEnabled), isPremium: Boolean(user.isPremium), onboardingDone: Boolean(user.onboardingDone), authChannel }
+    });
+  });
+
+  router.post('/auth/mfa/setup', authGuard, csrfGuard, async (req, res) => {
+    let user = null;
+    const issuer = process.env.MFA_ISSUER || 'FlightSuite';
+    const generated = speakeasy.generateSecret({
+      name: req.user?.email || 'flight-user',
+      issuer
+    });
+    const tempSecret = generated.base32;
+    await withDb(async (db) => {
+      user = db.users.find((item) => item.id === req.user.sub) || null;
+      if (!user) return db;
+      user.mfaTempSecret = tempSecret;
+      user.mfaTempCreatedAt = new Date().toISOString();
+      return db;
+    });
+    if (!user) return res.status(404).json({ error: 'User not found.' });
+
+    const otpAuthUrl = generated.otpauth_url;
+    const qrDataUrl = await QRCode.toDataURL(otpAuthUrl);
+    await logAuthEvent({
+      userId: user.id,
+      email: user.email,
+      type: 'mfa_setup_started',
+      success: true,
+      req
+    });
+    return res.json({ qrDataUrl, manualKey: tempSecret });
+  });
+
+  router.post('/auth/mfa/enable', authGuard, csrfGuard, async (req, res) => {
+    const parsed = mfaCodeSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid MFA code payload.' });
+
+    let user = null;
+    let success = false;
+    await withDb(async (db) => {
+      user = db.users.find((item) => item.id === req.user.sub) || null;
+      if (!user || !user.mfaTempSecret) return db;
+      const valid = speakeasy.totp.verify({
+        secret: user.mfaTempSecret,
+        encoding: 'base32',
+        token: parsed.data.code,
+        window: 1
+      });
+      if (!valid) return db;
+      user.mfaSecret = user.mfaTempSecret;
+      user.mfaTempSecret = null;
+      user.mfaTempCreatedAt = null;
+      user.mfaEnabled = true;
+      success = true;
+      return db;
+    });
+
+    if (!user) return res.status(404).json({ error: 'User not found.' });
+    if (!success) {
+      await logAuthEvent({ userId: user.id, email: user.email, type: 'mfa_enable_failed', success: false, req });
+      return res.status(400).json({ error: 'Invalid MFA code.' });
+    }
+
+    await logAuthEvent({ userId: user.id, email: user.email, type: 'mfa_enabled', success: true, req });
+    return res.json({ ok: true, mfaEnabled: true });
+  });
+
+  router.post('/auth/mfa/disable', authGuard, csrfGuard, async (req, res) => {
+    const parsed = mfaCodeSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid MFA code payload.' });
+
+    let user = null;
+    let success = false;
+    await withDb(async (db) => {
+      user = db.users.find((item) => item.id === req.user.sub) || null;
+      if (!user || !user.mfaEnabled || !user.mfaSecret) return db;
+      const valid = speakeasy.totp.verify({
+        secret: user.mfaSecret,
+        encoding: 'base32',
+        token: parsed.data.code,
+        window: 1
+      });
+      if (!valid) return db;
+      user.mfaEnabled = false;
+      user.mfaSecret = null;
+      user.mfaTempSecret = null;
+      user.mfaTempCreatedAt = null;
+      success = true;
+      return db;
+    });
+
+    if (!user) return res.status(404).json({ error: 'User not found.' });
+    if (!success) {
+      await logAuthEvent({ userId: user.id, email: user.email, type: 'mfa_disable_failed', success: false, req });
+      return res.status(400).json({ error: 'Invalid MFA code.' });
+    }
+
+    await logAuthEvent({ userId: user.id, email: user.email, type: 'mfa_disabled', success: true, req });
+    return res.json({ ok: true, mfaEnabled: false });
+  });
+
+  return router;
+}

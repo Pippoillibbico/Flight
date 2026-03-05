@@ -26,7 +26,9 @@ const LandingSectionPropsSchema = z
         })
         .passthrough()
     ),
-    landingContactCards: z.array(z.object({ icon: z.string(), label: z.string(), value: z.string(), href: z.string().optional() }))
+    landingContactCards: z.array(z.object({ icon: z.string(), label: z.string(), value: z.string(), href: z.string().optional() })),
+    onHeroPrimaryCta: z.function().optional(),
+    onHeroSecondaryCta: z.function().optional()
   })
   .passthrough();
 
@@ -42,7 +44,9 @@ function LandingSection(props) {
     landingFeatureCards,
     landingValueCards,
     landingPricingPlans,
-    landingContactCards
+    landingContactCards,
+    onHeroPrimaryCta,
+    onHeroSecondaryCta
   } = validateProps(LandingSectionPropsSchema, props, 'LandingSection');
   return (
 <main className={`landing-shell${darkMode ? ' landing-dark' : ''}`}>
@@ -138,13 +142,13 @@ function LandingSection(props) {
             <h1 className="landing-hero-title">{t('landingHeroTitle')}</h1>
             <p className="hero-sub">{t('landingHeroSub')}</p>
             <div className="landing-hero-cta">
-              <button type="button" className="landing-cta-primary" onClick={() => setShowLandingPage(false)}>
+              <button type="button" className="landing-cta-primary" onClick={() => (onHeroPrimaryCta ? onHeroPrimaryCta() : setShowLandingPage(false))}>
                 {t('landingHeroCta')}
               </button>
               <button
                 type="button"
                 className="landing-cta-ghost"
-                onClick={() => scrollToSection('landing-features')}
+                onClick={() => (onHeroSecondaryCta ? onHeroSecondaryCta() : scrollToSection('landing-features'))}
               >
                 {t('landingHeroCtaSub')}
               </button>
@@ -189,7 +193,7 @@ function LandingSection(props) {
                   <span className="lhc-route-sep">to</span>
                   <span>NYC</span>
                 </span>
-                <span className="lhc-badge lhc-badge--blue">{t('landingStatsAI')}</span>
+                <span className="lhc-badge lhc-badge--blue">{t('landingHeroCardBadge')}</span>
               </div>
               <div className="lhc-price">EUR 312</div>
               <div className="lhc-meta">28 Mar - 4 Apr | Economy</div>

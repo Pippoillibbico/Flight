@@ -29,17 +29,30 @@ import { buildUsageRouter } from './routes/usage.js';
 import { buildFreeFoundationRouter } from './routes/free-foundation.js';
 import { buildDealEngineRouter } from './routes/deal-engine.js';
 import { buildDiscoveryRouter } from './routes/discovery.js';
+import { buildAlertsRouter } from './routes/alerts.js';
+import { buildSystemRouter } from './routes/system.js';
+import { buildSearchRouter } from './routes/search.js';
+import { buildAuthSessionRouter } from './routes/auth-session.js';
 import { runNightlyFreePrecompute } from './jobs/free-precompute.js';
 import { runFreeAlertWorkerOnce } from './jobs/free-alert-worker.js';
 import { runNightlyRouteBaselineJob } from './jobs/route-baselines.js';
 import { runDiscoveryAlertWorkerOnce } from './jobs/discovery-alert-worker.js';
-import { getCacheClient } from './lib/free-cache.js';
+import { runPriceIngestionWorkerOnce } from './lib/price-ingestion-worker.js';
+import { getPriceDatasetStatus, initPriceHistoryStore } from './lib/price-history-store.js';
+import { closeCacheClient, getCacheClient } from './lib/free-cache.js';
+import { createFlightProviderRegistry } from './lib/flight-provider.js';
 import { requestIdMiddleware } from './middleware/request-id.js';
-import { errorHandler } from './middleware/error-handler.js';
+import { buildErrorPayload, errorHandler, getErrorCode, getHumanErrorMessage } from './middleware/error-handler.js';
 import { logger, requestLogger } from './lib/logger.js';
 
 dotenv.config();
-await initSqlDb();
+try {
+  await initSqlDb();
+} catch (error) {
+  logger.fatal({ err: error }, 'startup_init_sql_db_failed');
+  process.exit(1);
+}
+await initPriceHistoryStore();
 
 // Wire Postgres pool into saas-db when DATABASE_URL is configured
 const pgPool = process.env.DATABASE_URL ? new pg.Pool({ connectionString: process.env.DATABASE_URL }) : null;
@@ -71,56 +84,61 @@ const DEAL_BASELINE_CRON = process.env.DEAL_BASELINE_CRON || '10 1 * * *';
 const DEAL_BASELINE_CRON_TIMEZONE = process.env.DEAL_BASELINE_CRON_TIMEZONE || FREE_JOBS_TIMEZONE;
 const DISCOVERY_ALERT_WORKER_CRON = process.env.DISCOVERY_ALERT_WORKER_CRON || '*/20 * * * *';
 const DISCOVERY_ALERT_WORKER_TIMEZONE = process.env.DISCOVERY_ALERT_WORKER_TIMEZONE || FREE_JOBS_TIMEZONE;
+const PRICE_INGEST_WORKER_CRON = process.env.PRICE_INGEST_WORKER_CRON || '*/5 * * * *';
+const PRICE_INGEST_WORKER_TIMEZONE = process.env.PRICE_INGEST_WORKER_TIMEZONE || FREE_JOBS_TIMEZONE;
 const JSON_BODY_LIMIT = String(process.env.BODY_JSON_LIMIT || '256kb').trim() || '256kb';
+const BUILD_VERSION = String(process.env.BUILD_VERSION || process.env.npm_package_version || '0.0.0-dev').trim();
 const OUTBOUND_CLICK_SECRET = String(process.env.OUTBOUND_CLICK_SECRET || process.env.JWT_SECRET || 'dev_outbound_secret').trim();
 const OUTBOUND_CLICK_TTL_SECONDS = Number(process.env.OUTBOUND_CLICK_TTL_SECONDS || 300);
 const ACCESS_COOKIE_NAME = 'flight_access_token';
 const REFRESH_COOKIE_NAME = 'flight_refresh_token';
 const ACCESS_COOKIE_TTL_MS = 15 * 60 * 1000;
 const REFRESH_COOKIE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const AUTH_COOKIE_DOMAIN = String(process.env.AUTH_COOKIE_DOMAIN || '').trim() || null;
 const DEFAULT_CORS_ALLOWLIST = ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:3000', 'http://127.0.0.1:3000'];
-const ENV_CORS_ALLOWLIST = String(process.env.FRONTEND_ORIGIN || process.env.CORS_ALLOWLIST || '')
+const ENV_CORS_ALLOWLIST = String(process.env.CORS_ORIGIN || process.env.FRONTEND_ORIGIN || process.env.CORS_ALLOWLIST || '')
   .split(',')
   .map((entry) => entry.trim())
   .filter(Boolean);
 const CORS_ALLOWLIST = new Set(ENV_CORS_ALLOWLIST.length > 0 ? ENV_CORS_ALLOWLIST : process.env.NODE_ENV === 'production' ? [] : DEFAULT_CORS_ALLOWLIST);
+const RATE_LIMIT_WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW || 60_000);
+const RATE_LIMIT_MAX = Number(process.env.RATE_LIMIT_MAX || process.env.RL_API_PER_MINUTE || 120);
+const CRON_RETRY_ATTEMPTS = Math.max(0, Number(process.env.CRON_RETRY_ATTEMPTS || 1));
+const CRON_RETRY_DELAY_MS = Math.max(0, Number(process.env.CRON_RETRY_DELAY_MS || 1500));
+const SHUTDOWN_TIMEOUT_MS = Math.max(1_000, Number(process.env.SHUTDOWN_TIMEOUT_MS || 12_000));
 
 app.set('trust proxy', 1);
 app.use(requestIdMiddleware);
 app.use(requestLogger);
+app.use((req, res, next) => {
+  res.on('finish', () => {
+    if (![401, 403, 429].includes(res.statusCode)) return;
+    logger.warn(
+      {
+        request_id: req.id || null,
+        method: req.method,
+        path: req.originalUrl || req.url,
+        status: res.statusCode,
+        ip: req.ip || req.socket?.remoteAddress || null
+      },
+      'security_event'
+    );
+  });
+  next();
+});
 app.use((req, res, next) => {
   const originalJson = res.json.bind(res);
   res.json = (body) => {
     if (res.statusCode >= 400 && body && typeof body === 'object' && !Array.isArray(body)) {
       const normalized = { ...body };
       const status = res.statusCode;
-      const rawErrorField = String(normalized.error || '').trim();
-      const rawCode = rawErrorField.toLowerCase();
-      const rawLooksLikeCode = /^[a-z0-9_]+$/.test(rawCode);
-      const code =
-        rawCode === 'limit_exceeded'
-          ? 'limit_exceeded'
-          : rawCode === 'auth_required' || rawCode === 'auth_invalid' || rawCode === 'token_revoked'
-          ? 'auth_required'
-          : rawCode === 'invalid_payload' || rawCode === 'validation_failed'
-          ? 'invalid_payload'
-          : status === 429
-          ? 'limit_exceeded'
-          : status === 401
-          ? 'auth_required'
-          : status === 400
-          ? 'invalid_payload'
-          : status >= 500
-          ? 'internal_error'
-          : 'request_failed';
+      const rawError = String(normalized.error || '').trim();
+      const rawLooksLikeCode = /^[a-z0-9_]+$/i.test(rawError);
+      const code = getErrorCode(rawError || normalized.message || normalized.error, status);
       normalized.error = code;
       if (!normalized.message) {
-        const validationMessage = !rawLooksLikeCode ? rawErrorField : '';
-        if (code === 'limit_exceeded') normalized.message = 'Hai superato il limite del piano questo mese. Upgrade per continuare.';
-        else if (code === 'auth_required') normalized.message = 'Accedi per continuare.';
-        else if (code === 'invalid_payload') normalized.message = validationMessage || 'Controlla i dati inseriti e riprova.';
-        else if (code === 'internal_error') normalized.message = 'Si è verificato un errore interno. Riprova tra poco.';
-        else normalized.message = 'Richiesta non disponibile al momento. Riprova.';
+        const validationMessage = !rawLooksLikeCode ? rawError : '';
+        normalized.message = getHumanErrorMessage(code, validationMessage);
       }
       if (normalized.error && !normalized.request_id) {
         normalized.request_id = req.id || null;
@@ -136,7 +154,9 @@ app.use((req, res, next) => {
   next();
 });
 app.use((req, res, next) => {
-  res.locals.cspNonce = randomUUID().replace(/-/g, '');
+  const accept = String(req.headers.accept || '').toLowerCase();
+  const isHtmlRequest = accept.includes('text/html') && !req.path.startsWith('/api/');
+  res.locals.cspNonce = process.env.NODE_ENV === 'production' && isHtmlRequest ? randomUUID().replace(/-/g, '') : null;
   next();
 });
 app.use(
@@ -150,7 +170,7 @@ app.use(
               defaultSrc: ["'self'"],
               scriptSrc: [
                 "'self'",
-                (_req, res) => `'nonce-${res.locals.cspNonce}'`,
+                (_req, res) => (res.locals.cspNonce ? `'nonce-${res.locals.cspNonce}'` : "'self'"),
                 'https://accounts.google.com',
                 'https://appleid.cdn-apple.com',
                 'https://connect.facebook.net'
@@ -183,50 +203,14 @@ app.use(
   })
 );
 
-function limitExceededPayload(req, resetAt) {
-  return {
-    error: 'limit_exceeded',
-    message: 'Hai superato il limite del piano questo mese. Upgrade per continuare.',
-    reset_at: resetAt,
-    request_id: req.id || null
-  };
-}
-
-function normalizeMachineErrorCode(error, status) {
-  const raw = String(error || '').trim().toLowerCase();
-  if (raw === 'limit_exceeded') return 'limit_exceeded';
-  if (raw === 'auth_required' || raw === 'auth_invalid' || raw === 'token_revoked') return 'auth_required';
-  if (raw === 'invalid_payload' || raw === 'validation_failed') return 'invalid_payload';
-  if (status === 429) return 'limit_exceeded';
-  if (status === 401) return 'auth_required';
-  if (status === 400) return 'invalid_payload';
-  if (status >= 500) return 'internal_error';
-  return 'request_failed';
-}
-
-function humanMessageForCode(code, fallbackMessage) {
-  if (fallbackMessage && String(fallbackMessage).trim()) return String(fallbackMessage).trim();
-  if (code === 'limit_exceeded') return 'Hai superato il limite del piano questo mese. Upgrade per continuare.';
-  if (code === 'auth_required') return 'Accedi per continuare.';
-  if (code === 'invalid_payload') return 'Controlla i dati inseriti e riprova.';
-  if (code === 'internal_error') return 'Si è verificato un errore interno. Riprova tra poco.';
-  return 'Richiesta non disponibile al momento. Riprova.';
-}
-
-function machineErrorPayload(req, error, extra = {}) {
-  const status = Number(extra.status || 400);
-  const code = normalizeMachineErrorCode(error, status);
-  const payload = {
-    error: code,
-    message: humanMessageForCode(code, extra.message),
-    request_id: req.id || null
-  };
-  if (extra.reset_at) payload.reset_at = new Date(extra.reset_at).toISOString();
-  return payload;
-}
-
 function sendMachineError(req, res, status, error, extra = {}) {
-  return res.status(status).json(machineErrorPayload(req, error, { ...extra, status }));
+  const payload = buildErrorPayload(req, {
+    status,
+    error,
+    message: extra.message,
+    resetAt: extra.reset_at || extra.resetAt || null
+  });
+  return res.status(status).json(payload);
 }
 
 function toIsoFromRateLimit(req) {
@@ -237,11 +221,11 @@ function toIsoFromRateLimit(req) {
 }
 
 const standardApiLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  limit: Number(process.env.RL_API_PER_MINUTE || 120),
+  windowMs: RATE_LIMIT_WINDOW_MS,
+  limit: RATE_LIMIT_MAX,
   standardHeaders: true,
   legacyHeaders: false,
-  handler: (req, res) => res.status(429).json(limitExceededPayload(req, toIsoFromRateLimit(req)))
+  handler: (req, res) => sendMachineError(req, res, 429, 'limit_exceeded', { reset_at: toIsoFromRateLimit(req) })
 });
 
 const strictAuthPathLimiter = rateLimit({
@@ -249,7 +233,7 @@ const strictAuthPathLimiter = rateLimit({
   limit: Number(process.env.RL_AUTH_PER_MINUTE || 15),
   standardHeaders: true,
   legacyHeaders: false,
-  handler: (req, res) => res.status(429).json(limitExceededPayload(req, toIsoFromRateLimit(req)))
+  handler: (req, res) => sendMachineError(req, res, 429, 'limit_exceeded', { reset_at: toIsoFromRateLimit(req) })
 });
 
 const moderateDemoLimiter = rateLimit({
@@ -257,7 +241,7 @@ const moderateDemoLimiter = rateLimit({
   limit: Number(process.env.RL_DEMO_PER_MINUTE || 40),
   standardHeaders: true,
   legacyHeaders: false,
-  handler: (req, res) => res.status(429).json(limitExceededPayload(req, toIsoFromRateLimit(req)))
+  handler: (req, res) => sendMachineError(req, res, 429, 'limit_exceeded', { reset_at: toIsoFromRateLimit(req) })
 });
 
 app.use('/api', (req, res, next) => {
@@ -288,28 +272,22 @@ const authLimiter = rateLimit({
   limit: Number(process.env.RL_LOGIN_ATTEMPTS_15M || 12),
   standardHeaders: true,
   legacyHeaders: false,
-  handler: (req, res) => res.status(429).json(limitExceededPayload(req, toIsoFromRateLimit(req)))
+  handler: (req, res) => sendMachineError(req, res, 429, 'limit_exceeded', { reset_at: toIsoFromRateLimit(req) })
 });
 
 const REGION_ENUM = ['all', 'eu', 'asia', 'america', 'oceania'];
 const CABIN_ENUM = ['economy', 'premium', 'business'];
 const CONNECTION_ENUM = ['all', 'direct', 'with_stops'];
 const TRAVEL_TIME_ENUM = ['all', 'day', 'night'];
-const PARTNER_ENUM = ['tde_booking', 'skyscanner', 'google_flights'];
+const EXTERNAL_FLIGHT_PARTNERS_ENABLED = String(process.env.ENABLE_EXTERNAL_FLIGHT_PARTNERS || 'false').trim().toLowerCase() === 'true';
+const flightProviderRegistry = createFlightProviderRegistry({
+  enableExternalPartners: EXTERNAL_FLIGHT_PARTNERS_ENABLED,
+  outboundAllowedHostsEnv: process.env.OUTBOUND_ALLOWED_HOSTS,
+  resolveBookingUrl: ({ origin, destinationIata, dateFrom, dateTo, travellers, cabinClass }) =>
+    buildBookingLink({ origin, destinationIata, dateFrom, dateTo, travellers, cabinClass })
+});
+const PARTNER_ENUM = flightProviderRegistry.allowedPartners;
 const OUTBOUND_SURFACE_ENUM = ['results', 'top_picks', 'compare', 'watchlist', 'insights'];
-const DEFAULT_OUTBOUND_ALLOWED_HOSTS = [
-  'booking.travel-decision-engine.com',
-  'www.skyscanner.com',
-  'www.skyscanner.net',
-  'www.google.com'
-];
-const OUTBOUND_ALLOWED_HOSTS = new Set(
-  String(process.env.OUTBOUND_ALLOWED_HOSTS || '')
-    .split(',')
-    .map((value) => value.trim().toLowerCase())
-    .filter(Boolean)
-    .concat(DEFAULT_OUTBOUND_ALLOWED_HOSTS)
-);
 const COUNTRIES = worldCountries
   .map((country) => ({
     name: country?.name?.common || '',
@@ -583,8 +561,12 @@ const destinationInsightSchema = z
     }
   });
 
+const partnerSchema = z.string().refine((value) => PARTNER_ENUM.includes(String(value || '')), {
+  message: `Unsupported outbound partner. Allowed: ${PARTNER_ENUM.join(', ')}`
+});
+
 const outboundClickSchema = z.object({
-  partner: z.enum(PARTNER_ENUM),
+  partner: partnerSchema,
   url: z.string().url(),
   surface: z.enum(OUTBOUND_SURFACE_ENUM),
   origin: z.string().min(3).max(3),
@@ -601,7 +583,7 @@ const outboundClickSchema = z.object({
 
 const outboundResolveSchema = z
   .object({
-    partner: z.enum(PARTNER_ENUM).default('tde_booking'),
+    partner: partnerSchema.default('tde_booking'),
     surface: z.enum(OUTBOUND_SURFACE_ENUM),
     origin: z.string().min(3).max(3),
     destinationIata: z.string().min(3).max(3),
@@ -682,12 +664,7 @@ function getAuthToken(req) {
 }
 
 function ensureAllowedOutboundUrl(rawUrl) {
-  const candidate = new URL(rawUrl);
-  const host = candidate.hostname.toLowerCase();
-  if (!OUTBOUND_ALLOWED_HOSTS.has(host)) {
-    throw new Error('Outbound host is not allowlisted.');
-  }
-  return candidate.toString();
+  return flightProviderRegistry.ensureAllowedUrl(rawUrl);
 }
 
 function resolveOutboundPartnerUrl({
@@ -702,45 +679,18 @@ function resolveOutboundPartnerUrl({
   utmMedium,
   utmCampaign
 }) {
-  const safeOrigin = String(origin || '').toUpperCase();
-  const safeDestination = String(destinationIata || '').toUpperCase();
-  const safeCabin = String(cabinClass || 'economy').toLowerCase();
-
-  if (partner === 'tde_booking') {
-    return ensureAllowedOutboundUrl(
-      buildBookingLink({
-        origin: safeOrigin,
-        destinationIata: safeDestination,
-        dateFrom,
-        dateTo,
-        travellers,
-        cabinClass: safeCabin
-      })
-    );
-  }
-
-  if (partner === 'skyscanner') {
-    const base = String(process.env.SKYSCANNER_BASE_URL || 'https://www.skyscanner.com/transport/flights');
-    const url = new URL(
-      `${base.replace(/\/$/, '')}/${safeOrigin.toLowerCase()}/${safeDestination.toLowerCase()}/${dateFrom.replaceAll('-', '')}/${dateTo.replaceAll('-', '')}`
-    );
-    url.searchParams.set('adults', String(travellers));
-    url.searchParams.set('cabinclass', safeCabin);
-    if (utmSource) url.searchParams.set('utm_source', utmSource);
-    if (utmMedium) url.searchParams.set('utm_medium', utmMedium);
-    if (utmCampaign) url.searchParams.set('utm_campaign', utmCampaign);
-    return ensureAllowedOutboundUrl(url.toString());
-  }
-
-  const base = String(process.env.GOOGLE_FLIGHTS_BASE_URL || 'https://www.google.com/travel/flights');
-  const url = new URL(base);
-  url.searchParams.set('q', `Flights from ${safeOrigin} to ${safeDestination} ${dateFrom} to ${dateTo}`);
-  url.searchParams.set('hl', 'en');
-  url.searchParams.set('curr', 'EUR');
-  if (utmSource) url.searchParams.set('utm_source', utmSource);
-  if (utmMedium) url.searchParams.set('utm_medium', utmMedium);
-  if (utmCampaign) url.searchParams.set('utm_campaign', utmCampaign);
-  return ensureAllowedOutboundUrl(url.toString());
+  return flightProviderRegistry.resolveOutboundPartnerUrl({
+    partner,
+    origin,
+    destinationIata,
+    dateFrom,
+    dateTo,
+    travellers,
+    cabinClass,
+    utmSource,
+    utmMedium,
+    utmCampaign
+  });
 }
 
 function createOutboundClickToken({ clickId, targetUrl, expiresAt }) {
@@ -753,16 +703,22 @@ function verifyOutboundClickToken({ clickId, targetUrl, expiresAt, clickToken })
   return expected === clickToken;
 }
 
+function isSecureRequest(req) {
+  const forwardedProto = String(req.headers['x-forwarded-proto'] || '')
+    .split(',')[0]
+    .trim()
+    .toLowerCase();
+  return Boolean(req.secure || forwardedProto === 'https');
+}
+
 function authCookieOptions(req, maxAgeMs) {
-  const viaProxy = String(req.headers['x-forwarded-proto'] || '')
-    .toLowerCase()
-    .includes('https');
   return {
     httpOnly: true,
     sameSite: 'lax',
-    secure: Boolean(req.secure || viaProxy || process.env.NODE_ENV === 'production'),
+    secure: Boolean(isSecureRequest(req) || process.env.NODE_ENV === 'production'),
     path: '/',
-    maxAge: maxAgeMs
+    maxAge: maxAgeMs,
+    ...(AUTH_COOKIE_DOMAIN ? { domain: AUTH_COOKIE_DOMAIN } : {})
   };
 }
 
@@ -1102,6 +1058,16 @@ async function authGuard(req, res, next) {
 
     const payload = verifyAccessToken(token);
     if (await isRevokedJti(payload.jti)) {
+      logger.warn(
+        {
+          request_id: req.id || null,
+          method: req.method,
+          path: req.originalUrl || req.url,
+          status: 401,
+          user_id: payload.sub || null
+        },
+        'security_token_revoked'
+      );
       return sendMachineError(req, res, 401, 'token_revoked');
     }
     req.user = payload;
@@ -1175,7 +1141,8 @@ async function issueSessionTokens({ req, res, user, csrfToken, family }) {
 }
 
 function refreshCsrfGuard(req, payload) {
-  if (!isTrustedOrigin(req)) return { ok: false, code: 'request_forbidden' };
+  const origin = String(req.headers.origin || '').trim();
+  if (!origin || !isTrustedOrigin(req)) return { ok: false, code: 'request_forbidden' };
   const csrfHeader = String(req.headers['x-csrf-token'] || '').trim();
   if (!csrfHeader || csrfHeader !== String(payload?.csrf || '')) return { ok: false, code: 'csrf_failed' };
   return { ok: true };
@@ -1329,9 +1296,12 @@ async function completeOAuthLogin({ req, res, profile }) {
 }
 
 function notifyScanDateWindow(subscription) {
-  const safeOffset = Number.isFinite(subscription.daysFromNow) ? subscription.daysFromNow : 14;
+  const safeOffsetRaw = Number(subscription?.daysFromNow);
+  const safeStayRaw = Number(subscription?.stayDays);
+  const safeOffset = Number.isFinite(safeOffsetRaw) ? Math.min(365, Math.max(1, Math.floor(safeOffsetRaw))) : 14;
+  const safeStayDays = Number.isFinite(safeStayRaw) ? Math.min(30, Math.max(1, Math.floor(safeStayRaw))) : 7;
   const start = addDays(new Date(), safeOffset);
-  const end = addDays(start, subscription.stayDays);
+  const end = addDays(start, safeStayDays);
   return {
     dateFrom: format(start, 'yyyy-MM-dd'),
     dateTo: format(end, 'yyyy-MM-dd')
@@ -1340,11 +1310,13 @@ function notifyScanDateWindow(subscription) {
 
 function findCheapestWindowForSubscription(subscription) {
   const horizonDays = 365;
+  const safeStayRaw = Number(subscription?.stayDays);
+  const safeStayDays = Number.isFinite(safeStayRaw) ? Math.min(30, Math.max(1, Math.floor(safeStayRaw))) : 7;
   let best = null;
 
   for (let offset = 1; offset <= horizonDays; offset += 1) {
     const start = addDays(new Date(), offset);
-    const end = addDays(start, subscription.stayDays);
+    const end = addDays(start, safeStayDays);
     const dateFrom = format(start, 'yyyy-MM-dd');
     const dateTo = format(end, 'yyyy-MM-dd');
 
@@ -1425,7 +1397,7 @@ function buildDestinationInsights(params) {
       avg2024: best.avg2024,
       highSeasonAvg: best.highSeasonAvg,
       savingVs2024: best.savingVs2024,
-      link: best.skyscannerLink || best.link
+      link: best.link
     });
   }
 
@@ -1880,130 +1852,22 @@ async function scanSubscriptionsOnce() {
   }
 }
 
-app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, service: 'flight-suite-api', now: new Date().toISOString() });
-});
-
-app.get('/healthz', (_req, res) => {
-  return res.status(200).json({
-    ok: true,
-    service: 'flight-suite-api',
-    now: new Date().toISOString()
-  });
-});
-
-async function runReadinessChecks() {
-  const checks = {
-    postgres: { ok: true, mode: process.env.DATABASE_URL ? 'postgres' : 'local' },
-    redis: { ok: true, mode: process.env.REDIS_URL ? 'redis' : 'in-memory' }
-  };
-
-  if (pgPool) {
-    try {
-      await pgPool.query('SELECT 1');
-    } catch (error) {
-      checks.postgres = { ok: false, mode: 'postgres', detail: error?.message || 'postgres_unreachable' };
-    }
-  }
-
-  if (process.env.REDIS_URL) {
-    try {
-      const cache = getCacheClient();
-      if (typeof cache.ping === 'function') {
-        await cache.ping();
-      } else {
-        checks.redis = { ok: false, mode: 'redis', detail: 'redis_ping_not_supported' };
-      }
-    } catch (error) {
-      checks.redis = { ok: false, mode: 'redis', detail: error?.message || 'redis_unreachable' };
-    }
-  }
-
-  return checks;
-}
-
-app.get('/readyz', async (req, res) => {
-  const checks = await runReadinessChecks();
-  const ready = checks.postgres.ok && checks.redis.ok;
-  return res.status(ready ? 200 : 503).json({
-    ok: ready,
-    checks,
-    now: new Date().toISOString(),
-    request_id: req.id || null
-  });
-});
-
-app.get('/api/health/features', (_req, res) => {
-  const audit = runFeatureAudit();
-  res.json(audit);
-});
-
-app.get('/api/health/compliance', (_req, res) => {
-  res.json({
-    ok: true,
-    policy: {
-      scrapingUsed: false,
-      externalInventoryResale: false,
-      monetizationModel: 'decision_value',
-      pillars: ['decision_intelligence', 'analytics', 'lifestyle_positioning']
-    },
-    now: new Date().toISOString()
-  });
-});
-
-app.get('/api/health/security', async (_req, res) => {
-  const db = await readDb();
-  const auditChain = await verifyImmutableAudit();
-  const auditHmacConfigured = Boolean(String(process.env.AUDIT_LOG_HMAC_KEY || '').trim());
-  const googleConfigured = Boolean(String(process.env.GOOGLE_CLIENT_IDS || process.env.GOOGLE_CLIENT_ID || '').trim());
-  const appleConfigured = Boolean(String(process.env.APPLE_CLIENT_IDS || process.env.APPLE_CLIENT_ID || '').trim());
-  const facebookConfigured = Boolean(String(process.env.FACEBOOK_CLIENT_IDS || process.env.FACEBOOK_CLIENT_ID || '').trim());
-  const checks = [
-    createAuditCheck('jwt_secret', 'JWT secret configured and strong', true, 'JWT_SECRET is required (>= 32 chars)'),
-    createAuditCheck('helmet', 'Helmet security headers enabled', true, 'helmet middleware active'),
-    createAuditCheck('cors_allowlist', 'CORS allowlist enforced', CORS_ALLOWLIST.size > 0, `allowedOrigins=${CORS_ALLOWLIST.size}`),
-    createAuditCheck('auth_rate_limit', 'Auth rate limiting enabled', true, '20 attempts / 15 minutes'),
-    createAuditCheck('login_lock', 'Account lock on failed login enabled', true, `maxFailures=${LOGIN_MAX_FAILURES}, lockMinutes=${LOGIN_LOCK_MINUTES}`),
-    createAuditCheck('cookie_http_only', 'Auth cookie uses HttpOnly + SameSite', true, 'cookie: HttpOnly, SameSite=Lax'),
-    createAuditCheck('csrf_guard', 'CSRF token required for cookie-auth state changes', true, 'x-csrf-token checked against JWT csrf claim'),
-    createAuditCheck('origin_check', 'Trusted origin enforced for cookie-auth state changes', true, 'Origin must be in CORS allowlist'),
-    createAuditCheck('token_revocation', 'JWT revocation store enabled', Array.isArray(db.revokedTokens), `revokedTokenCount=${db.revokedTokens?.length || 0}`),
-    createAuditCheck('refresh_rotation', 'Refresh token rotation session store enabled', Array.isArray(db.refreshSessions), `refreshSessions=${db.refreshSessions?.length || 0}`),
-    createAuditCheck('mfa_totp', 'MFA TOTP available for account hardening', true, 'setup/enable/disable endpoints active'),
-    createAuditCheck('oauth_state_nonce', 'OAuth state/nonce session challenge enabled', Array.isArray(db.oauthSessions), `oauthSessions=${db.oauthSessions?.length || 0}`),
-    createAuditCheck('audit_chain', 'Immutable audit hash chain integrity', auditChain.ok, `entries=${auditChain.count}`),
-    createAuditCheck('audit_hmac', 'Audit log HMAC signing key configured', true, auditHmacConfigured ? 'configured' : 'optional: missing AUDIT_LOG_HMAC_KEY'),
-    createAuditCheck('search_auth_required', 'Search requires authenticated user', true, 'authGuard + csrfGuard on /api/search'),
-    createAuditCheck('email_notifications', 'Email delivery pipeline available', true, 'SMTP sender with SQL delivery log'),
-    createAuditCheck(
-      'oauth_google',
-      'Google OAuth backend verification ready',
-      true,
-      googleConfigured ? 'configured' : 'optional: missing GOOGLE_CLIENT_ID(S)'
-    ),
-    createAuditCheck(
-      'oauth_apple',
-      'Apple OAuth backend verification ready',
-      true,
-      appleConfigured ? 'configured' : 'optional: missing APPLE_CLIENT_ID(S)'
-    ),
-    createAuditCheck(
-      'oauth_facebook',
-      'Facebook OAuth backend verification ready',
-      true,
-      facebookConfigured ? 'configured' : 'optional: missing FACEBOOK_CLIENT_ID(S)'
-    ),
-    createAuditCheck('input_validation', 'Schema validation enabled', true, 'zod validation on auth/search/watchlist/outbound')
-  ];
-  const passed = checks.filter((item) => item.ok).length;
-  return res.json({
-    ok: passed === checks.length,
-    now: new Date().toISOString(),
-    summary: { total: checks.length, passed, failed: checks.length - passed },
-    checks
-  });
-});
-
+app.use(
+  buildSystemRouter({
+    BUILD_VERSION,
+    pgPool,
+    getPriceDatasetStatus,
+    logger,
+    getCacheClient,
+    readDb,
+    verifyImmutableAudit,
+    createAuditCheck,
+    CORS_ALLOWLIST,
+    LOGIN_MAX_FAILURES,
+    LOGIN_LOCK_MINUTES,
+    runFeatureAudit
+  })
+);
 app.get('/api/security/audit/verify', authGuard, async (_req, res) => {
   const result = await verifyImmutableAudit();
   return res.json(result);
@@ -2041,79 +1905,35 @@ app.get('/api/analytics/funnel', authGuard, async (_req, res) => {
   });
 });
 
-app.get('/api/config', (_req, res) => {
-  const countriesByRegion = {};
-  for (const region of REGION_ENUM.filter((r) => r !== 'all')) {
-    countriesByRegion[region] = [...new Set(DESTINATIONS.filter((d) => d.region === region).map((d) => d.country))].sort();
-  }
-
-  res.json({
-    origins: ORIGINS,
-    regions: REGION_ENUM,
-    cabins: CABIN_ENUM,
-    connectionTypes: CONNECTION_ENUM,
-    travelTimes: TRAVEL_TIME_ENUM,
-    countriesByRegion
-  });
-});
-
-app.get('/api/suggestions', (req, res) => {
-  const query = String(req.query.q || '');
-  const region = String(req.query.region || 'all');
-  const country = req.query.country ? String(req.query.country) : undefined;
-  const limit = Number(req.query.limit || 8);
-
-  const safeRegion = REGION_ENUM.includes(region) ? region : 'all';
-  const safeLimit = Number.isFinite(limit) ? Math.min(Math.max(limit, 1), 20) : 8;
-
-  const items = getDestinationSuggestions({
-    query,
-    region: safeRegion,
-    country,
-    limit: safeLimit
-  });
-
-  res.json({ items });
-});
-
-app.get('/api/countries', (req, res) => {
-  const query = String(req.query.q || '')
-    .toLowerCase()
-    .trim();
-  const limit = Number(req.query.limit || 12);
-  const safeLimit = Number.isFinite(limit) ? Math.min(Math.max(limit, 1), 50) : 12;
-
-  const scored = COUNTRIES.map((country) => {
-    if (!query) return { country, score: 0 };
-
-    const name = country.name.toLowerCase();
-    const official = country.officialName.toLowerCase();
-    const code = country.cca2.toLowerCase();
-
-    let score = 999;
-    if (name === query || code === query) score = 0;
-    else if (name.startsWith(query)) score = 1;
-    else if (name.includes(query)) score = 2;
-    else if (official.includes(query)) score = 3;
-
-    return { country, score };
+app.use(
+  '/api',
+  buildSearchRouter({
+    ORIGINS,
+    REGION_ENUM,
+    CABIN_ENUM,
+    CONNECTION_ENUM,
+    TRAVEL_TIME_ENUM,
+    DESTINATIONS,
+    COUNTRIES,
+    getDestinationSuggestions,
+    searchFlights,
+    decideTrips,
+    ensureAiPremiumAccess,
+    enrichDecisionWithAi,
+    parseIntentWithAi,
+    searchSchema,
+    justGoSchema,
+    decisionIntakeSchema,
+    authGuard,
+    csrfGuard,
+    requireApiScope,
+    quotaGuard,
+    withDb,
+    insertSearchEvent,
+    nanoid,
+    sendMachineError
   })
-    .filter((x) => x.score < 999)
-    .sort((a, b) => a.score - b.score || a.country.name.localeCompare(b.country.name));
-
-  const items = scored
-    .map((x) => x.country)
-    .slice(0, safeLimit)
-    .map((country) => ({
-      name: country.name,
-      label: country.region ? `${country.name} (${country.region})` : country.name,
-      region: country.region,
-      cca2: country.cca2
-    }));
-
-  res.json({ items });
-});
-
+);
 app.post('/api/auth/register', authLimiter, async (req, res) => {
   const parsed = registerSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid payload.' });
@@ -2502,7 +2322,7 @@ async function enrichDecisionWithAi({ aiProvider = 'none', requestPayload, decis
   if (provider === 'none') return { provider: 'none', enhanced: false };
 
   const openaiKey = String(process.env.OPENAI_API_KEY || '').trim();
-  const claudeKey = String(process.env.ANTHROPIC_API_KEY || '').trim();
+  const claudeKey = String(process.env.CLAUDE_API_KEY || process.env.ANTHROPIC_API_KEY || '').trim();
 
   const selected =
     provider === 'chatgpt'
@@ -2667,7 +2487,7 @@ async function parseIntentWithAi({ prompt, aiProvider = 'none', packageCount = 3
   if (provider === 'none') return heuristic;
 
   const openaiKey = String(process.env.OPENAI_API_KEY || '').trim();
-  const claudeKey = String(process.env.ANTHROPIC_API_KEY || '').trim();
+  const claudeKey = String(process.env.CLAUDE_API_KEY || process.env.ANTHROPIC_API_KEY || '').trim();
   const selected =
     provider === 'chatgpt'
       ? 'chatgpt'
@@ -2928,396 +2748,37 @@ app.post('/api/auth/oauth/apple', authLimiter, async (req, res) => {
   return res.json(payload);
 });
 
-app.get('/api/auth/me', authGuard, async (req, res) => {
-  let user = null;
-  await withDb(async (db) => {
-    user = db.users.find((u) => u.id === req.user.sub) ?? null;
-    return null;
-  });
-
-  if (!user) return res.status(404).json({ error: 'User not found.' });
-  return res.json({
-    user: {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      mfaEnabled: Boolean(user.mfaEnabled),
-      isPremium: Boolean(user.isPremium),
-      onboardingDone: Boolean(user.onboardingDone),
-      authChannel: String(user.authChannel || 'direct')
-    },
-    session: {
-      cookie: req.authSource === 'cookie',
-      csrfToken: req.user?.csrf || null
-    },
-    security: {
-      lockUntil: user.lockUntil || null,
-      failedLoginCount: Number.isFinite(user.failedLoginCount) ? user.failedLoginCount : 0,
-      isLocked: userIsLocked(user)
-    }
-  });
-});
-
-app.post('/api/user/onboarding/complete', authGuard, csrfGuard, async (req, res) => {
-  const parsed = onboardingCompleteSchema.safeParse(req.body || {});
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid onboarding payload.' });
-
-  let updated = null;
-  await withDb(async (db) => {
-    const user = db.users.find((item) => item.id === req.user.sub);
-    if (!user) return db;
-    user.onboardingDone = true;
-    user.onboardingProfile = {
-      ...(user.onboardingProfile || {}),
-      ...parsed.data,
-      completedAt: new Date().toISOString()
-    };
-    updated = user;
-    return db;
-  });
-  if (!updated) return res.status(404).json({ error: 'User not found.' });
-  return res.json({ ok: true, user: { onboardingDone: true, onboardingProfile: updated.onboardingProfile } });
-});
-
-app.post('/api/billing/upgrade-demo', authGuard, csrfGuard, async (req, res) => {
-  let user = null;
-  await withDb(async (db) => {
-    user = db.users.find((item) => item.id === req.user.sub) || null;
-    if (!user) return db;
-    user.isPremium = true;
-    user.premiumSince = new Date().toISOString();
-    return db;
-  });
-  if (!user) return res.status(404).json({ error: 'User not found.' });
-  await logAuthEvent({ userId: user.id, email: user.email, type: 'billing_upgrade_demo', success: true, req });
-  return res.json({ ok: true, isPremium: true });
-});
-
-app.post('/api/auth/logout', authGuard, csrfGuard, async (req, res) => {
-  await revokeJwt(req.user);
-  const refreshCookie = getRefreshTokenFromCookie(req);
-  if (refreshCookie) {
-    try {
-      const refreshPayload = verifyRefreshToken(refreshCookie);
-      await revokeRefreshFamily(refreshPayload.family, 'logout');
-    } catch {}
-  }
-  res.clearCookie(ACCESS_COOKIE_NAME, {
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: authCookieOptions(req, ACCESS_COOKIE_TTL_MS).secure,
-    path: '/'
-  });
-  res.clearCookie(REFRESH_COOKIE_NAME, {
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: authCookieOptions(req, REFRESH_COOKIE_TTL_MS).secure,
-    path: '/'
-  });
-  return res.status(204).send();
-});
-
-app.post('/api/auth/refresh', async (req, res) => {
-  const refreshToken = getRefreshTokenFromCookie(req);
-  if (!refreshToken) return res.status(401).json({ error: 'Missing refresh token.' });
-
-  let payload = null;
-  try {
-    payload = verifyRefreshToken(refreshToken);
-  } catch {
-    return res.status(401).json({ error: 'Invalid refresh token.' });
-  }
-
-  const csrfCheck = refreshCsrfGuard(req, payload);
-  if (!csrfCheck.ok) return sendMachineError(req, res, 403, csrfCheck.code || 'csrf_failed');
-
-  const nowSec = Math.floor(Date.now() / 1000);
-  const db = await readDb();
-  const session = (db.refreshSessions || []).find((item) => item.jti === payload.jti && item.userId === payload.sub);
-
-  if (!session || session.revokedAt || (Number.isFinite(session.exp) && session.exp <= nowSec)) {
-    if (payload.family) await revokeRefreshFamily(payload.family, 'reuse_or_invalid');
-    await logAuthEvent({
-      userId: payload.sub || null,
-      email: '',
-      type: 'refresh_rejected',
-      success: false,
-      req,
-      detail: 'missing/revoked/expired refresh session'
-    });
-    return res.status(401).json({ error: 'Refresh session invalidated.' });
-  }
-
-  let user = null;
-  await withDb(async (state) => {
-    user = state.users.find((item) => item.id === payload.sub) || null;
-    return null;
-  });
-  if (!user) return res.status(401).json({ error: 'User not found.' });
-
-  const nextRefreshToken = signRefreshToken({ sub: user.id, family: payload.family, csrf: payload.csrf });
-  const nextPayload = verifyRefreshToken(nextRefreshToken);
-  const rotated = await rotateRefreshSession({
-    oldJti: payload.jti,
-    newJti: nextPayload.jti,
-    userId: user.id,
-    family: payload.family,
-    exp: Number(nextPayload.exp || 0)
-  });
-  if (!rotated) {
-    await revokeRefreshFamily(payload.family, 'reuse_detected');
-    return res.status(401).json({ error: 'Refresh token reuse detected. Session family revoked.' });
-  }
-
-  const authChannel = String(payload.authChannel || user.authChannel || 'direct');
-  user.authChannel = authChannel;
-  const accessToken = signAccessToken({
-    sub: user.id,
-    email: user.email,
-    name: user.name,
-    csrf: payload.csrf,
-    amr: user.mfaEnabled ? ['pwd', 'otp'] : ['pwd'],
-    authChannel
-  });
-  res.cookie(ACCESS_COOKIE_NAME, accessToken, authCookieOptions(req, ACCESS_COOKIE_TTL_MS));
-  res.cookie(REFRESH_COOKIE_NAME, nextRefreshToken, authCookieOptions(req, REFRESH_COOKIE_TTL_MS));
-  await logAuthEvent({
-    userId: user.id,
-    email: user.email,
-    type: 'refresh_rotated',
-    success: true,
-    req
-  });
-  return res.json({
-    token: accessToken,
-    session: { cookie: true, csrfToken: payload.csrf },
-    user: { id: user.id, name: user.name, email: user.email, mfaEnabled: Boolean(user.mfaEnabled), isPremium: Boolean(user.isPremium), onboardingDone: Boolean(user.onboardingDone), authChannel }
-  });
-});
-
-app.post('/api/auth/mfa/setup', authGuard, csrfGuard, async (req, res) => {
-  let user = null;
-  const issuer = process.env.MFA_ISSUER || 'FlightSuite';
-  const generated = speakeasy.generateSecret({
-    name: req.user?.email || 'flight-user',
-    issuer
-  });
-  const tempSecret = generated.base32;
-  await withDb(async (db) => {
-    user = db.users.find((item) => item.id === req.user.sub) || null;
-    if (!user) return db;
-    user.mfaTempSecret = tempSecret;
-    user.mfaTempCreatedAt = new Date().toISOString();
-    return db;
-  });
-  if (!user) return res.status(404).json({ error: 'User not found.' });
-
-  const otpAuthUrl = generated.otpauth_url;
-  const qrDataUrl = await QRCode.toDataURL(otpAuthUrl);
-  await logAuthEvent({
-    userId: user.id,
-    email: user.email,
-    type: 'mfa_setup_started',
-    success: true,
-    req
-  });
-  return res.json({ qrDataUrl, manualKey: tempSecret });
-});
-
-app.post('/api/auth/mfa/enable', authGuard, csrfGuard, async (req, res) => {
-  const parsed = mfaCodeSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid MFA code payload.' });
-
-  let user = null;
-  let success = false;
-  await withDb(async (db) => {
-    user = db.users.find((item) => item.id === req.user.sub) || null;
-    if (!user || !user.mfaTempSecret) return db;
-    const valid = speakeasy.totp.verify({
-      secret: user.mfaTempSecret,
-      encoding: 'base32',
-      token: parsed.data.code,
-      window: 1
-    });
-    if (!valid) return db;
-    user.mfaSecret = user.mfaTempSecret;
-    user.mfaTempSecret = null;
-    user.mfaTempCreatedAt = null;
-    user.mfaEnabled = true;
-    success = true;
-    return db;
-  });
-
-  if (!user) return res.status(404).json({ error: 'User not found.' });
-  if (!success) {
-    await logAuthEvent({ userId: user.id, email: user.email, type: 'mfa_enable_failed', success: false, req });
-    return res.status(400).json({ error: 'Invalid MFA code.' });
-  }
-
-  await logAuthEvent({ userId: user.id, email: user.email, type: 'mfa_enabled', success: true, req });
-  return res.json({ ok: true, mfaEnabled: true });
-});
-
-app.post('/api/auth/mfa/disable', authGuard, csrfGuard, async (req, res) => {
-  const parsed = mfaCodeSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid MFA code payload.' });
-
-  let user = null;
-  let success = false;
-  await withDb(async (db) => {
-    user = db.users.find((item) => item.id === req.user.sub) || null;
-    if (!user || !user.mfaEnabled || !user.mfaSecret) return db;
-    const valid = speakeasy.totp.verify({
-      secret: user.mfaSecret,
-      encoding: 'base32',
-      token: parsed.data.code,
-      window: 1
-    });
-    if (!valid) return db;
-    user.mfaEnabled = false;
-    user.mfaSecret = null;
-    user.mfaTempSecret = null;
-    user.mfaTempCreatedAt = null;
-    success = true;
-    return db;
-  });
-
-  if (!user) return res.status(404).json({ error: 'User not found.' });
-  if (!success) {
-    await logAuthEvent({ userId: user.id, email: user.email, type: 'mfa_disable_failed', success: false, req });
-    return res.status(400).json({ error: 'Invalid MFA code.' });
-  }
-
-  await logAuthEvent({ userId: user.id, email: user.email, type: 'mfa_disabled', success: true, req });
-  return res.json({ ok: true, mfaEnabled: false });
-});
-
-app.post('/api/search', authGuard, csrfGuard, requireApiScope('search'), quotaGuard({ counter: 'search', amount: 1 }), async (req, res) => {
-  const parsed = searchSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid payload.' });
-
-  const result = searchFlights(parsed.data);
-
-  await withDb(async (db) => {
-    db.searches.push({
-      id: nanoid(8),
-      at: new Date().toISOString(),
-      userId: req.user.sub,
-      payload: parsed.data,
-      meta: result.meta
-    });
-    db.searches = db.searches.slice(-1000);
-    return db;
-  });
-  await insertSearchEvent({
-    userId: req.user.sub,
-    channel: String(req.user.authChannel || 'direct'),
-    origin: parsed.data.origin,
-    region: parsed.data.region,
-    dateFrom: parsed.data.dateFrom,
-    dateTo: parsed.data.dateTo
-  });
-
-  return res.json(result);
-});
-
-app.post('/api/decision/just-go', authGuard, csrfGuard, requireApiScope('search'), quotaGuard({ counter: 'decision', amount: 1 }), async (req, res) => {
-  const parsed = justGoSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid payload.' });
-
-  const payload = parsed.data;
-  const aiAccess = await ensureAiPremiumAccess(req, payload.aiProvider || 'none');
-  if (!aiAccess.allowed) return sendMachineError(req, res, aiAccess.status, aiAccess.error);
-  const result = decideTrips({
-    origin: payload.origin,
-    region: payload.region || 'all',
-    country: payload.country,
-    dateFrom: payload.dateFrom,
-    dateTo: payload.dateTo,
-    tripLengthDays: payload.tripLengthDays,
-    budgetMax: payload.budgetMax,
-    travellers: payload.travellers,
-    cabinClass: payload.cabinClass,
-    mood: payload.mood,
-    climatePreference: payload.climatePreference,
-    pace: payload.pace,
-    avoidOvertourism: Boolean(payload.avoidOvertourism),
-    packageCount: payload.packageCount === 4 ? 4 : 3
-  });
-
-  const ai = await enrichDecisionWithAi({
-    aiProvider: payload.aiProvider || 'none',
-    requestPayload: payload,
-    decisionResult: result
-  });
-
-  await withDb(async (db) => {
-    db.searches.push({
-      id: nanoid(8),
-      at: new Date().toISOString(),
-      userId: req.user.sub,
-      payload: { ...payload, mode: 'just_go' },
-      meta: result.meta
-    });
-    db.searches = db.searches.slice(-1000);
-    return db;
-  });
-
-  await insertSearchEvent({
-    userId: req.user.sub,
-    channel: String(req.user.authChannel || 'direct'),
-    origin: payload.origin,
-    region: payload.region || 'all',
-    dateFrom: payload.dateFrom,
-    dateTo: payload.dateTo
-  });
-
-  return res.json({
-    ...result,
-    ai
-  });
-});
-
-app.post('/api/decision/intake', authGuard, csrfGuard, requireApiScope('search'), quotaGuard({ counter: 'decision', amount: 1 }), async (req, res) => {
-  const parsed = decisionIntakeSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid payload.' });
-
-  const payload = parsed.data;
-  const aiAccess = await ensureAiPremiumAccess(req, payload.aiProvider || 'none');
-  if (!aiAccess.allowed) return sendMachineError(req, res, aiAccess.status, aiAccess.error);
-  const result = await parseIntentWithAi({
-    prompt: payload.prompt,
-    aiProvider: payload.aiProvider || 'none',
-    packageCount: payload.packageCount === 4 ? 4 : 3
-  });
-
-  return res.json(result);
-});
-
-app.get('/api/search/history', authGuard, requireApiScope('read'), quotaGuard({ counter: 'read', amount: 1 }), async (req, res) => {
-  let items = [];
-  await withDb(async (db) => {
-    items = db.searches
-      .filter((s) => s.userId === req.user.sub)
-      .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
-      .slice(0, 20);
-    return null;
-  });
-  return res.json({ items });
-});
-
-app.get('/api/security/activity', authGuard, requireApiScope('read'), quotaGuard({ counter: 'read', amount: 1 }), async (req, res) => {
-  let items = [];
-  await withDb(async (db) => {
-    items = db.authEvents
-      .filter((event) => event.userId === req.user.sub || event.email === req.user.email)
-      .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
-      .slice(0, 40);
-    return null;
-  });
-  return res.json({ items });
-});
-
+app.use(
+  '/api',
+  buildAuthSessionRouter({
+    authGuard,
+    csrfGuard,
+    withDb,
+    readDb,
+    logAuthEvent,
+    userIsLocked,
+    onboardingCompleteSchema,
+    revokeJwt,
+    getRefreshTokenFromCookie,
+    verifyRefreshToken,
+    revokeRefreshFamily,
+    ACCESS_COOKIE_NAME,
+    REFRESH_COOKIE_NAME,
+    authCookieOptions,
+    ACCESS_COOKIE_TTL_MS,
+    REFRESH_COOKIE_TTL_MS,
+    AUTH_COOKIE_DOMAIN,
+    sendMachineError,
+    refreshCsrfGuard,
+    logger,
+    rotateRefreshSession,
+    signRefreshToken,
+    signAccessToken,
+    speakeasy,
+    QRCode,
+    mfaCodeSchema
+  })
+);
 app.get('/api/outbound/resolve', async (req, res) => {
   const parsed = outboundResolveSchema.safeParse(req.query);
   if (!parsed.success) {
@@ -3477,214 +2938,23 @@ app.post('/api/insights/destination', authGuard, csrfGuard, premiumGuard, requir
   return res.json(result);
 });
 
-app.get('/api/watchlist', authGuard, requireApiScope('read'), quotaGuard({ counter: 'read', amount: 1 }), async (req, res) => {
-  let items = [];
-  await withDb(async (db) => {
-    items = db.watchlists.filter((w) => w.userId === req.user.sub);
-    return null;
-  });
-  return res.json({ items });
-});
-
-app.post('/api/watchlist', authGuard, csrfGuard, requireApiScope('alerts'), quotaGuard({ counter: 'alerts', amount: 1 }), async (req, res) => {
-  const parsed = watchlistSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid payload.' });
-
-  const item = {
-    id: nanoid(10),
-    userId: req.user.sub,
-    createdAt: new Date().toISOString(),
-    ...parsed.data
-  };
-
-  await withDb(async (db) => {
-    const duplicate = db.watchlists.find(
-      (w) => w.userId === req.user.sub && w.flightId === item.flightId && w.dateFrom === item.dateFrom && w.dateTo === item.dateTo
-    );
-    if (!duplicate) db.watchlists.push(item);
-
-    // Auto-create tracker subscription for this route if missing.
-    const existingTracker = db.alertSubscriptions.find(
-      (s) =>
-        s.userId === req.user.sub &&
-        s.origin === item.flightId.split('-')[0] &&
-        s.destinationIata === item.destinationIata &&
-        s.enabled
-    );
-
-    if (!existingTracker) {
-      const fromDate = new Date(item.dateFrom);
-      const stayDaysRaw = Math.round((new Date(item.dateTo) - fromDate) / (24 * 3600 * 1000));
-      const daysFromNowRaw = Math.round((fromDate - new Date()) / (24 * 3600 * 1000));
-
-      db.alertSubscriptions.push({
-        id: nanoid(10),
-        userId: req.user.sub,
-        createdAt: new Date().toISOString(),
-        enabled: true,
-        origin: item.flightId.split('-')[0],
-        region: 'all',
-        country: undefined,
-        destinationQuery: item.destination,
-        destinationIata: item.destinationIata,
-        targetPrice: Math.max(35, Math.floor(item.price * 0.95)),
-        cheapOnly: false,
-        travellers: 1,
-        cabinClass: 'economy',
-        connectionType: 'all',
-        maxStops: 2,
-        travelTime: 'all',
-        minComfortScore: undefined,
-        stayDays: Math.min(30, Math.max(2, Number.isFinite(stayDaysRaw) ? stayDaysRaw : 7)),
-        daysFromNow: Math.min(180, Math.max(1, Number.isFinite(daysFromNowRaw) ? daysFromNowRaw : 14))
-      });
-    }
-    return db;
-  });
-
-  await scanSubscriptionsOnce();
-  return res.status(201).json({ item });
-});
-
-app.delete('/api/watchlist/:id', authGuard, csrfGuard, requireApiScope('alerts'), quotaGuard({ counter: 'alerts', amount: 1 }), async (req, res) => {
-  let removed = false;
-  await withDb(async (db) => {
-    const before = db.watchlists.length;
-    db.watchlists = db.watchlists.filter((w) => !(w.id === req.params.id && w.userId === req.user.sub));
-    removed = db.watchlists.length !== before;
-    return db;
-  });
-
-  if (!removed) return res.status(404).json({ error: 'Item not found.' });
-  return res.status(204).send();
-});
-
-app.get('/api/alerts/subscriptions', authGuard, requireApiScope('read'), quotaGuard({ counter: 'read', amount: 1 }), async (req, res) => {
-  let items = [];
-  await withDb(async (db) => {
-    items = db.alertSubscriptions.filter((s) => s.userId === req.user.sub);
-    return null;
-  });
-  return res.json({ items });
-});
-
-app.post('/api/alerts/subscriptions', authGuard, csrfGuard, requireApiScope('alerts'), quotaGuard({ counter: 'alerts', amount: 1 }), async (req, res) => {
-  const parsed = alertSubscriptionSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid subscription payload.' });
-  const isDurationMode = !Number.isFinite(parsed.data.targetPrice);
-  if (isDurationMode) {
-    const user = await fetchCurrentUser(req.user.sub);
-    if (!user) return sendMachineError(req, res, 404, 'user_not_found');
-    if (!user.isPremium) return sendMachineError(req, res, 402, 'premium_required');
-  }
-
-  const subscription = {
-    id: nanoid(10),
-    userId: req.user.sub,
-    createdAt: new Date().toISOString(),
-    enabled: true,
-    ...parsed.data,
-    destinationIata: parsed.data.destinationIata?.toUpperCase(),
-    scanMode: Number.isFinite(parsed.data.targetPrice) ? 'price_target' : 'duration_auto'
-  };
-
-  await withDb(async (db) => {
-    db.alertSubscriptions.push(subscription);
-    return db;
-  });
-
-  await scanSubscriptionsOnce();
-  return res.status(201).json({ item: subscription });
-});
-
-app.delete('/api/alerts/subscriptions/:id', authGuard, csrfGuard, requireApiScope('alerts'), quotaGuard({ counter: 'alerts', amount: 1 }), async (req, res) => {
-  let removed = false;
-  await withDb(async (db) => {
-    const before = db.alertSubscriptions.length;
-    db.alertSubscriptions = db.alertSubscriptions.filter((s) => !(s.id === req.params.id && s.userId === req.user.sub));
-    removed = db.alertSubscriptions.length !== before;
-    return db;
-  });
-
-  if (!removed) return res.status(404).json({ error: 'Subscription not found.' });
-  return res.status(204).send();
-});
-
-app.patch('/api/alerts/subscriptions/:id', authGuard, csrfGuard, requireApiScope('alerts'), quotaGuard({ counter: 'alerts', amount: 1 }), async (req, res) => {
-  const parsed = alertSubscriptionUpdateSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid subscription update payload.' });
-
-  let updatedItem = null;
-  await withDb(async (db) => {
-    const hit = db.alertSubscriptions.find((s) => s.id === req.params.id && s.userId === req.user.sub);
-    if (!hit) return db;
-
-    if (Object.hasOwn(parsed.data, 'enabled')) hit.enabled = parsed.data.enabled;
-    if (Object.hasOwn(parsed.data, 'targetPrice')) hit.targetPrice = parsed.data.targetPrice ?? undefined;
-    if (Object.hasOwn(parsed.data, 'connectionType')) hit.connectionType = parsed.data.connectionType;
-    if (Object.hasOwn(parsed.data, 'maxStops')) hit.maxStops = parsed.data.maxStops ?? undefined;
-    if (Object.hasOwn(parsed.data, 'travelTime')) hit.travelTime = parsed.data.travelTime;
-    if (Object.hasOwn(parsed.data, 'minComfortScore')) hit.minComfortScore = parsed.data.minComfortScore ?? undefined;
-    if (Object.hasOwn(parsed.data, 'cheapOnly')) hit.cheapOnly = parsed.data.cheapOnly;
-    if (Object.hasOwn(parsed.data, 'travellers')) hit.travellers = parsed.data.travellers;
-    if (Object.hasOwn(parsed.data, 'cabinClass')) hit.cabinClass = parsed.data.cabinClass;
-    if (Object.hasOwn(parsed.data, 'stayDays')) hit.stayDays = parsed.data.stayDays;
-    if (Object.hasOwn(parsed.data, 'daysFromNow')) hit.daysFromNow = parsed.data.daysFromNow ?? undefined;
-
-    hit.scanMode = Number.isFinite(hit.targetPrice) ? 'price_target' : 'duration_auto';
-    updatedItem = { ...hit };
-    return db;
-  });
-
-  if (!updatedItem) return res.status(404).json({ error: 'Subscription not found.' });
-  await scanSubscriptionsOnce();
-  return res.json({ item: updatedItem });
-});
-
-app.get('/api/notifications', authGuard, requireApiScope('read'), quotaGuard({ counter: 'notifications', amount: 1 }), async (req, res) => {
-  let items = [];
-  await withDb(async (db) => {
-    items = db.notifications
-      .filter((n) => n.userId === req.user.sub)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-      .slice(0, 100);
-    return null;
-  });
-
-  const unread = items.filter((n) => !n.readAt).length;
-  return res.json({ items, unread });
-});
-
-app.post('/api/notifications/:id/read', authGuard, csrfGuard, requireApiScope('alerts'), quotaGuard({ counter: 'notifications', amount: 1 }), async (req, res) => {
-  let updated = false;
-  await withDb(async (db) => {
-    const hit = db.notifications.find((n) => n.id === req.params.id && n.userId === req.user.sub);
-    if (hit && !hit.readAt) {
-      hit.readAt = new Date().toISOString();
-      updated = true;
-    }
-    return db;
-  });
-
-  if (!updated) return res.status(404).json({ error: 'Notification not found.' });
-  return res.status(204).send();
-});
-
-app.post('/api/notifications/read-all', authGuard, csrfGuard, requireApiScope('alerts'), quotaGuard({ counter: 'notifications', amount: 1 }), async (req, res) => {
-  await withDb(async (db) => {
-    for (const n of db.notifications) {
-      if (n.userId === req.user.sub && !n.readAt) n.readAt = new Date().toISOString();
-    }
-    return db;
-  });
-  return res.status(204).send();
-});
-
-app.post('/api/notifications/scan', authGuard, csrfGuard, requireApiScope('alerts'), quotaGuard({ counter: 'notifications', amount: 1 }), async (_req, res) => {
-  await scanSubscriptionsOnce();
-  return res.json({ ok: true });
-});
-
+app.use(
+  '/api',
+  buildAlertsRouter({
+    authGuard,
+    csrfGuard,
+    requireApiScope,
+    quotaGuard,
+    withDb,
+    nanoid,
+    scanSubscriptionsOnce,
+    watchlistSchema,
+    alertSubscriptionSchema,
+    alertSubscriptionUpdateSchema,
+    fetchCurrentUser,
+    sendMachineError
+  })
+);
 // ── SaaS routes ───────────────────────────────────────────────────
 // Mount routers (they receive authGuard/csrfGuard from closure)
 app.use('/api/keys',    buildApiKeysRouter({ authGuard, csrfGuard }));
@@ -3710,86 +2980,167 @@ if (existsSync(distPath)) {
   });
 }
 
-app.listen(PORT, () => {
-  logger.info({ port: PORT }, 'server_started');
+const httpServer = app.listen(PORT, () => {
+  logger.info({ port: PORT, version: BUILD_VERSION }, 'server_started');
 });
+const cronTasks = [];
 
-cron.schedule(CRON_SCHEDULE, () => {
-  scanSubscriptionsOnce().catch((error) => {
-    logger.error({ err: error }, 'notification_scan_failed');
+function scheduleCronJob(name, expression, jobFn, options = {}) {
+  const task = cron.schedule(
+    expression,
+    async () => {
+      const startedAt = Date.now();
+      try {
+        let attempt = 0;
+        while (true) {
+          try {
+            await jobFn();
+            if (attempt > 0) {
+              logger.info({ job: name, retries: attempt }, 'cron_job_recovered_after_retry');
+            }
+            break;
+          } catch (error) {
+            if (attempt >= CRON_RETRY_ATTEMPTS) throw error;
+            attempt += 1;
+            logger.warn({ job: name, attempt, retryDelayMs: CRON_RETRY_DELAY_MS, err: error }, 'cron_job_retry_scheduled');
+            await new Promise((resolveDelay) => setTimeout(resolveDelay, CRON_RETRY_DELAY_MS));
+          }
+        }
+        logger.info(
+          {
+            job: name,
+            schedule: expression,
+            timezone: options?.timezone || 'system',
+            durationMs: Date.now() - startedAt
+          },
+          'cron_job_completed'
+        );
+      } catch (error) {
+        logger.error(
+          {
+            job: name,
+            schedule: expression,
+            timezone: options?.timezone || 'system',
+            durationMs: Date.now() - startedAt,
+            err: error
+          },
+          'cron_job_failed'
+        );
+      }
+    },
+    options
+  );
+  cronTasks.push({ name, task });
+  return task;
+}
+
+async function runStartupTask(name, taskFn) {
+  const startedAt = Date.now();
+  try {
+    await taskFn();
+    logger.info({ task: name, durationMs: Date.now() - startedAt }, 'startup_task_completed');
+  } catch (error) {
+    logger.error({ task: name, durationMs: Date.now() - startedAt, err: error }, 'startup_task_failed');
+  }
+}
+
+scheduleCronJob('notifications_scan', CRON_SCHEDULE, () => scanSubscriptionsOnce());
+scheduleCronJob('ai_pricing', AI_PRICING_CRON, () => monitorAndUpdateSubscriptionPricing({ reason: 'scheduled' }), { timezone: AI_PRICING_CRON_TIMEZONE });
+scheduleCronJob('free_precompute', FREE_PRECOMPUTE_CRON, () => runNightlyFreePrecompute({ reason: 'scheduled' }), { timezone: FREE_JOBS_TIMEZONE });
+scheduleCronJob('free_alert_worker', FREE_ALERT_WORKER_CRON, () => runFreeAlertWorkerOnce(), { timezone: FREE_JOBS_TIMEZONE });
+scheduleCronJob('route_baseline', DEAL_BASELINE_CRON, () => runNightlyRouteBaselineJob({ reason: 'scheduled' }), { timezone: DEAL_BASELINE_CRON_TIMEZONE });
+scheduleCronJob('discovery_alert_worker', DISCOVERY_ALERT_WORKER_CRON, () => runDiscoveryAlertWorkerOnce(), { timezone: DISCOVERY_ALERT_WORKER_TIMEZONE });
+scheduleCronJob('price_ingestion_worker', PRICE_INGEST_WORKER_CRON, () => runPriceIngestionWorkerOnce({ maxJobs: 500 }), { timezone: PRICE_INGEST_WORKER_TIMEZONE });
+
+runStartupTask('ai_pricing_startup_check', () => monitorAndUpdateSubscriptionPricing({ reason: 'startup' }));
+runStartupTask('free_precompute_startup', () => runNightlyFreePrecompute({ reason: 'startup' }));
+runStartupTask('route_baseline_startup', () => runNightlyRouteBaselineJob({ reason: 'startup' }));
+runStartupTask('discovery_alert_worker_startup', () => runDiscoveryAlertWorkerOnce({ limit: 200 }));
+runStartupTask('price_ingestion_worker_startup', () => runPriceIngestionWorkerOnce({ maxJobs: 500 }));
+
+let shuttingDown = false;
+async function gracefulShutdown(signal, { exitCode = 0 } = {}) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  logger.warn({ signal }, 'shutdown_started');
+
+  for (const entry of cronTasks) {
+    try {
+      entry.task.stop();
+    } catch (error) {
+      logger.warn({ err: error, job: entry.name }, 'cron_job_stop_failed');
+    }
+  }
+
+  await Promise.race([
+    new Promise((resolveClose) => {
+      httpServer.close((error) => {
+        if (error) logger.error({ err: error }, 'http_server_close_failed');
+        else logger.info({}, 'http_server_closed');
+        resolveClose();
+      });
+    }),
+    new Promise((resolveTimeout) => {
+      setTimeout(() => {
+        logger.warn({ timeoutMs: SHUTDOWN_TIMEOUT_MS }, 'http_server_close_timeout');
+        resolveTimeout();
+      }, SHUTDOWN_TIMEOUT_MS);
+    })
+  ]);
+
+  if (pgPool) {
+    try {
+      await pgPool.end();
+      logger.info({}, 'pg_pool_closed');
+    } catch (error) {
+      logger.error({ err: error }, 'pg_pool_close_failed');
+    }
+  }
+  try {
+    await closeCacheClient();
+  } catch (error) {
+    logger.warn({ err: error }, 'cache_client_close_failed');
+  }
+
+  logger.info({ signal }, 'shutdown_completed');
+  process.exit(exitCode);
+}
+
+process.on('SIGINT', () => {
+  gracefulShutdown('SIGINT').catch((error) => {
+    logger.fatal({ err: error }, 'shutdown_failed');
+    process.exit(1);
   });
 });
 
-monitorAndUpdateSubscriptionPricing({ reason: 'startup' }).catch((error) => {
-  logger.error({ err: error }, 'ai_pricing_startup_check_failed');
-});
-
-cron.schedule(
-  AI_PRICING_CRON,
-  () => {
-    monitorAndUpdateSubscriptionPricing({ reason: 'scheduled' }).catch((error) => {
-      logger.error({ err: error }, 'ai_pricing_check_failed');
-    });
-  },
-  { timezone: AI_PRICING_CRON_TIMEZONE }
-);
-
-cron.schedule(
-  FREE_PRECOMPUTE_CRON,
-  () => {
-    runNightlyFreePrecompute({ reason: 'scheduled' }).catch((error) => {
-      logger.error({ err: error }, 'free_precompute_failed');
-    });
-  },
-  { timezone: FREE_JOBS_TIMEZONE }
-);
-
-cron.schedule(
-  FREE_ALERT_WORKER_CRON,
-  () => {
-    runFreeAlertWorkerOnce().catch((error) => {
-      logger.error({ err: error }, 'free_alert_worker_failed');
-    });
-  },
-  { timezone: FREE_JOBS_TIMEZONE }
-);
-
-cron.schedule(
-  DEAL_BASELINE_CRON,
-  () => {
-    runNightlyRouteBaselineJob({ reason: 'scheduled' }).catch((error) => {
-      logger.error({ err: error }, 'route_baseline_job_failed');
-    });
-  },
-  { timezone: DEAL_BASELINE_CRON_TIMEZONE }
-);
-
-cron.schedule(
-  DISCOVERY_ALERT_WORKER_CRON,
-  () => {
-    runDiscoveryAlertWorkerOnce().catch((error) => {
-      logger.error({ err: error }, 'discovery_alert_worker_failed');
-    });
-  },
-  { timezone: DISCOVERY_ALERT_WORKER_TIMEZONE }
-);
-
-runNightlyFreePrecompute({ reason: 'startup' }).catch((error) => {
-  logger.error({ err: error }, 'free_precompute_startup_failed');
-});
-
-runNightlyRouteBaselineJob({ reason: 'startup' }).catch((error) => {
-  logger.error({ err: error }, 'route_baseline_startup_failed');
-});
-
-runDiscoveryAlertWorkerOnce({ limit: 200 }).catch((error) => {
-  logger.error({ err: error }, 'discovery_alert_worker_startup_failed');
+process.on('SIGTERM', () => {
+  gracefulShutdown('SIGTERM').catch((error) => {
+    logger.fatal({ err: error }, 'shutdown_failed');
+    process.exit(1);
+  });
 });
 
 process.on('unhandledRejection', (reason) => {
   logger.error({ err: reason }, 'unhandled_rejection');
+  if (process.env.NODE_ENV === 'production') {
+    gracefulShutdown('UNHANDLED_REJECTION', { exitCode: 1 }).catch((error) => {
+      logger.fatal({ err: error }, 'shutdown_failed_after_unhandled_rejection');
+      process.exit(1);
+    });
+  }
 });
 
 process.on('uncaughtException', (error) => {
   logger.fatal({ err: error }, 'uncaught_exception');
+  gracefulShutdown('UNCAUGHT_EXCEPTION', { exitCode: 1 }).catch((shutdownError) => {
+    logger.fatal({ err: shutdownError }, 'shutdown_failed_after_uncaught_exception');
+    process.exit(1);
+  });
 });
+
+
+
+
+
+
+

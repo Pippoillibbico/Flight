@@ -31,3 +31,5 @@
 - `x-powered-by` disabled.
 - Cookies are `httpOnly`, `secure` in production, `sameSite=lax`.
 - No stack traces leaked in production error responses.
+- Run `npm run test:security` and `npm run test:go-live`.
+- Verify webhook replay/idempotency behavior in billing logs.

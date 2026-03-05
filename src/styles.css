@@ -27,12 +27,116 @@ body {
     linear-gradient(165deg, #fbfdff, var(--bg));
 }
 
+body.app-dark-active {
+  background:
+    radial-gradient(820px 380px at -10% -10%, rgba(18, 73, 173, 0.32), transparent 62%),
+    radial-gradient(720px 340px at 110% -10%, rgba(16, 137, 145, 0.22), transparent 58%),
+    linear-gradient(180deg, #071123, #050c18);
+}
+
 .page {
   max-width: 1250px;
   margin: 0 auto;
   padding: 30px 20px 40px;
   display: grid;
   gap: 18px;
+}
+
+.app-shell {
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.app-shell .hero {
+  border-radius: 24px;
+  border: 1px solid #b9cff8;
+  background:
+    radial-gradient(420px 180px at 98% 10%, rgba(15, 111, 255, 0.12), transparent 70%),
+    linear-gradient(150deg, #ffffff, #eef5ff);
+}
+
+.app-shell .panel {
+  border-radius: 20px;
+}
+
+.app-lock-panel {
+  text-align: left;
+  max-width: 720px;
+  padding: 24px;
+  gap: 12px;
+}
+
+.app-lock-title {
+  font-size: clamp(24px, 2.2vw, 30px);
+}
+
+.app-lock-sub {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.app-lock-note {
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.app-lock-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.app-shell.app-dark {
+  --ink: #e9f1ff;
+  --muted: #9fb1cf;
+  --line: #233858;
+}
+
+.app-shell.app-dark .hero {
+  border-color: #244065;
+  background:
+    radial-gradient(500px 220px at 96% 12%, rgba(46, 118, 255, 0.25), transparent 70%),
+    linear-gradient(160deg, #0d1a34, #0a1428);
+  box-shadow: 0 20px 44px rgba(1, 7, 18, 0.46);
+}
+
+.app-shell.app-dark .panel {
+  border-color: #243f63;
+  background: linear-gradient(180deg, rgba(13, 28, 52, 0.95), rgba(8, 20, 38, 0.95));
+  box-shadow: 0 14px 30px rgba(3, 8, 18, 0.38);
+}
+
+.app-shell.app-dark input,
+.app-shell.app-dark select,
+.app-shell.app-dark textarea {
+  background: #0f1f3a;
+  border-color: #2e4e78;
+  color: #e9f1ff;
+}
+
+.app-shell.app-dark .ghost {
+  background: #102646;
+  border-color: #355989;
+  color: #d7e6ff;
+}
+
+.app-shell.app-dark .ghost:hover {
+  background: #17305a;
+}
+
+.app-shell.app-dark .app-lock-panel {
+  border-color: #2c4a73;
+  background:
+    radial-gradient(420px 180px at 98% 8%, rgba(52, 121, 255, 0.18), transparent 68%),
+    linear-gradient(165deg, rgba(12, 28, 54, 0.98), rgba(7, 17, 34, 0.98));
+}
+
+.app-shell.app-dark .app-lock-sub {
+  color: #eef5ff;
+}
+
+.app-shell.app-dark .app-lock-note {
+  color: #aac0de;
 }
 
 .landing-shell {
@@ -477,6 +581,65 @@ p {
 
 .auth-legal u {
   text-underline-offset: 2px;
+}
+
+.app-shell.app-dark .auth-panel-surface {
+  border-color: #2f4f7a;
+  background: linear-gradient(175deg, #102340, #0a1a31);
+}
+
+.app-shell.app-dark .auth-close-btn {
+  color: #dceaff;
+}
+
+.app-shell.app-dark .auth-close-btn:hover {
+  background: #153055;
+}
+
+.app-shell.app-dark .auth-shell h3 {
+  color: #f3f8ff;
+}
+
+.app-shell.app-dark .auth-subtitle {
+  color: #a9c0df;
+}
+
+.app-shell.app-dark .auth-tabs .tab {
+  background: #132c50;
+  color: #bfd4f3;
+  border-color: #395f90;
+}
+
+.app-shell.app-dark .auth-tabs .tab.active {
+  background: #21406f;
+  color: #f4f8ff;
+  border-color: #4d79ad;
+}
+
+.app-shell.app-dark .auth-provider-btn {
+  background: #152f54;
+  color: #f1f7ff;
+  border-color: #446da2;
+  box-shadow: none;
+}
+
+.app-shell.app-dark .auth-provider-btn:hover {
+  background: #1d3d69;
+  border-color: #5a86be;
+  box-shadow: none;
+}
+
+.app-shell.app-dark .auth-email-form {
+  background: #0f2445;
+  border-color: #335d90;
+}
+
+.app-shell.app-dark .auth-remember-row {
+  color: #d7e6ff;
+}
+
+.app-shell.app-dark .auth-legal {
+  color: #93aed1;
 }
 
 .account-drawer-backdrop {

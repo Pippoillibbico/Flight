@@ -4,6 +4,8 @@ import { DESTINATIONS, ORIGINS } from '../data/flights-data.js';
 import { upsertNightlyPrecompute } from '../lib/free-foundation-store.js';
 import { getCacheClient } from '../lib/free-cache.js';
 import { appendImmutableAudit } from '../lib/audit-log.js';
+import { findCheapestWindows } from '../lib/window-finder-engine.js';
+import { detectDealV2 } from '../lib/deal-detector.js';
 
 const BUDGET_BUCKETS = ['low', 'mid', 'high'];
 const SEASONS = ['winter', 'spring', 'summer', 'autumn'];
@@ -95,6 +97,8 @@ export async function runNightlyFreePrecompute({ reason = 'manual' } = {}) {
   const rankings = [];
   const scores = [];
   const signals = [];
+  const windowCaches = [];
+  const dealCaches = [];
 
   for (const origin of ORIGINS) {
     for (const destination of DESTINATIONS) {
@@ -139,11 +143,73 @@ export async function runNightlyFreePrecompute({ reason = 'manual' } = {}) {
   await cache.del('free:data:version');
   await cache.setex('free:data:version', 24 * 3600, String(Date.now()));
 
+  const now = new Date();
+  const horizonFrom = formatISO(addDays(now, 10), { representation: 'date' });
+  const horizonTo = formatISO(addDays(now, 95), { representation: 'date' });
+
+  for (const origin of ORIGINS) {
+    const windowResult = findCheapestWindows({
+      origin: origin.code,
+      dateFrom: horizonFrom,
+      dateTo: horizonTo,
+      stayDays: 5,
+      region: 'all',
+      travellers: 1,
+      cabinClass: 'economy',
+      topN: 20
+    });
+
+    const windows = (windowResult.windows || []).slice(0, 12);
+    windowCaches.push({
+      origin: origin.code,
+      generatedAt: new Date().toISOString(),
+      horizonFrom,
+      horizonTo,
+      items: windows
+    });
+
+    for (const item of windows) {
+      const evaluated = await detectDealV2({
+        origin: item.origin,
+        destination: item.destinationIata,
+        date: item.dateFrom,
+        price: item.price,
+        stopCount: item.stopCount,
+        isNightFlight: item.isNightFlight,
+        comfortScore: item.comfortScore
+      });
+      dealCaches.push({
+        origin: item.origin,
+        destination: item.destination,
+        destinationIata: item.destinationIata,
+        dateFrom: item.dateFrom,
+        dateTo: item.dateTo,
+        price: item.price,
+        comfortScore: item.comfortScore,
+        dealConfidence: evaluated.dealConfidence,
+        why: evaluated.why,
+        riskNote: evaluated.riskNote,
+        seasonLabel: evaluated?.season?.seasonLabel || null
+      });
+    }
+  }
+
+  dealCaches.sort((a, b) => b.dealConfidence - a.dealConfidence || a.price - b.price);
+  await cache.setex(
+    'free:precompute:windows:v2',
+    24 * 3600,
+    JSON.stringify({ generatedAt: new Date().toISOString(), horizonFrom, horizonTo, origins: windowCaches })
+  );
+  await cache.setex(
+    'free:precompute:deals:v2',
+    24 * 3600,
+    JSON.stringify({ generatedAt: new Date().toISOString(), horizonFrom, horizonTo, items: dealCaches.slice(0, 120) })
+  );
+
   appendImmutableAudit({
     category: 'free_precompute',
     type: 'nightly_refresh',
     success: true,
-    detail: `reason=${reason}; rankings=${rankings.length}; scores=${scores.length}; signals=${signals.length}`
+    detail: `reason=${reason}; rankings=${rankings.length}; scores=${scores.length}; signals=${signals.length}; windows=${windowCaches.length}; deals=${dealCaches.length}`
   }).catch(() => {});
 }
-
