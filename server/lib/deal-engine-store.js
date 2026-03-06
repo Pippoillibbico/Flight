@@ -475,6 +475,23 @@ async function getBaseline({ originIata, destinationIata, travelMonth }) {
   );
 }
 
+export async function getRouteBaselinePercentiles({ originIata, destinationIata, travelMonth }) {
+  const origin = normalizeIata(originIata, 'originIata');
+  const destination = normalizeIata(destinationIata, 'destinationIata');
+  const month = normalizeDate(travelMonth, 'travelMonth');
+  const row = await getBaseline({ originIata: origin, destinationIata: destination, travelMonth: month });
+  if (!row) return null;
+  return {
+    p10_price: Number(row.p10_price),
+    p25_price: Number(row.p25_price),
+    p50_price: Number(row.p50_price),
+    p75_price: Number(row.p75_price),
+    p90_price: Number(row.p90_price),
+    observation_count: Number(row.observation_count || 0),
+    travel_month: String(row.travel_month || month)
+  };
+}
+
 export async function scoreDeal({ origin, destination, departureDate, price }) {
   const originIata = normalizeIata(origin, 'origin');
   const destinationIata = normalizeIata(destination, 'destination');

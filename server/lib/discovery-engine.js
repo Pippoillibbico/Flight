@@ -1,7 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { getOrCreateSubscription } from './saas-db.js';
-import { listRouteBaselinesForOrigin, scoreDeal } from './deal-engine-store.js';
+import { listRouteBaselinesForOrigin } from './deal-engine-store.js';
+import { canonicalScoreFromPercentiles, legacyLevelFromBadge } from './discovery-score.js';
 
 const SEASON_MAP_PATH = fileURLToPath(new URL('../data/discovery-season-map.json', import.meta.url));
 
@@ -92,25 +93,31 @@ export async function runDiscoveryJustGo({ userId, origin, budget, mood, region,
     if (safeRegion !== 'all' && meta?.region && meta.region !== safeRegion) continue;
 
     const travelMonth = String(row.travel_month).slice(0, 10);
-    const deal = await scoreDeal({
-      origin: originIata,
-      destination,
-      departureDate: travelMonth,
-      price: budgetEur
+    const canonical = canonicalScoreFromPercentiles({
+      p10: Number(row.p10_price),
+      p25: Number(row.p25_price),
+      p50: Number(row.p50_price),
+      p75: Number(row.p75_price),
+      p90: Number(row.p90_price),
+      observationCount: Number(row.observation_count || 0),
+      price: budgetEur,
+      travelMonth
     });
     const weatherFit = seasonScore(meta, { season, mood: safeMood, region: safeRegion });
-    const composite = Math.round(deal.dealScore * 0.72 + weatherFit * 0.28);
+    const composite = Math.round(canonical.score * 0.72 + weatherFit * 0.28);
     ranked.push({
       destinationIata: destination,
       region: meta?.region || 'all',
       travelMonth,
       estimatedPrice: Number(row.p50_price),
-      dealLevel: deal.dealLevel,
-      dealScore: deal.dealScore,
-      confidence: deal.confidence,
+      dealLevel: legacyLevelFromBadge({ badge: canonical.badge, price: budgetEur, p75: Number(row.p75_price) }),
+      dealScore: canonical.score,
+      badge: canonical.badge,
+      reasons: canonical.reasons,
+      confidence: canonical.confidence,
       seasonScore: weatherFit,
       rankScore: composite,
-      why: deal.why
+      why: canonical.reasons.join(' ')
     });
   }
 
