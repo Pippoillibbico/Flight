@@ -2,7 +2,8 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { getOrCreateSubscription } from './saas-db.js';
 import { listRouteBaselinesForOrigin } from './deal-engine-store.js';
-import { canonicalScoreFromPercentiles, legacyLevelFromBadge } from './discovery-score.js';
+import { canonicalScoreFromPercentiles, legacyLevelFromBadge, mapLimit } from './discovery-score.js';
+import { logger } from './logger.js';
 
 const SEASON_MAP_PATH = fileURLToPath(new URL('../data/discovery-season-map.json', import.meta.url));
 
@@ -86,11 +87,10 @@ export async function runDiscoveryJustGo({ userId, origin, budget, mood, region,
   const season = seasonForDate(fromDate);
 
   const rows = await listRouteBaselinesForOrigin({ originIata, fromMonth, toMonth });
-  const ranked = [];
-  for (const row of rows) {
+  const computed = await mapLimit(rows, 8, async (row) => {
     const destination = String(row.destination_iata || '').toUpperCase();
     const meta = await getDestinationMeta(destination);
-    if (safeRegion !== 'all' && meta?.region && meta.region !== safeRegion) continue;
+    if (safeRegion !== 'all' && meta?.region && meta.region !== safeRegion) return null;
 
     const travelMonth = String(row.travel_month).slice(0, 10);
     const canonical = canonicalScoreFromPercentiles({
@@ -103,9 +103,10 @@ export async function runDiscoveryJustGo({ userId, origin, budget, mood, region,
       price: budgetEur,
       travelMonth
     });
+    if (canonical.visibility === 'hidden') return null;
     const weatherFit = seasonScore(meta, { season, mood: safeMood, region: safeRegion });
     const composite = Math.round(canonical.score * 0.72 + weatherFit * 0.28);
-    ranked.push({
+    const item = {
       destinationIata: destination,
       region: meta?.region || 'all',
       travelMonth,
@@ -115,11 +116,28 @@ export async function runDiscoveryJustGo({ userId, origin, budget, mood, region,
       badge: canonical.badge,
       reasons: canonical.reasons,
       confidence: canonical.confidence,
+      visibility: canonical.visibility,
       seasonScore: weatherFit,
       rankScore: composite,
       why: canonical.reasons.join(' ')
-    });
-  }
+    };
+    logger.info(
+      {
+        origin: originIata,
+        destination,
+        travelMonth,
+        score: canonical.score,
+        badge: canonical.badge,
+        confidenceLevel: canonical.confidence?.level || 'very_low',
+        observationCount: Number(canonical.confidence?.observationCount || 0),
+        visibility: canonical.visibility
+      },
+      'discovery_just_go_scored'
+    );
+    return item;
+  });
+
+  const ranked = computed.filter(Boolean);
 
   ranked.sort((a, b) => b.rankScore - a.rankScore || b.dealScore - a.dealScore || a.estimatedPrice - b.estimatedPrice);
 

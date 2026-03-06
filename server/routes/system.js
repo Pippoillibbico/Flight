@@ -12,7 +12,9 @@ export function buildSystemRouter({
   CORS_ALLOWLIST,
   LOGIN_MAX_FAILURES,
   LOGIN_LOCK_MINUTES,
-  runFeatureAudit
+  runFeatureAudit,
+  getDataFoundationStatus,
+  providerRegistry
 }) {
   const router = Router();
 
@@ -30,7 +32,9 @@ export function buildSystemRouter({
     return res.status(200).json({
       status: 'ok',
       database: pgPool ? 'configured' : 'local',
-      engine: 'ready'
+      engine: 'ready',
+      uptime: Number(process.uptime().toFixed(1)),
+      timestamp: new Date().toISOString()
     });
   });
 
@@ -190,6 +194,20 @@ export function buildSystemRouter({
       auditHmacKeyMissing: !auditHmacConfigured,
       summary: { total: checks.length, passed, failed: checks.length - passed },
       checks
+    });
+  });
+
+  router.get('/api/system/data-status', async (_req, res) => {
+    const base = await getDataFoundationStatus();
+    const providers = providerRegistry?.listProviders?.() || [];
+    const duffel = providers.find((p) => p.name === 'duffel');
+    const amadeus = providers.find((p) => p.name === 'amadeus');
+    return res.json({
+      ...base,
+      providers: {
+        duffelConfigured: Boolean(duffel?.configured),
+        amadeusConfigured: Boolean(amadeus?.configured)
+      }
     });
   });
 

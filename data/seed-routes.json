@@ -1,0 +1,7 @@
+{
+  "origins": {
+    "ROM": ["PAR", "LON", "BCN", "ATH", "LIS", "AMS", "BER", "VIE", "PRG", "BUD", "NYC", "BKK", "TYO"],
+    "MIL": ["PAR", "LON", "MAD", "BCN", "ATH", "LIS", "AMS", "BER", "VIE", "PRG", "JFK", "BKK", "TYO"],
+    "NAP": ["PAR", "LON", "MAD", "BCN", "ATH", "LIS", "AMS", "BER", "VIE", "PRG", "JFK", "BKK", "DXB"]
+  }
+}

@@ -9,6 +9,7 @@ import {
   setDiscoveryWorkerCursor
 } from '../lib/deal-engine-store.js';
 import { getDestinationMeta } from '../lib/discovery-engine.js';
+import { qualityGateForCount } from '../lib/discovery-score.js';
 import { withDb } from '../lib/db.js';
 import { appendImmutableAudit } from '../lib/audit-log.js';
 import { logger } from '../lib/logger.js';
@@ -33,7 +34,7 @@ function badgeFromLevel(level) {
 }
 
 function shortMessage({ destination, price, badge, dealScore }) {
-  return `${badge} deal to ${destination} - EUR ${Number(price).toFixed(0)} (score ${Math.round(Number(dealScore) || 0)}/100).`;
+  return `${badge} deal to ${destination} — €${Number(price).toFixed(0)} (score ${Math.round(Number(dealScore) || 0)}/100).`;
 }
 
 export async function runDiscoveryAlertWorkerOnce({ limit = 500 } = {}) {
@@ -61,6 +62,8 @@ export async function runDiscoveryAlertWorkerOnce({ limit = 500 } = {}) {
         departureDate: String(obs.departure_date).slice(0, 10),
         price: Number(obs.total_price)
       });
+      const quality = qualityGateForCount(Number(score.confidence?.observationCount || 0));
+      if (!quality.allowed) continue;
       if (!['great', 'scream'].includes(String(score.dealLevel || '').toLowerCase())) continue;
 
       const dedupeKey = `discovery:${sub.id}:${obs.fingerprint}`;
@@ -78,6 +81,19 @@ export async function runDiscoveryAlertWorkerOnce({ limit = 500 } = {}) {
         `Confidence: ${score.confidence?.level || 'very_low'} (${Number(score.confidence?.observationCount || 0)} samples)`
       ].filter(Boolean);
       const msg = shortMessage({ destination: obs.destination_iata, price: obs.total_price, badge, dealScore: score.dealScore });
+      logger.info(
+        {
+          origin: obs.origin_iata,
+          destination: obs.destination_iata,
+          travelMonth: String(obs.travel_month || '').slice(0, 10),
+          score: Number(score.dealScore || 0),
+          badge,
+          confidenceLevel: score.confidence?.level || 'very_low',
+          observationCount: Number(score.confidence?.observationCount || 0),
+          visibility: quality.visibility
+        },
+        'discovery_alert_scored_notification'
+      );
       await withDb((db) => {
         db.notifications = db.notifications || [];
         if (db.notifications.some((n) => n.dedupeKey === dedupeKey)) return db;

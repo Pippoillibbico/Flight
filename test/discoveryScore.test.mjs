@@ -1,12 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { canonicalScoreFromPercentiles, confidenceForCount, legacyLevelFromBadge } from '../server/lib/discovery-score.js';
+import { canonicalScoreFromPercentiles, confidenceForCount, legacyLevelFromBadge, qualityGateForCount } from '../server/lib/discovery-score.js';
 
 test('confidenceForCount maps sample sizes consistently', () => {
   assert.deepEqual(confidenceForCount(90), { level: 'high', score: 0.95 });
   assert.deepEqual(confidenceForCount(45), { level: 'medium', score: 0.8 });
-  assert.deepEqual(confidenceForCount(20), { level: 'low', score: 0.6 });
+  assert.deepEqual(confidenceForCount(25), { level: 'low', score: 0.6 });
   assert.deepEqual(confidenceForCount(2), { level: 'very_low', score: 0.35 });
+});
+
+test('qualityGateForCount enforces visibility tiers', () => {
+  assert.deepEqual(qualityGateForCount(10), { allowed: false, visibility: 'hidden' });
+  assert.deepEqual(qualityGateForCount(25), { allowed: true, visibility: 'low_confidence' });
+  assert.deepEqual(qualityGateForCount(39), { allowed: true, visibility: 'low_confidence' });
+  assert.deepEqual(qualityGateForCount(40), { allowed: true, visibility: 'normal' });
 });
 
 test('canonicalScoreFromPercentiles respects badge thresholds and score bounds', () => {
@@ -71,4 +78,3 @@ test('legacyLevelFromBadge keeps backward-compatible mapping', () => {
   assert.equal(legacyLevelFromBadge({ badge: 'OK', price: 140, p75: 150 }), 'fair');
   assert.equal(legacyLevelFromBadge({ badge: 'OK', price: 180, p75: 150 }), 'bad');
 });
-

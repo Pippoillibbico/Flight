@@ -24,7 +24,8 @@ export function buildSearchRouter({
   withDb,
   insertSearchEvent,
   nanoid,
-  sendMachineError
+  sendMachineError,
+  captureUserPriceObservation = async () => {}
 }) {
   const router = Router();
 
@@ -127,6 +128,27 @@ export function buildSearchRouter({
       dateFrom: parsed.data.dateFrom,
       dateTo: parsed.data.dateTo
     });
+    const concreteFlights = Array.isArray(result.flights) ? result.flights.slice(0, 20) : [];
+    Promise.allSettled(
+      concreteFlights.map((flight) =>
+        captureUserPriceObservation({
+          originIata: String(flight.origin || parsed.data.origin).toUpperCase(),
+          destinationIata: String(flight.destinationIata || '').toUpperCase(),
+          departureDate: parsed.data.dateFrom,
+          returnDate: parsed.data.dateTo,
+          currency: 'EUR',
+          totalPrice: Number(flight.price),
+          provider: String(flight.provider || 'user_search'),
+          cabinClass: parsed.data.cabinClass,
+          tripType: 'round_trip',
+          source: 'user_search',
+          metadata: {
+            channel: 'search',
+            searchId: result?.meta?.searchId || null
+          }
+        })
+      )
+    ).catch(() => {});
 
     return res.json(result);
   });

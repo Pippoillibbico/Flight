@@ -32,7 +32,14 @@ test('system router exposes /health', async () => {
       CORS_ALLOWLIST: new Set(['http://localhost:5173']),
       LOGIN_MAX_FAILURES: 5,
       LOGIN_LOCK_MINUTES: 15,
-      runFeatureAudit: () => ({ ok: true })
+      runFeatureAudit: () => ({ ok: true }),
+      getDataFoundationStatus: async () => ({
+        ok: true,
+        mode: 'sqlite',
+        totals: { priceObservations: 1, routeBaselines: 1, routeCoverageStats: 1, activeSubscriptions: 1 },
+        coverage: { high: 1, medium: 0, low: 0, veryLow: 0 }
+      }),
+      providerRegistry: { listProviders: () => [{ name: 'duffel', configured: false }, { name: 'amadeus', configured: false }] }
     })
   );
 
@@ -41,6 +48,42 @@ test('system router exposes /health', async () => {
     assert.equal(res.status, 200);
     const body = await res.json();
     assert.equal(body.status, 'ok');
+  });
+});
+
+test('system router exposes /api/system/data-status', async () => {
+  const app = express();
+  app.use(
+    buildSystemRouter({
+      BUILD_VERSION: 'test-version',
+      pgPool: null,
+      getPriceDatasetStatus: async () => ({ routes: 1 }),
+      logger: { error: () => {}, warn: () => {}, info: () => {} },
+      getCacheClient: () => ({ ping: async () => 'PONG' }),
+      readDb: async () => ({ revokedTokens: [], refreshSessions: [], oauthSessions: [] }),
+      verifyImmutableAudit: async () => ({ ok: true, count: 0 }),
+      createAuditCheck: (id, label, ok, detail) => ({ id, label, ok, detail }),
+      CORS_ALLOWLIST: new Set(['http://localhost:5173']),
+      LOGIN_MAX_FAILURES: 5,
+      LOGIN_LOCK_MINUTES: 15,
+      runFeatureAudit: () => ({ ok: true }),
+      getDataFoundationStatus: async () => ({
+        ok: true,
+        mode: 'sqlite',
+        totals: { priceObservations: 2, routeBaselines: 1, routeCoverageStats: 1, activeSubscriptions: 1 },
+        coverage: { high: 1, medium: 0, low: 0, veryLow: 0 }
+      }),
+      providerRegistry: { listProviders: () => [{ name: 'duffel', configured: true }, { name: 'amadeus', configured: false }] }
+    })
+  );
+
+  await withServer(app, async (baseUrl) => {
+    const res = await fetch(`${baseUrl}/api/system/data-status`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.ok, true);
+    assert.equal(body.totals.priceObservations > 0, true);
+    assert.equal(typeof body.providers.duffelConfigured, 'boolean');
   });
 });
 
