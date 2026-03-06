@@ -83,7 +83,7 @@ function assertLocalIngestionPolicy({ provider, source }) {
   }
 
   // Allow only explicit internal source families.
-  const allowedSource = /^(manual|partner_feed|csv_import|csv_manual|api_ingest|seed_script)([_a-z0-9-]*)$/i;
+  const allowedSource = /^(manual|partner_feed|csv_import|csv_manual|api_ingest|seed_script|user_search)([_a-z0-9-]*)$/i;
   if (!allowedSource.test(s)) {
     throw new Error('Rejected by ingestion policy: source must be internal (manual/csv/partner feed).');
   }
@@ -92,7 +92,7 @@ function assertLocalIngestionPolicy({ provider, source }) {
 function confidenceForCount(count) {
   if (count >= 80) return { level: 'high', score: 0.95 };
   if (count >= 40) return { level: 'medium', score: 0.8 };
-  if (count >= 15) return { level: 'low', score: 0.6 };
+  if (count >= 25) return { level: 'low', score: 0.6 };
   return { level: 'very_low', score: 0.35 };
 }
 
@@ -100,6 +100,43 @@ async function ensurePostgres() {
   if (!pgPool) {
     pgPool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
   }
+  await pgPool.query(`
+    CREATE TABLE IF NOT EXISTS ingestion_jobs (
+      id TEXT PRIMARY KEY,
+      job_type TEXT NOT NULL,
+      status TEXT NOT NULL,
+      source TEXT NOT NULL,
+      started_at TIMESTAMPTZ NULL,
+      finished_at TIMESTAMPTZ NULL,
+      processed_count INTEGER NOT NULL DEFAULT 0,
+      inserted_count INTEGER NOT NULL DEFAULT 0,
+      deduped_count INTEGER NOT NULL DEFAULT 0,
+      failed_count INTEGER NOT NULL DEFAULT 0,
+      error_summary TEXT NULL,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS provider_run_state (
+      provider_name TEXT PRIMARY KEY,
+      last_success_at TIMESTAMPTZ NULL,
+      last_cursor TEXT NULL,
+      last_route_batch TEXT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS route_coverage_stats (
+      origin_iata TEXT NOT NULL,
+      destination_iata TEXT NOT NULL,
+      travel_month DATE NOT NULL,
+      observation_count INTEGER NOT NULL,
+      confidence_level TEXT NOT NULL,
+      last_observed_at TIMESTAMPTZ NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (origin_iata, destination_iata, travel_month)
+    );
+    CREATE INDEX IF NOT EXISTS idx_route_coverage_month ON route_coverage_stats(travel_month, confidence_level);
+    CREATE INDEX IF NOT EXISTS idx_ingestion_jobs_created_at ON ingestion_jobs(created_at DESC);
+  `);
 }
 
 async function ensureSqlite() {
@@ -189,6 +226,41 @@ async function ensureSqlite() {
       ON discovery_alert_subscriptions(user_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_discovery_subscriptions_match
       ON discovery_alert_subscriptions(origin_iata, region, enabled, date_from, date_to);
+    CREATE TABLE IF NOT EXISTS ingestion_jobs (
+      id TEXT PRIMARY KEY,
+      job_type TEXT NOT NULL,
+      status TEXT NOT NULL,
+      source TEXT NOT NULL,
+      started_at TEXT NULL,
+      finished_at TEXT NULL,
+      processed_count INTEGER NOT NULL DEFAULT 0,
+      inserted_count INTEGER NOT NULL DEFAULT 0,
+      deduped_count INTEGER NOT NULL DEFAULT 0,
+      failed_count INTEGER NOT NULL DEFAULT 0,
+      error_summary TEXT NULL,
+      metadata TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_ingestion_jobs_created_at ON ingestion_jobs(created_at DESC);
+    CREATE TABLE IF NOT EXISTS provider_run_state (
+      provider_name TEXT PRIMARY KEY,
+      last_success_at TEXT NULL,
+      last_cursor TEXT NULL,
+      last_route_batch TEXT NULL,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS route_coverage_stats (
+      origin_iata TEXT NOT NULL,
+      destination_iata TEXT NOT NULL,
+      travel_month TEXT NOT NULL,
+      observation_count INTEGER NOT NULL,
+      confidence_level TEXT NOT NULL,
+      last_observed_at TEXT NULL,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (origin_iata, destination_iata, travel_month)
+    );
+    CREATE INDEX IF NOT EXISTS idx_route_coverage_month ON route_coverage_stats(travel_month, confidence_level);
   `);
 }
 
@@ -231,8 +303,10 @@ function normalizeObservation(payload) {
   const returnDate = rawReturn ? normalizeDate(rawReturn, 'return_date') : null;
   const totalPrice = Number(payload.total_price ?? payload.totalPrice);
   if (!Number.isFinite(totalPrice) || totalPrice <= 0) throw new Error('Invalid total_price.');
+  if (totalPrice < 5 || totalPrice > 20000) throw new Error('Invalid total_price. Expected value between 5 and 20000 EUR.');
 
   const currency = String(payload.currency || 'EUR').trim().toUpperCase();
+  if (!/^[A-Z]{3}$/.test(currency)) throw new Error('Invalid currency. Expected ISO code.');
   const provider = String(payload.provider || 'partner_feed').trim();
   const cabinClass = String(payload.cabin_class || payload.cabinClass || 'economy').trim().toLowerCase();
   const tripType = String(payload.trip_type || payload.tripType || (returnDate ? 'round_trip' : 'one_way')).trim().toLowerCase();
@@ -482,13 +556,16 @@ export async function getRouteBaselinePercentiles({ originIata, destinationIata,
   const row = await getBaseline({ originIata: origin, destinationIata: destination, travelMonth: month });
   if (!row) return null;
   return {
+    route_id: Number(row.route_id || 0),
+    origin_iata: String(row.origin_iata || origin),
+    destination_iata: String(row.destination_iata || destination),
+    travel_month: String(row.travel_month || month),
     p10_price: Number(row.p10_price),
     p25_price: Number(row.p25_price),
     p50_price: Number(row.p50_price),
     p75_price: Number(row.p75_price),
     p90_price: Number(row.p90_price),
-    observation_count: Number(row.observation_count || 0),
-    travel_month: String(row.travel_month || month)
+    observation_count: Number(row.observation_count || 0)
   };
 }
 
@@ -751,4 +828,308 @@ export async function claimDiscoveryDedupe({ dedupeKey, userId, subscriptionId, 
     )
     .get(dedupeKey, String(userId), String(subscriptionId), String(observationFingerprint));
   return Boolean(row?.dedupe_key);
+}
+
+function coverageLevelForCount(count) {
+  const n = Number(count) || 0;
+  if (n >= 80) return 'high';
+  if (n >= 40) return 'medium';
+  if (n >= 25) return 'low';
+  return 'very_low';
+}
+
+export async function createIngestionJob({ jobType, source, status = 'queued', metadata = null }) {
+  await ensureInitialized();
+  const id = nanoid(16);
+  const payload = {
+    id,
+    jobType: String(jobType || '').trim() || 'unknown',
+    source: String(source || '').trim() || 'manual',
+    status: String(status || 'queued').trim() || 'queued',
+    metadata: metadata && typeof metadata === 'object' ? metadata : {},
+    createdAt: new Date().toISOString()
+  };
+  if (getMode() === 'postgres') {
+    await pgPool.query(
+      `INSERT INTO ingestion_jobs
+       (id, job_type, status, source, metadata, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,NOW(),NOW())`,
+      [payload.id, payload.jobType, payload.status, payload.source, JSON.stringify(payload.metadata)]
+    );
+    return payload;
+  }
+  sqliteDb
+    .prepare(
+      `INSERT INTO ingestion_jobs
+       (id, job_type, status, source, metadata, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))`
+    )
+    .run(payload.id, payload.jobType, payload.status, payload.source, JSON.stringify(payload.metadata));
+  return payload;
+}
+
+export async function updateIngestionJob({
+  jobId,
+  status,
+  startedAt = null,
+  finishedAt = null,
+  processedCount = null,
+  insertedCount = null,
+  dedupedCount = null,
+  failedCount = null,
+  errorSummary = null,
+  metadata = null
+}) {
+  await ensureInitialized();
+  const id = String(jobId || '').trim();
+  if (!id) return;
+  if (getMode() === 'postgres') {
+    await pgPool.query(
+      `UPDATE ingestion_jobs
+       SET status = COALESCE($2, status),
+           started_at = COALESCE($3::timestamptz, started_at),
+           finished_at = COALESCE($4::timestamptz, finished_at),
+           processed_count = COALESCE($5, processed_count),
+           inserted_count = COALESCE($6, inserted_count),
+           deduped_count = COALESCE($7, deduped_count),
+           failed_count = COALESCE($8, failed_count),
+           error_summary = COALESCE($9, error_summary),
+           metadata = COALESCE($10::jsonb, metadata),
+           updated_at = NOW()
+       WHERE id = $1`,
+      [
+        id,
+        status || null,
+        startedAt || null,
+        finishedAt || null,
+        Number.isFinite(Number(processedCount)) ? Number(processedCount) : null,
+        Number.isFinite(Number(insertedCount)) ? Number(insertedCount) : null,
+        Number.isFinite(Number(dedupedCount)) ? Number(dedupedCount) : null,
+        Number.isFinite(Number(failedCount)) ? Number(failedCount) : null,
+        errorSummary || null,
+        metadata && typeof metadata === 'object' ? JSON.stringify(metadata) : null
+      ]
+    );
+    return;
+  }
+  sqliteDb
+    .prepare(
+      `UPDATE ingestion_jobs
+       SET status = COALESCE(?, status),
+           started_at = COALESCE(?, started_at),
+           finished_at = COALESCE(?, finished_at),
+           processed_count = COALESCE(?, processed_count),
+           inserted_count = COALESCE(?, inserted_count),
+           deduped_count = COALESCE(?, deduped_count),
+           failed_count = COALESCE(?, failed_count),
+           error_summary = COALESCE(?, error_summary),
+           metadata = COALESCE(?, metadata),
+           updated_at = datetime('now')
+       WHERE id = ?`
+    )
+    .run(
+      status || null,
+      startedAt || null,
+      finishedAt || null,
+      Number.isFinite(Number(processedCount)) ? Number(processedCount) : null,
+      Number.isFinite(Number(insertedCount)) ? Number(insertedCount) : null,
+      Number.isFinite(Number(dedupedCount)) ? Number(dedupedCount) : null,
+      Number.isFinite(Number(failedCount)) ? Number(failedCount) : null,
+      errorSummary || null,
+      metadata && typeof metadata === 'object' ? JSON.stringify(metadata) : null,
+      id
+    );
+}
+
+export async function upsertProviderRunState({ providerName, lastSuccessAt = null, lastCursor = null, lastRouteBatch = null }) {
+  await ensureInitialized();
+  const provider = String(providerName || '').trim().toLowerCase();
+  if (!provider) return;
+  if (getMode() === 'postgres') {
+    await pgPool.query(
+      `INSERT INTO provider_run_state (provider_name, last_success_at, last_cursor, last_route_batch, updated_at)
+       VALUES ($1,$2,$3,$4,NOW())
+       ON CONFLICT (provider_name) DO UPDATE SET
+         last_success_at = COALESCE(EXCLUDED.last_success_at, provider_run_state.last_success_at),
+         last_cursor = COALESCE(EXCLUDED.last_cursor, provider_run_state.last_cursor),
+         last_route_batch = COALESCE(EXCLUDED.last_route_batch, provider_run_state.last_route_batch),
+         updated_at = NOW()`,
+      [provider, lastSuccessAt || null, lastCursor || null, lastRouteBatch || null]
+    );
+    return;
+  }
+  sqliteDb
+    .prepare(
+      `INSERT INTO provider_run_state (provider_name, last_success_at, last_cursor, last_route_batch, updated_at)
+       VALUES (?, ?, ?, ?, datetime('now'))
+       ON CONFLICT(provider_name) DO UPDATE SET
+         last_success_at=COALESCE(excluded.last_success_at, provider_run_state.last_success_at),
+         last_cursor=COALESCE(excluded.last_cursor, provider_run_state.last_cursor),
+         last_route_batch=COALESCE(excluded.last_route_batch, provider_run_state.last_route_batch),
+         updated_at=datetime('now')`
+    )
+    .run(provider, lastSuccessAt || null, lastCursor || null, lastRouteBatch || null);
+}
+
+export async function getProviderRunStates() {
+  await ensureInitialized();
+  if (getMode() === 'postgres') {
+    const result = await pgPool.query('SELECT * FROM provider_run_state ORDER BY provider_name ASC');
+    return result.rows;
+  }
+  return sqliteDb.prepare('SELECT * FROM provider_run_state ORDER BY provider_name ASC').all();
+}
+
+export async function listPopularRoutePairs({ limit = 200 } = {}) {
+  await ensureInitialized();
+  const maxRows = Math.max(1, Math.min(1000, Number(limit) || 200));
+  if (getMode() === 'postgres') {
+    const result = await pgPool.query(
+      `SELECT origin_iata, destination_iata, COUNT(*)::int AS observations
+       FROM price_observations
+       GROUP BY origin_iata, destination_iata
+       ORDER BY observations DESC
+       LIMIT $1`,
+      [maxRows]
+    );
+    return result.rows.map((row) => ({
+      originIata: String(row.origin_iata),
+      destinationIata: String(row.destination_iata),
+      observations: Number(row.observations || 0)
+    }));
+  }
+  const rows = sqliteDb
+    .prepare(
+      `SELECT origin_iata, destination_iata, COUNT(*) AS observations
+       FROM price_observations
+       GROUP BY origin_iata, destination_iata
+       ORDER BY observations DESC
+       LIMIT ?`
+    )
+    .all(maxRows);
+  return rows.map((row) => ({
+    originIata: String(row.origin_iata),
+    destinationIata: String(row.destination_iata),
+    observations: Number(row.observations || 0)
+  }));
+}
+
+export async function refreshRouteCoverageStats() {
+  await ensureInitialized();
+  if (getMode() === 'postgres') {
+    await pgPool.query(
+      `INSERT INTO route_coverage_stats
+       (origin_iata, destination_iata, travel_month, observation_count, confidence_level, last_observed_at, updated_at)
+       SELECT
+         po.origin_iata,
+         po.destination_iata,
+         po.travel_month,
+         COUNT(*)::int AS observation_count,
+         CASE
+           WHEN COUNT(*) >= 80 THEN 'high'
+           WHEN COUNT(*) >= 40 THEN 'medium'
+           WHEN COUNT(*) >= 25 THEN 'low'
+           ELSE 'very_low'
+         END AS confidence_level,
+         MAX(po.observed_at) AS last_observed_at,
+         NOW() AS updated_at
+       FROM price_observations po
+       GROUP BY po.origin_iata, po.destination_iata, po.travel_month
+       ON CONFLICT (origin_iata, destination_iata, travel_month)
+       DO UPDATE SET
+         observation_count = EXCLUDED.observation_count,
+         confidence_level = EXCLUDED.confidence_level,
+         last_observed_at = EXCLUDED.last_observed_at,
+         updated_at = NOW()`
+    );
+    const countRes = await pgPool.query('SELECT COUNT(*)::int AS c FROM route_coverage_stats');
+    return { updatedRows: Number(countRes.rows[0]?.c || 0) };
+  }
+
+  const rows = sqliteDb
+    .prepare(
+      `SELECT origin_iata, destination_iata, travel_month, COUNT(*) AS observation_count, MAX(observed_at) AS last_observed_at
+       FROM price_observations
+       GROUP BY origin_iata, destination_iata, travel_month`
+    )
+    .all();
+  const stmt = sqliteDb.prepare(
+    `INSERT INTO route_coverage_stats
+     (origin_iata, destination_iata, travel_month, observation_count, confidence_level, last_observed_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+     ON CONFLICT(origin_iata, destination_iata, travel_month)
+     DO UPDATE SET
+       observation_count=excluded.observation_count,
+       confidence_level=excluded.confidence_level,
+       last_observed_at=excluded.last_observed_at,
+       updated_at=datetime('now')`
+  );
+  for (const row of rows) {
+    stmt.run(
+      row.origin_iata,
+      row.destination_iata,
+      row.travel_month,
+      Number(row.observation_count || 0),
+      coverageLevelForCount(Number(row.observation_count || 0)),
+      row.last_observed_at || null
+    );
+  }
+  return { updatedRows: rows.length };
+}
+
+export async function getDataFoundationStatus() {
+  await ensureInitialized();
+  if (getMode() === 'postgres') {
+    const [obs, baselines, coverage, subs] = await Promise.all([
+      pgPool.query('SELECT COUNT(*)::int AS c FROM price_observations'),
+      pgPool.query('SELECT COUNT(*)::int AS c FROM route_baselines'),
+      pgPool.query('SELECT confidence_level, COUNT(*)::int AS c FROM route_coverage_stats GROUP BY confidence_level'),
+      pgPool.query('SELECT COUNT(*)::int AS c FROM discovery_alert_subscriptions WHERE enabled = true')
+    ]);
+    const coverageBuckets = { high: 0, medium: 0, low: 0, veryLow: 0 };
+    for (const row of coverage.rows) {
+      const level = String(row.confidence_level || '').toLowerCase();
+      const count = Number(row.c || 0);
+      if (level === 'high') coverageBuckets.high = count;
+      else if (level === 'medium') coverageBuckets.medium = count;
+      else if (level === 'low') coverageBuckets.low = count;
+      else coverageBuckets.veryLow += count;
+    }
+    return {
+      ok: true,
+      mode: 'postgres',
+      totals: {
+        priceObservations: Number(obs.rows[0]?.c || 0),
+        routeBaselines: Number(baselines.rows[0]?.c || 0),
+        routeCoverageStats: coverageBuckets.high + coverageBuckets.medium + coverageBuckets.low + coverageBuckets.veryLow,
+        activeSubscriptions: Number(subs.rows[0]?.c || 0)
+      },
+      coverage: coverageBuckets
+    };
+  }
+
+  const obs = sqliteDb.prepare('SELECT COUNT(*) AS c FROM price_observations').get();
+  const baselines = sqliteDb.prepare('SELECT COUNT(*) AS c FROM route_baselines').get();
+  const coverageRows = sqliteDb.prepare('SELECT confidence_level, COUNT(*) AS c FROM route_coverage_stats GROUP BY confidence_level').all();
+  const subs = sqliteDb.prepare('SELECT COUNT(*) AS c FROM discovery_alert_subscriptions WHERE enabled = 1').get();
+  const coverageBuckets = { high: 0, medium: 0, low: 0, veryLow: 0 };
+  for (const row of coverageRows) {
+    const level = String(row.confidence_level || '').toLowerCase();
+    const count = Number(row.c || 0);
+    if (level === 'high') coverageBuckets.high = count;
+    else if (level === 'medium') coverageBuckets.medium = count;
+    else if (level === 'low') coverageBuckets.low = count;
+    else coverageBuckets.veryLow += count;
+  }
+  return {
+    ok: true,
+    mode: 'sqlite',
+    totals: {
+      priceObservations: Number(obs?.c || 0),
+      routeBaselines: Number(baselines?.c || 0),
+      routeCoverageStats: coverageBuckets.high + coverageBuckets.medium + coverageBuckets.low + coverageBuckets.veryLow,
+      activeSubscriptions: Number(subs?.c || 0)
+    },
+    coverage: coverageBuckets
+  };
 }

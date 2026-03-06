@@ -39,11 +39,17 @@ import { runNightlyRouteBaselineJob } from './jobs/route-baselines.js';
 import { runDiscoveryAlertWorkerOnce } from './jobs/discovery-alert-worker.js';
 import { runPriceIngestionWorkerOnce } from './lib/price-ingestion-worker.js';
 import { getPriceDatasetStatus, initPriceHistoryStore } from './lib/price-history-store.js';
+import { runBaselineRecomputeOnce } from './jobs/baseline-recompute-worker.js';
+import { runProviderCollectionOnce } from './jobs/provider-collection-worker.js';
+import { runSeedImportOnce } from './jobs/seed-import-worker.js';
+import { captureUserPriceObservation } from './lib/observation-capture.js';
 import { closeCacheClient, getCacheClient } from './lib/free-cache.js';
 import { createFlightProviderRegistry } from './lib/flight-provider.js';
+import { createProviderRegistry } from './lib/providers/provider-registry.js';
 import { requestIdMiddleware } from './middleware/request-id.js';
 import { buildErrorPayload, errorHandler, getErrorCode, getHumanErrorMessage } from './middleware/error-handler.js';
 import { logger, requestLogger } from './lib/logger.js';
+import { getDataFoundationStatus } from './lib/deal-engine-store.js';
 
 dotenv.config();
 try {
@@ -86,6 +92,11 @@ const DISCOVERY_ALERT_WORKER_CRON = process.env.DISCOVERY_ALERT_WORKER_CRON || '
 const DISCOVERY_ALERT_WORKER_TIMEZONE = process.env.DISCOVERY_ALERT_WORKER_TIMEZONE || FREE_JOBS_TIMEZONE;
 const PRICE_INGEST_WORKER_CRON = process.env.PRICE_INGEST_WORKER_CRON || '*/5 * * * *';
 const PRICE_INGEST_WORKER_TIMEZONE = process.env.PRICE_INGEST_WORKER_TIMEZONE || FREE_JOBS_TIMEZONE;
+const PROVIDER_COLLECTION_ENABLED = String(process.env.PROVIDER_COLLECTION_ENABLED || 'false').trim().toLowerCase() === 'true';
+const PROVIDER_COLLECTION_CRON = process.env.PROVIDER_COLLECTION_CRON || '17 * * * *';
+const PROVIDER_COLLECTION_TIMEZONE = process.env.PROVIDER_COLLECTION_TIMEZONE || FREE_JOBS_TIMEZONE;
+const BOOTSTRAP_SEED_IMPORT_FILE = String(process.env.BOOTSTRAP_SEED_IMPORT_FILE || '').trim();
+const BOOTSTRAP_SEED_IMPORT_DRY_RUN = String(process.env.BOOTSTRAP_SEED_IMPORT_DRY_RUN || 'false').trim().toLowerCase() === 'true';
 const JSON_BODY_LIMIT = String(process.env.BODY_JSON_LIMIT || '256kb').trim() || '256kb';
 const BUILD_VERSION = String(process.env.BUILD_VERSION || process.env.npm_package_version || '0.0.0-dev').trim();
 const OUTBOUND_CLICK_SECRET = String(process.env.OUTBOUND_CLICK_SECRET || process.env.JWT_SECRET || 'dev_outbound_secret').trim();
@@ -286,6 +297,7 @@ const flightProviderRegistry = createFlightProviderRegistry({
   resolveBookingUrl: ({ origin, destinationIata, dateFrom, dateTo, travellers, cabinClass }) =>
     buildBookingLink({ origin, destinationIata, dateFrom, dateTo, travellers, cabinClass })
 });
+const dataProviderRegistry = createProviderRegistry();
 const PARTNER_ENUM = flightProviderRegistry.allowedPartners;
 const OUTBOUND_SURFACE_ENUM = ['results', 'top_picks', 'compare', 'watchlist', 'insights'];
 const COUNTRIES = worldCountries
@@ -1865,7 +1877,9 @@ app.use(
     CORS_ALLOWLIST,
     LOGIN_MAX_FAILURES,
     LOGIN_LOCK_MINUTES,
-    runFeatureAudit
+    runFeatureAudit,
+    getDataFoundationStatus,
+    providerRegistry: dataProviderRegistry
   })
 );
 app.get('/api/security/audit/verify', authGuard, async (_req, res) => {
@@ -1931,7 +1945,8 @@ app.use(
     withDb,
     insertSearchEvent,
     nanoid,
-    sendMachineError
+    sendMachineError,
+    captureUserPriceObservation
   })
 );
 app.post('/api/auth/register', authLimiter, async (req, res) => {
@@ -3049,14 +3064,25 @@ scheduleCronJob('ai_pricing', AI_PRICING_CRON, () => monitorAndUpdateSubscriptio
 scheduleCronJob('free_precompute', FREE_PRECOMPUTE_CRON, () => runNightlyFreePrecompute({ reason: 'scheduled' }), { timezone: FREE_JOBS_TIMEZONE });
 scheduleCronJob('free_alert_worker', FREE_ALERT_WORKER_CRON, () => runFreeAlertWorkerOnce(), { timezone: FREE_JOBS_TIMEZONE });
 scheduleCronJob('route_baseline', DEAL_BASELINE_CRON, () => runNightlyRouteBaselineJob({ reason: 'scheduled' }), { timezone: DEAL_BASELINE_CRON_TIMEZONE });
+scheduleCronJob('baseline_recompute_worker', DEAL_BASELINE_CRON, () => runBaselineRecomputeOnce(), { timezone: DEAL_BASELINE_CRON_TIMEZONE });
 scheduleCronJob('discovery_alert_worker', DISCOVERY_ALERT_WORKER_CRON, () => runDiscoveryAlertWorkerOnce(), { timezone: DISCOVERY_ALERT_WORKER_TIMEZONE });
 scheduleCronJob('price_ingestion_worker', PRICE_INGEST_WORKER_CRON, () => runPriceIngestionWorkerOnce({ maxJobs: 500 }), { timezone: PRICE_INGEST_WORKER_TIMEZONE });
+if (PROVIDER_COLLECTION_ENABLED) {
+  scheduleCronJob('provider_collection_worker', PROVIDER_COLLECTION_CRON, () => runProviderCollectionOnce(), { timezone: PROVIDER_COLLECTION_TIMEZONE });
+}
 
 runStartupTask('ai_pricing_startup_check', () => monitorAndUpdateSubscriptionPricing({ reason: 'startup' }));
 runStartupTask('free_precompute_startup', () => runNightlyFreePrecompute({ reason: 'startup' }));
 runStartupTask('route_baseline_startup', () => runNightlyRouteBaselineJob({ reason: 'startup' }));
+runStartupTask('baseline_recompute_startup', () => runBaselineRecomputeOnce());
 runStartupTask('discovery_alert_worker_startup', () => runDiscoveryAlertWorkerOnce({ limit: 200 }));
 runStartupTask('price_ingestion_worker_startup', () => runPriceIngestionWorkerOnce({ maxJobs: 500 }));
+if (PROVIDER_COLLECTION_ENABLED) {
+  runStartupTask('provider_collection_startup', () => runProviderCollectionOnce());
+}
+if (BOOTSTRAP_SEED_IMPORT_FILE) {
+  runStartupTask('seed_import_startup', () => runSeedImportOnce({ filePath: BOOTSTRAP_SEED_IMPORT_FILE, dryRun: BOOTSTRAP_SEED_IMPORT_DRY_RUN }));
+}
 
 let shuttingDown = false;
 async function gracefulShutdown(signal, { exitCode = 0 } = {}) {

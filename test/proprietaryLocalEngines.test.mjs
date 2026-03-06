@@ -7,6 +7,7 @@ import { nanoid } from 'nanoid';
 import { withDb } from '../server/lib/db.js';
 import { computeBaseline } from '../server/lib/baseline-price-engine.js';
 import { findCheapestDestinations } from '../server/lib/destination-discovery-engine.js';
+import { ingestPriceObservation, initDealEngineStore, recomputeRouteBaselines } from '../server/lib/deal-engine-store.js';
 import { runPriceIngestionWorkerOnce } from '../server/lib/price-ingestion-worker.js';
 import { evaluateObservationForAlerts } from '../server/lib/alert-intelligence.js';
 import { initPriceHistoryStore, storeObservation } from '../server/lib/price-history-store.js';
@@ -34,6 +35,25 @@ async function seedRouteHistory({ origin, destination, date, base = 300, points 
       cabinClass: 'economy',
       tripType: 'round_trip',
       metadata: { test: true }
+    });
+  }
+}
+
+async function seedRouteBaselines({ origin, destination, base = 300, points = 36 }) {
+  await initDealEngineStore();
+  for (let i = 0; i < points; i += 1) {
+    await ingestPriceObservation({
+      origin_iata: origin,
+      destination_iata: destination,
+      departure_date: `2027-08-${String((i % 27) + 1).padStart(2, '0')}`,
+      return_date: `2027-08-${String((i % 27) + 3).padStart(2, '0')}`,
+      currency: 'EUR',
+      total_price: base + (i % 8) * 7 + Math.floor(i / 6) * 2,
+      provider: 'local_dataset',
+      cabin_class: 'economy',
+      trip_type: 'round_trip',
+      observed_at: `2026-05-${String((i % 27) + 1).padStart(2, '0')}T09:00:00.000Z`,
+      source: 'manual'
     });
   }
 }
@@ -114,11 +134,20 @@ test('destination-discovery-engine returns local suggestions from history', asyn
   const destinationB = iataFromSeed((seed + 29) % 17576);
   const date = '2027-08-15';
 
-  await seedRouteHistory({ origin, destination: destinationA, date, base: 240, points: 16 });
-  await seedRouteHistory({ origin, destination: destinationB, date, base: 320, points: 16 });
+  await seedRouteHistory({ origin, destination: destinationA, date, base: 240, points: 36 });
+  await seedRouteHistory({ origin, destination: destinationB, date, base: 320, points: 36 });
+  await seedRouteBaselines({ origin, destination: destinationA, base: 240, points: 44 });
+  await seedRouteBaselines({ origin, destination: destinationB, base: 320, points: 44 });
+  await recomputeRouteBaselines();
 
   const items = await findCheapestDestinations(origin, '2027-08', 5);
   assert.equal(Array.isArray(items), true);
   assert.equal(items.length >= 1, true);
   assert.equal(typeof items[0].destination, 'string');
+  assert.equal(typeof items[0].deal_score, 'number');
+  assert.equal(typeof items[0].deal_type, 'string');
+  assert.equal(typeof items[0].score, 'number');
+  assert.equal(typeof items[0].badge, 'string');
+  assert.equal(Array.isArray(items[0].reasons), true);
+  assert.equal(typeof items[0].confidence, 'object');
 });
