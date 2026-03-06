@@ -63,6 +63,10 @@ body.app-dark-active {
   max-width: 720px;
   padding: 24px;
   gap: 12px;
+  position: relative;
+  margin-top: -188px;
+  z-index: 3;
+  backdrop-filter: blur(6px);
 }
 
 .app-lock-title {
@@ -84,6 +88,52 @@ body.app-dark-active {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.app-lock-head {
+  border-bottom: 1px solid rgba(157, 184, 228, 0.55);
+}
+
+.app-ghost-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  filter: blur(1.5px) saturate(0.9);
+  opacity: 0.46;
+  pointer-events: none;
+}
+
+.app-ghost-card {
+  min-height: 180px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(241, 247, 255, 0.9));
+}
+
+.app-ghost-card:last-child {
+  grid-column: 1 / -1;
+}
+
+.app-ghost-lines {
+  display: grid;
+  gap: 10px;
+}
+
+.app-ghost-lines span {
+  display: block;
+  height: 14px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(148, 177, 229, 0.35), rgba(194, 215, 248, 0.5));
+}
+
+.app-ghost-lines span:nth-child(2) {
+  width: 82%;
+}
+
+.app-ghost-lines span:nth-child(3) {
+  width: 66%;
+}
+
+.app-ghost-lines span:nth-child(4) {
+  width: 74%;
 }
 
 .app-shell.app-dark {
@@ -124,6 +174,18 @@ body.app-dark-active {
   background: #17305a;
 }
 
+.app-shell.app-dark .ghost.danger {
+  background: #3a1a1d;
+  border-color: #7e343b;
+  color: #ffb4af;
+}
+
+.app-shell.app-dark .ghost.danger:hover {
+  background: #4b1f23;
+  border-color: #a3474f;
+  color: #ffd0cc;
+}
+
 .app-shell.app-dark .app-lock-panel {
   border-color: #2c4a73;
   background:
@@ -137,6 +199,15 @@ body.app-dark-active {
 
 .app-shell.app-dark .app-lock-note {
   color: #aac0de;
+}
+
+.app-shell.app-dark .app-ghost-card {
+  background: linear-gradient(180deg, rgba(19, 40, 70, 0.88), rgba(11, 26, 47, 0.9));
+  border-color: #32547f;
+}
+
+.app-shell.app-dark .app-ghost-lines span {
+  background: linear-gradient(90deg, rgba(89, 128, 186, 0.55), rgba(59, 96, 150, 0.3));
 }
 
 .landing-shell {
@@ -209,6 +280,13 @@ body.app-dark-active {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.app-ctrl-btn,
+.app-account-btn {
+  height: 44px;
+  min-height: 44px;
+  min-width: 110px;
 }
 
 .account-toggle {
@@ -395,7 +473,7 @@ p {
 }
 
 .auth-modal-drawer {
-  width: min(636px, 100vw);
+  width: min(560px, 100vw);
   height: auto;
   max-height: 100vh;
   padding: 0;
@@ -403,9 +481,9 @@ p {
 }
 
 .auth-panel-surface {
-  border: 1px solid #d6d8de;
-  background: #f0f1f3;
-  border-radius: 22px;
+  border: 1px solid #dde3ee;
+  background: #f6f8fc;
+  border-radius: 18px;
   padding: 0;
   gap: 0;
 }
@@ -414,12 +492,12 @@ p {
   border: none;
   background: transparent;
   border-radius: 20px;
-  padding: 40px 54px 30px;
+  padding: 30px 34px 24px;
   display: grid;
-  gap: 16px;
+  gap: 14px;
   font-family: 'Segoe UI', 'Avenir Next', sans-serif;
-  justify-items: center;
-  text-align: center;
+  justify-items: stretch;
+  text-align: left;
 }
 
 .auth-brand-row {
@@ -452,10 +530,10 @@ p {
 
 .auth-shell h3 {
   margin: 0;
-  font-size: clamp(40px, 5.1vw, 52px);
-  line-height: 1.06;
+  font-size: clamp(34px, 4.1vw, 46px);
+  line-height: 1.08;
   letter-spacing: -0.02em;
-  max-width: 500px;
+  max-width: 460px;
 }
 
 .social-auth {
@@ -465,7 +543,7 @@ p {
 
 .social-auth-stack {
   margin-top: 8px;
-  width: min(100%, 520px);
+  width: 100%;
 }
 
 .social-btn,
@@ -479,13 +557,13 @@ p {
   align-items: center;
   justify-content: center;
   gap: 10px;
-  border-radius: 12px;
-  border: 1px solid #cdd2d9;
-  background: #d9dde4;
+  border-radius: 10px;
+  border: 1px solid #d4d9e2;
+  background: #e9edf3;
   color: #101419;
   box-shadow: none;
   font-size: 17px;
-  min-height: 58px;
+  min-height: 56px;
   font-weight: 600;
 }
 
@@ -546,18 +624,18 @@ p {
 }
 
 .auth-subtitle {
-  font-size: 18px;
-  color: #2a2e34;
+  font-size: 17px;
+  color: #3b4758;
   line-height: 1.45;
-  max-width: 520px;
+  max-width: 480px;
 }
 
 .auth-email-form {
   margin-top: 4px;
-  padding: 10px;
-  background: #eef2f7;
-  border-radius: 12px;
-  border: 1px solid #d6dde7;
+  padding: 12px;
+  background: #f1f4f9;
+  border-radius: 10px;
+  border: 1px solid #d9e0ea;
 }
 
 .auth-remember-row {
@@ -579,13 +657,39 @@ p {
   font-size: 14px;
 }
 
+.auth-mode-switch {
+  font-size: 14px;
+  color: #4a5564;
+  margin-top: 2px;
+}
+
+.auth-inline-link {
+  min-height: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: #0f6fff;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.auth-inline-link:hover {
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+  color: #0a56d0;
+}
+
 .auth-legal u {
   text-underline-offset: 2px;
 }
 
 .app-shell.app-dark .auth-panel-surface {
-  border-color: #2f4f7a;
-  background: linear-gradient(175deg, #102340, #0a1a31);
+  border-color: #2d4f7d;
+  background: linear-gradient(175deg, #0f2543, #0c1f3b);
 }
 
 .app-shell.app-dark .auth-close-btn {
@@ -601,7 +705,7 @@ p {
 }
 
 .app-shell.app-dark .auth-subtitle {
-  color: #a9c0df;
+  color: #c3d5ef;
 }
 
 .app-shell.app-dark .auth-tabs .tab {
@@ -640,6 +744,18 @@ p {
 
 .app-shell.app-dark .auth-legal {
   color: #93aed1;
+}
+
+.app-shell.app-dark .auth-mode-switch {
+  color: #9bb3d3;
+}
+
+.app-shell.app-dark .auth-inline-link {
+  color: #8ec1ff;
+}
+
+.app-shell.app-dark .auth-inline-link:hover {
+  color: #b7d8ff;
 }
 
 .account-drawer-backdrop {
@@ -784,6 +900,19 @@ button:disabled:hover {
   border-color: #8db4ff;
   color: #173f84;
   box-shadow: 0 8px 18px rgba(44, 88, 158, 0.18);
+}
+
+.ghost.danger {
+  background: #fff2f2;
+  color: #b42318;
+  border-color: #f0b4b0;
+}
+
+.ghost.danger:hover {
+  background: #ffe5e5;
+  border-color: #e88984;
+  color: #8f1b13;
+  box-shadow: 0 8px 18px rgba(180, 35, 24, 0.18);
 }
 
 .form-stack,

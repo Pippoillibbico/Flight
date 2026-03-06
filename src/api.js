@@ -220,6 +220,9 @@ export const api = {
   logout(token) {
     return request('/auth/logout', { method: 'POST', token });
   },
+  deleteAccount(token) {
+    return request('/auth/account', { method: 'DELETE', token });
+  },
   watchlist(token) {
     return request('/watchlist', { token });
   },

@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { getSaasPool } from '../lib/saas-db.js';
 
 export function buildAuthSessionRouter({
   authGuard,
@@ -119,6 +120,113 @@ export function buildAuthSessionRouter({
       ...(AUTH_COOKIE_DOMAIN ? { domain: AUTH_COOKIE_DOMAIN } : {})
     });
     return res.status(204).send();
+  });
+
+  router.delete('/auth/account', authGuard, csrfGuard, async (req, res) => {
+    const userId = req.user?.sub;
+    if (!userId) return res.status(401).json({ error: 'Authentication required.' });
+
+    let userEmail = '';
+    await withDb(async (db) => {
+      const user = (db.users || []).find((item) => item.id === userId) || null;
+      userEmail = user?.email || '';
+
+      const cleanByUser = (list, keys = ['userId', 'user_id']) =>
+        (Array.isArray(list) ? list : []).filter((item) => !keys.some((key) => item?.[key] === userId));
+
+      db.users = (db.users || []).filter((item) => item.id !== userId);
+      db.watchlists = cleanByUser(db.watchlists);
+      db.searches = cleanByUser(db.searches);
+      db.alertSubscriptions = cleanByUser(db.alertSubscriptions);
+      db.notifications = cleanByUser(db.notifications);
+      db.authEvents = cleanByUser(db.authEvents);
+      db.outboundClicks = cleanByUser(db.outboundClicks);
+      db.outboundRedirects = cleanByUser(db.outboundRedirects);
+      db.refreshSessions = cleanByUser(db.refreshSessions);
+      db.mfaChallenges = cleanByUser(db.mfaChallenges);
+      db.oauthSessions = cleanByUser(db.oauthSessions);
+      db.apiKeys = cleanByUser(db.apiKeys);
+      db.userSubscriptions = cleanByUser(db.userSubscriptions);
+      db.monthlyQuotas = cleanByUser(db.monthlyQuotas);
+      db.usageEvents = cleanByUser(db.usageEvents);
+      db.usageCounters = cleanByUser(db.usageCounters);
+      db.passwordResetTokens = cleanByUser(db.passwordResetTokens);
+      db.freeAlerts = cleanByUser(db.freeAlerts);
+      db.freePrecomputedRankings = cleanByUser(db.freePrecomputedRankings);
+      db.freeTravelScores = cleanByUser(db.freeTravelScores);
+      db.freeAlertSignals = cleanByUser(db.freeAlertSignals);
+      db.alertIntelligenceDedupe = cleanByUser(db.alertIntelligenceDedupe);
+      db.revokedTokens = cleanByUser(db.revokedTokens);
+      return db;
+    });
+
+    const pool = getSaasPool();
+    if (pool) {
+      const tablesByUserId = [
+        'usage_events',
+        'usage_counters',
+        'api_keys',
+        'monthly_quotas',
+        'user_subscriptions',
+        'free_alerts',
+        'discovery_alert_subscriptions',
+        'discovery_notification_dedupe',
+        'auth_events',
+        'notifications',
+        'watchlists',
+        'search_events',
+        'user_leads',
+        'email_delivery_log'
+      ];
+      for (const tableName of tablesByUserId) {
+        try {
+          await pool.query(`DELETE FROM ${tableName} WHERE user_id = $1`, [userId]);
+        } catch (error) {
+          logger.warn(
+            {
+              request_id: req.id || null,
+              user_id: userId,
+              table: tableName,
+              error: error?.message || 'delete_failed'
+            },
+            'account_delete_table_skip'
+          );
+        }
+      }
+    }
+
+    await revokeJwt(req.user);
+    const refreshCookie = getRefreshTokenFromCookie(req);
+    if (refreshCookie) {
+      try {
+        const refreshPayload = verifyRefreshToken(refreshCookie);
+        await revokeRefreshFamily(refreshPayload.family, 'account_deleted');
+      } catch {}
+    }
+
+    res.clearCookie(ACCESS_COOKIE_NAME, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: authCookieOptions(req, ACCESS_COOKIE_TTL_MS).secure,
+      path: '/',
+      ...(AUTH_COOKIE_DOMAIN ? { domain: AUTH_COOKIE_DOMAIN } : {})
+    });
+    res.clearCookie(REFRESH_COOKIE_NAME, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: authCookieOptions(req, REFRESH_COOKIE_TTL_MS).secure,
+      path: '/',
+      ...(AUTH_COOKIE_DOMAIN ? { domain: AUTH_COOKIE_DOMAIN } : {})
+    });
+
+    await logAuthEvent({
+      userId,
+      email: userEmail,
+      type: 'account_deleted',
+      success: true,
+      req
+    });
+    return res.json({ ok: true });
   });
 
   router.post('/auth/refresh', async (req, res) => {

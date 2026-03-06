@@ -48,10 +48,9 @@ const CONNECTION_LABELS_I18N = {
   it: { all: 'Qualsiasi', direct: 'Solo diretti', with_stops: 'Con scali' }
 };
 
-const TRAVEL_TIME_LABELS = {
-  all: 'Any time',
-  day: 'Day flights',
-  night: 'Night flights'
+const TRAVEL_TIME_LABELS_I18N = {
+  en: { all: 'Any time', day: 'Day flights', night: 'Night flights' },
+  it: { all: 'Qualsiasi orario', day: 'Voli diurni', night: 'Voli notturni' }
 };
 
 const MOOD_OPTIONS = ['relax', 'natura', 'party', 'cultura', 'avventura'];
@@ -97,10 +96,38 @@ function App() {
   const tt = (key) => i18nPack.tooltips?.[key] || DEFAULT_LANGUAGE_PACK.tooltips?.[key] || key;
   const regionLabel = (code) => REGION_LABELS_I18N[language]?.[code] || REGION_LABELS_I18N.en[code] || code;
   const connectionLabel = (code) => CONNECTION_LABELS_I18N[language]?.[code] || CONNECTION_LABELS_I18N.en[code] || code;
+  const travelTimeLabel = (code) => TRAVEL_TIME_LABELS_I18N[language]?.[code] || TRAVEL_TIME_LABELS_I18N.en[code] || code;
   useEffect(() => {
     if (!LANGS.includes(language)) {
       setLanguage('en');
     }
+  }, [language]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const saved = window.localStorage.getItem('flight_language');
+      if (saved && LANGS.includes(saved) && saved !== language) setLanguage(saved);
+    } catch {
+      // ignore storage restrictions
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      if (LANGS.includes(language)) window.localStorage.setItem('flight_language', language);
+    } catch {
+      // ignore storage restrictions
+    }
+  }, [language]);
+
+  useEffect(() => {
+    setIntakeMessages((prev) => {
+      if (!Array.isArray(prev) || prev.length !== 1) return prev;
+      if (prev[0]?.id !== 'assistant-welcome') return prev;
+      return [{ ...prev[0], text: t('aiAssistantWelcome') }];
+    });
   }, [language]);
 
   useEffect(() => {
@@ -134,11 +161,12 @@ function App() {
   const [authMode, setAuthMode] = useState('login');
   const [showAccountPanel, setShowAccountPanel] = useState(false);
   const [authError, setAuthError] = useState('');
-  const [authForm, setAuthForm] = useState({ name: '', email: '', password: '' });
+  const [authForm, setAuthForm] = useState({ name: '', email: '', password: '', confirmPassword: '' });
   const [authView, setAuthView] = useState('options');
   const [rememberMe, setRememberMe] = useState(true);
   const [authMfa, setAuthMfa] = useState({ ticket: '', code: '', expiresAt: '' });
   const [oauthLoading, setOauthLoading] = useState('');
+  const [deletingAccount, setDeletingAccount] = useState(false);
 
   const [searchForm, setSearchForm] = useState(defaultSearch);
   const [uiMode, setUiMode] = useState('simple');
@@ -151,7 +179,7 @@ function App() {
     {
       id: 'assistant-welcome',
       role: 'assistant',
-      text: 'Scrivi in linguaggio naturale cosa vuoi: budget, città di partenza, giorni, clima, mood.'
+      text: t('aiAssistantWelcome')
     }
   ]);
   const [searchResult, setSearchResult] = useState({ meta: null, alerts: [], flights: [] });
@@ -250,7 +278,7 @@ function App() {
     }
   }
 
-  function beginAuthFlow({ action, authMode: nextAuthMode = 'login', authView: nextAuthView = 'email', keepLandingVisible = true } = {}) {
+  function beginAuthFlow({ action, authMode: nextAuthMode = 'login', authView: nextAuthView = 'options', keepLandingVisible = true } = {}) {
     setShowLandingPage(keepLandingVisible);
     setShowAccountPanel(true);
     setAuthMode(nextAuthMode);
@@ -264,7 +292,7 @@ function App() {
     beginAuthFlow({
       action: 'set_alert',
       authMode: 'register',
-      authView: 'email',
+      authView: 'options',
       keepLandingVisible
     });
   }
@@ -500,33 +528,19 @@ function App() {
   const quickIntakePrompts = QUICK_INTAKE_PROMPTS_I18N[language] || QUICK_INTAKE_PROMPTS_I18N.en;
   const heroSubText = t('landingHeroEyebrow');
   const authTitle = authMode === 'login' ? t('signIn') : t('register');
-  const authUi = language === 'it'
-    ? {
-        welcomeTitle: 'Accedi a tutte le funzionalita',
-        welcomeSub: "Usa l'AI per organizzare il tuo viaggio.",
-        email: "Continua con l'email",
-        facebook: 'Facebook',
-        google: 'Google',
-        apple: 'Apple',
-        remember: 'Ricordami',
-        legalPrefix: 'Continuando, accetti i',
-        legalTerms: 'Termini di servizio',
-        legalAnd: 'e confermi di aver letto la nostra',
-        legalPrivacy: 'Informativa sulla privacy'
-      }
-    : {
-        welcomeTitle: 'Access all features',
-        welcomeSub: "Use AI to organize your trip.",
-        email: 'Continue with email',
-        facebook: 'Facebook',
-        google: 'Google',
-        apple: 'Apple',
-        remember: 'Remember me',
-        legalPrefix: 'By continuing, you accept our',
-        legalTerms: 'Terms of service',
-        legalAnd: 'and confirm you have read our',
-        legalPrivacy: 'Privacy policy'
-      };
+  const authUi = {
+    welcomeTitle: t('authWelcomeTitle'),
+    welcomeSub: t('authWelcomeSub'),
+    email: t('continueEmail'),
+    facebook: t('continueFacebook'),
+    google: t('continueGoogle'),
+    apple: t('continueApple'),
+    remember: t('rememberMe'),
+    legalPrefix: t('legalPrefix'),
+    legalTerms: t('legalTerms'),
+    legalAnd: t('legalAnd'),
+    legalPrivacy: t('legalPrivacy')
+  };
 
   const offerSummary = useMemo(() => {
     if (!searchResult.meta) return t('noSearch');
@@ -574,7 +588,7 @@ function App() {
       isAdvancedMode,
       connectionLabel,
       regionLabel,
-      TRAVEL_TIME_LABELS,
+      travelTimeLabel,
       MOOD_OPTIONS,
       CLIMATE_PREF_OPTIONS,
       defaultSearch
@@ -897,6 +911,18 @@ function App() {
     event.preventDefault();
     setAuthError('');
     try {
+      if (authMode === 'register') {
+        const pass = String(authForm.password || '');
+        const confirm = String(authForm.confirmPassword || '');
+        if (!authForm.name.trim()) {
+          setAuthError(t('fullNameRequired'));
+          return;
+        }
+        if (pass !== confirm) {
+          setAuthError(t('passwordMismatch'));
+          return;
+        }
+      }
       const payload = authMode === 'login' ? await api.login({ email: authForm.email, password: authForm.password }) : await api.register({ name: authForm.name, email: authForm.email, password: authForm.password });
       if (payload?.mfaRequired && payload?.ticket) {
         setAuthMfa({ ticket: payload.ticket, code: '', expiresAt: payload.expiresAt || '' });
@@ -913,7 +939,7 @@ function App() {
       setToken(payload.token || COOKIE_SESSION_TOKEN);
       setCsrfToken(payload.session?.csrfToken || '');
       setUser(payload.user);
-      setAuthForm({ name: '', email: '', password: '' });
+      setAuthForm({ name: '', email: '', password: '', confirmPassword: '' });
       setAuthView('options');
       setAuthMfa({ ticket: '', code: '', expiresAt: '' });
       setShowAccountPanel(false);
@@ -931,7 +957,7 @@ function App() {
       setToken(payload.token || COOKIE_SESSION_TOKEN);
       setCsrfToken(payload.session?.csrfToken || '');
       setUser(payload.user);
-      setAuthForm({ name: '', email: '', password: '' });
+      setAuthForm({ name: '', email: '', password: '', confirmPassword: '' });
       setAuthView('options');
       setAuthMfa({ ticket: '', code: '', expiresAt: '' });
       setShowAccountPanel(false);
@@ -1413,6 +1439,22 @@ function App() {
     setShowAccountPanel(false);
   }
 
+  async function deleteAccount() {
+    if (!user) return;
+    const ok = typeof window === 'undefined' ? true : window.confirm(t('deleteAccountConfirm'));
+    if (!ok) return;
+    setDeletingAccount(true);
+    try {
+      await api.deleteAccount(token);
+      await logout();
+      setSubMessage(t('deleteAccountDone'));
+    } catch (error) {
+      setSubMessage(resolveApiError(error));
+    } finally {
+      setDeletingAccount(false);
+    }
+  }
+
   function applySearchPreset(item) {
     const payload = item?.payload || {};
     setSearchForm((prev) => ({
@@ -1575,7 +1617,7 @@ function App() {
     beginAuthFlow({
       action: 'enter_app',
       authMode: 'login',
-      authView: 'email',
+      authView: 'options',
       keepLandingVisible: false
     });
   }
@@ -1614,7 +1656,7 @@ function App() {
           <p className="eyebrow">{t('landingTitle')}</p>
           <div className="hero-controls">
             <button type="button" className="landing-ctrl-btn app-ctrl-btn" onClick={() => setDarkMode((prev) => !prev)}>
-              {darkMode ? 'Dark' : 'Light'}
+              {darkMode ? t('themeDark') : t('themeLight')}
             </button>
             <label className="landing-ctrl-btn landing-lang-btn app-ctrl-btn" title={t('language')}>
               <span className="landing-ctrl-label">{language.toUpperCase()}</span>
@@ -1629,9 +1671,11 @@ function App() {
                 ))}
               </select>
             </label>
-            <button type="button" className="landing-accedi-btn app-account-btn" onClick={() => setShowAccountPanel((prev) => !prev)}>
-              {isAuthenticated ? user?.name || t('account') : t('account')}
-            </button>
+            {isAuthenticated ? (
+              <button type="button" className="landing-accedi-btn app-account-btn" onClick={() => setShowAccountPanel((prev) => !prev)}>
+                {user?.name || t('account')}
+              </button>
+            ) : null}
           </div>
         </div>
         <h1>{t('appTitle')}</h1>
@@ -1726,6 +1770,8 @@ function App() {
         authMfa={authMfa}
         setAuthMfa={setAuthMfa}
         authError={authError}
+        deleteAccount={deleteAccount}
+        deletingAccount={deletingAccount}
       />
 
       {isAuthenticated ? (
@@ -2163,12 +2209,41 @@ function App() {
       </section>
       </>
       ) : (
+        <>
+        <section className="app-ghost-grid" aria-hidden="true">
+          <article className="panel app-ghost-card">
+            <div className="panel-head"><h2>{t('search')}</h2></div>
+            <div className="app-ghost-lines">
+              <span />
+              <span />
+              <span />
+              <span />
+            </div>
+          </article>
+          <article className="panel app-ghost-card">
+            <div className="panel-head"><h2>{t('results')}</h2></div>
+            <div className="app-ghost-lines">
+              <span />
+              <span />
+              <span />
+              <span />
+            </div>
+          </article>
+          <article className="panel app-ghost-card">
+            <div className="panel-head"><h2>{t('priceAlerts')}</h2></div>
+            <div className="app-ghost-lines">
+              <span />
+              <span />
+              <span />
+            </div>
+          </article>
+        </section>
         <section className="panel app-lock-panel">
-          <div className="panel-head">
-            <h2 className="app-lock-title">Accesso richiesto</h2>
+          <div className="panel-head app-lock-head">
+            <h2 className="app-lock-title">{t('lockTitle')}</h2>
           </div>
-          <p className="muted app-lock-sub">Per usare la piattaforma devi accedere o registrarti.</p>
-          <p className="muted app-lock-note">Dopo il login torni subito al flusso che hai scelto: ricerca affari o creazione alert.</p>
+          <p className="muted app-lock-sub">{t('lockSub')}</p>
+          <p className="muted app-lock-note">{t('lockNote')}</p>
           <div className="item-actions app-lock-actions">
             <button
               type="button"
@@ -2176,32 +2251,16 @@ function App() {
                 beginAuthFlow({
                   action: 'enter_app',
                   authMode: 'login',
-                  authView: 'email',
+                  authView: 'options',
                   keepLandingVisible: false
                 })
               }
             >
-              Accedi
-            </button>
-            <button
-              type="button"
-              className="ghost"
-              onClick={() =>
-                beginAuthFlow({
-                  action: 'enter_app',
-                  authMode: 'register',
-                  authView: 'email',
-                  keepLandingVisible: false
-                })
-              }
-            >
-              Registrati
-            </button>
-            <button type="button" className="ghost" onClick={() => { setShowLandingPage(true); setShowAccountPanel(false); }}>
-              Torna alla home
+              {t('lockCta')}
             </button>
           </div>
         </section>
+        </>
       )}
     </main>
     )}
