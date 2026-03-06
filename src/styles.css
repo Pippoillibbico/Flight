@@ -29,9 +29,9 @@ body {
 
 body.app-dark-active {
   background:
-    radial-gradient(820px 380px at -10% -10%, rgba(18, 73, 173, 0.32), transparent 62%),
-    radial-gradient(720px 340px at 110% -10%, rgba(16, 137, 145, 0.22), transparent 58%),
-    linear-gradient(180deg, #071123, #050c18);
+    radial-gradient(760px 340px at -12% -10%, rgba(168, 129, 77, 0.16), transparent 62%),
+    radial-gradient(620px 300px at 112% -10%, rgba(141, 120, 88, 0.12), transparent 60%),
+    linear-gradient(180deg, #0f1319, #0a0d12);
 }
 
 .page {
@@ -58,42 +58,6 @@ body.app-dark-active {
   border-radius: 20px;
 }
 
-.app-lock-panel {
-  text-align: left;
-  max-width: 720px;
-  padding: 24px;
-  gap: 12px;
-  position: relative;
-  margin-top: -188px;
-  z-index: 3;
-  backdrop-filter: blur(6px);
-}
-
-.app-lock-title {
-  font-size: clamp(24px, 2.2vw, 30px);
-}
-
-.app-lock-sub {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--ink);
-}
-
-.app-lock-note {
-  font-size: 15px;
-  line-height: 1.45;
-}
-
-.app-lock-actions {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.app-lock-head {
-  border-bottom: 1px solid rgba(157, 184, 228, 0.55);
-}
-
 .app-ghost-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -106,10 +70,6 @@ body.app-dark-active {
 .app-ghost-card {
   min-height: 180px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(241, 247, 255, 0.9));
-}
-
-.app-ghost-card:last-child {
-  grid-column: 1 / -1;
 }
 
 .app-ghost-lines {
@@ -137,41 +97,50 @@ body.app-dark-active {
 }
 
 .app-shell.app-dark {
-  --ink: #e9f1ff;
-  --muted: #9fb1cf;
-  --line: #233858;
+  --ink: #eef2f8;
+  --muted: #a9b4c4;
+  --line: #394556;
 }
 
 .app-shell.app-dark .hero {
-  border-color: #244065;
+  border-color: #3d4a5c;
   background:
-    radial-gradient(500px 220px at 96% 12%, rgba(46, 118, 255, 0.25), transparent 70%),
-    linear-gradient(160deg, #0d1a34, #0a1428);
-  box-shadow: 0 20px 44px rgba(1, 7, 18, 0.46);
+    radial-gradient(500px 220px at 96% 12%, rgba(167, 130, 76, 0.22), transparent 70%),
+    linear-gradient(160deg, #171d26, #10151d);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.38);
 }
 
 .app-shell.app-dark .panel {
-  border-color: #243f63;
-  background: linear-gradient(180deg, rgba(13, 28, 52, 0.95), rgba(8, 20, 38, 0.95));
-  box-shadow: 0 14px 30px rgba(3, 8, 18, 0.38);
+  border-color: #3a4658;
+  background: linear-gradient(180deg, rgba(22, 29, 39, 0.95), rgba(17, 23, 31, 0.95));
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.3);
+}
+
+.app-shell.app-dark h1 {
+  color: #f8fbff;
+  text-shadow: 0 1px 24px rgba(0, 0, 0, 0.35);
+}
+
+.app-shell.app-dark .hero-sub {
+  color: #d2d9e3;
 }
 
 .app-shell.app-dark input,
 .app-shell.app-dark select,
 .app-shell.app-dark textarea {
-  background: #0f1f3a;
-  border-color: #2e4e78;
-  color: #e9f1ff;
+  background: #121a24;
+  border-color: #415063;
+  color: #eef3fc;
 }
 
 .app-shell.app-dark .ghost {
-  background: #102646;
-  border-color: #355989;
-  color: #d7e6ff;
+  background: #1a2330;
+  border-color: #47566a;
+  color: #dde6f2;
 }
 
 .app-shell.app-dark .ghost:hover {
-  background: #17305a;
+  background: #223042;
 }
 
 .app-shell.app-dark .ghost.danger {
@@ -186,28 +155,49 @@ body.app-dark-active {
   color: #ffd0cc;
 }
 
-.app-shell.app-dark .app-lock-panel {
-  border-color: #2c4a73;
-  background:
-    radial-gradient(420px 180px at 98% 8%, rgba(52, 121, 255, 0.18), transparent 68%),
-    linear-gradient(165deg, rgba(12, 28, 54, 0.98), rgba(7, 17, 34, 0.98));
-}
-
-.app-shell.app-dark .app-lock-sub {
-  color: #eef5ff;
-}
-
-.app-shell.app-dark .app-lock-note {
-  color: #aac0de;
-}
-
 .app-shell.app-dark .app-ghost-card {
-  background: linear-gradient(180deg, rgba(19, 40, 70, 0.88), rgba(11, 26, 47, 0.9));
-  border-color: #32547f;
+  background: linear-gradient(180deg, rgba(30, 40, 53, 0.88), rgba(22, 29, 38, 0.9));
+  border-color: #445268;
 }
 
 .app-shell.app-dark .app-ghost-lines span {
-  background: linear-gradient(90deg, rgba(89, 128, 186, 0.55), rgba(59, 96, 150, 0.3));
+  background: linear-gradient(90deg, rgba(108, 128, 154, 0.58), rgba(79, 95, 117, 0.3));
+}
+
+.app-shell.app-dark .landing-ctrl-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #e8edf5;
+  box-shadow:
+    0 8px 20px rgba(0, 0, 0, 0.28),
+    0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+}
+
+.app-shell.app-dark .landing-ctrl-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.app-shell.app-dark .landing-lang-popover {
+  border-color: #4a596d;
+  background: #141c26;
+  box-shadow: 0 16px 30px rgba(0, 0, 0, 0.45);
+}
+
+.app-shell.app-dark .landing-lang-option {
+  color: #d8e2ef;
+}
+
+.app-shell.app-dark .landing-lang-option:hover,
+.app-shell.app-dark .landing-lang-option.active {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+.app-shell.app-dark .landing-accedi-btn {
+  background: linear-gradient(180deg, #4c9dff, #2d74dd);
+  color: #ffffff;
+  box-shadow: 0 10px 24px rgba(38, 92, 174, 0.35);
 }
 
 .landing-shell {
@@ -280,13 +270,6 @@ body.app-dark-active {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-}
-
-.app-ctrl-btn,
-.app-account-btn {
-  height: 44px;
-  min-height: 44px;
-  min-width: 110px;
 }
 
 .account-toggle {
@@ -469,14 +452,15 @@ p {
 .auth-modal-backdrop {
   justify-content: center;
   align-items: center;
-  padding: 16px;
+  padding: 0;
 }
 
 .auth-modal-drawer {
-  width: min(560px, 100vw);
+  width: min(560px, calc(100vw - 32px));
   height: auto;
-  max-height: 100vh;
+  max-height: calc(100vh - 32px);
   padding: 0;
+  margin: auto;
   animation: auth-pop 0.22s ease-out;
 }
 
@@ -783,6 +767,16 @@ p {
   animation: slide-in-right 0.24s ease-out;
 }
 
+/* Auth modal uses the same node as drawer: force centered modal geometry */
+.account-drawer.auth-modal-drawer {
+  width: min(560px, calc(100vw - 32px));
+  height: auto;
+  max-height: calc(100vh - 32px);
+  padding: 0;
+  margin: 0 auto;
+  animation: auth-pop 0.22s ease-out;
+}
+
 .account-drawer .account-panel {
   height: 100%;
   overflow: auto;
@@ -790,7 +784,7 @@ p {
 
 .auth-modal-drawer .account-panel {
   height: auto;
-  max-height: min(92vh, 840px);
+  max-height: min(calc(100vh - 32px), 840px);
 }
 
 @keyframes fade-in {
@@ -1438,15 +1432,24 @@ a:focus-visible {
     padding: 8px;
   }
 
-  .auth-modal-backdrop {
-    align-items: flex-end;
+  .account-drawer.auth-modal-drawer {
+    width: min(560px, calc(100vw - 20px));
+    height: auto;
+    max-height: calc(100vh - 20px);
     padding: 0;
+    margin: 0 auto;
+  }
+
+  .auth-modal-backdrop {
+    align-items: center;
+    justify-content: center;
+    padding: 10px;
   }
 
   .auth-modal-drawer {
-    width: 100vw;
-    max-height: 100vh;
-    border-radius: 0;
+    width: min(560px, calc(100vw - 20px));
+    max-height: calc(100vh - 20px);
+    border-radius: 14px;
   }
 
   .auth-shell {
@@ -1684,14 +1687,71 @@ a:focus-visible {
   display: block;
 }
 
-/* Language: invisible native select layered over the styled button */
-.landing-lang-inner {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  cursor: pointer;
+.landing-lang-btn {
+  position: relative;
+  padding: 0;
+  overflow: visible;
+}
+
+.landing-lang-trigger {
   width: 100%;
   height: 100%;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: inherit;
+  font: inherit;
+  padding: 0 14px;
+}
+
+.landing-lang-trigger:hover {
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+}
+
+.landing-lang-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  width: 100%;
+  min-width: 170px;
+  border: 1px solid rgba(15, 111, 255, 0.22);
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 6px;
+  box-shadow: 0 16px 32px rgba(12, 42, 94, 0.2);
+  z-index: 80;
+}
+
+.landing-lang-option {
+  width: 100%;
+  border: 0;
+  border-radius: 8px;
+  min-height: 38px;
+  padding: 8px 10px;
+  text-align: left;
+  background: transparent;
+  color: #214372;
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: none;
+}
+
+.landing-lang-option:hover {
+  background: #edf4ff;
+  color: #0f3d7c;
+  box-shadow: none;
+  transform: none;
+}
+
+.landing-lang-option.active {
+  background: #e0eeff;
+  color: #0e3d82;
 }
 
 /* ── Hero ──────────────────────────────────────────────────────── */
@@ -2790,6 +2850,26 @@ body.landing-dark-active {
 .landing-dark .landing-lang-inner option {
   background: #0d1b35;
   color: #e8eaf6;
+}
+
+.landing-dark .landing-lang-popover {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: #0f2345;
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.45);
+}
+
+.landing-dark .landing-lang-option {
+  color: #d8e6fb;
+}
+
+.landing-dark .landing-lang-option:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.landing-dark .landing-lang-option.active {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
 }
 
 /* ── Hero ──────────────────────────────────────────────────────── */

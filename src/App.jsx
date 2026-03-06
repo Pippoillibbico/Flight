@@ -7,6 +7,7 @@ import { AppProvider } from './context/AppContext';
 import LandingSection from './components/LandingSection';
 import AuthSection from './components/AuthSection';
 import SearchSection from './components/SearchSection';
+import LanguageMenu from './components/LanguageMenu';
 
 const AdvancedAnalyticsSection = lazy(() => import('./components/AdvancedAnalyticsSection'));
 const prefetchAdvancedAnalyticsChunk = () => import('./components/AdvancedAnalyticsSection');
@@ -426,11 +427,17 @@ function App() {
     if (!showAccountPanel) return undefined;
     loadBillingPricing(true);
     const onKeyDown = (event) => {
-      if (event.key === 'Escape') setShowAccountPanel(false);
+      if (event.key === 'Escape' && user) setShowAccountPanel(false);
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [showAccountPanel]);
+  }, [showAccountPanel, user]);
+
+  useEffect(() => {
+    if (showLandingPage) return;
+    if (user) return;
+    if (!showAccountPanel) setShowAccountPanel(true);
+  }, [showLandingPage, user, showAccountPanel]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -496,6 +503,7 @@ function App() {
   const isAuthenticated = Boolean(user);
   const isMfaChallengeActive = Boolean(authMfa.ticket);
   const isAdvancedMode = uiMode === 'advanced';
+  const showAuthGateModal = !isAuthenticated && !showLandingPage;
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1654,29 +1662,39 @@ function App() {
       <header className="hero">
         <div className="hero-top-row">
           <p className="eyebrow">{t('landingTitle')}</p>
-          <div className="hero-controls">
-            <button type="button" className="landing-ctrl-btn app-ctrl-btn" onClick={() => setDarkMode((prev) => !prev)}>
-              {darkMode ? t('themeDark') : t('themeLight')}
+          <nav className="landing-nav hero-controls">
+            <button type="button" className="landing-ctrl-btn landing-theme-btn" onClick={() => setDarkMode((prev) => !prev)}>
+              {darkMode ? (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+                </svg>
+              ) : (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="5" />
+                  <line x1="12" y1="1" x2="12" y2="3" />
+                  <line x1="12" y1="21" x2="12" y2="23" />
+                  <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+                  <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+                  <line x1="1" y1="12" x2="3" y2="12" />
+                  <line x1="21" y1="12" x2="23" y2="12" />
+                  <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+                  <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+                </svg>
+              )}
+              <span className="landing-ctrl-label">{darkMode ? 'Dark' : 'Light'}</span>
             </button>
-            <label className="landing-ctrl-btn landing-lang-btn app-ctrl-btn" title={t('language')}>
-              <span className="landing-ctrl-label">{language.toUpperCase()}</span>
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <polyline points="6 9 12 15 18 9" />
-              </svg>
-              <select className="landing-lang-inner" value={language} onChange={(e) => setLanguage(e.target.value)} aria-label={t('language')}>
-                {LANGUAGE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <LanguageMenu
+              language={language}
+              setLanguage={setLanguage}
+              options={LANGUAGE_OPTIONS}
+              title={t('language')}
+            />
             {isAuthenticated ? (
-              <button type="button" className="landing-accedi-btn app-account-btn" onClick={() => setShowAccountPanel((prev) => !prev)}>
+              <button type="button" className="landing-accedi-btn" onClick={() => setShowAccountPanel((prev) => !prev)}>
                 {user?.name || t('account')}
               </button>
             ) : null}
-          </div>
+          </nav>
         </div>
         <h1>{t('appTitle')}</h1>
         <p className="hero-sub">{heroSubText}</p>
@@ -1737,7 +1755,7 @@ function App() {
       ) : null}
 
       <AuthSection
-        showAccountPanel={showAccountPanel}
+        showAccountPanel={showAccountPanel || showAuthGateModal}
         setShowAccountPanel={setShowAccountPanel}
         logout={logout}
         formatEur={formatEur}
@@ -2237,28 +2255,14 @@ function App() {
               <span />
             </div>
           </article>
-        </section>
-        <section className="panel app-lock-panel">
-          <div className="panel-head app-lock-head">
-            <h2 className="app-lock-title">{t('lockTitle')}</h2>
-          </div>
-          <p className="muted app-lock-sub">{t('lockSub')}</p>
-          <p className="muted app-lock-note">{t('lockNote')}</p>
-          <div className="item-actions app-lock-actions">
-            <button
-              type="button"
-              onClick={() =>
-                beginAuthFlow({
-                  action: 'enter_app',
-                  authMode: 'login',
-                  authView: 'options',
-                  keepLandingVisible: false
-                })
-              }
-            >
-              {t('lockCta')}
-            </button>
-          </div>
+          <article className="panel app-ghost-card">
+            <div className="panel-head"><h2>{t('watchlist')}</h2></div>
+            <div className="app-ghost-lines">
+              <span />
+              <span />
+              <span />
+            </div>
+          </article>
         </section>
         </>
       )}
