@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { useAppContext } from '../context/AppContext';
 import { validateProps } from '../utils/validateProps';
+import LanguageMenu from './LanguageMenu';
 
 const LandingSectionPropsSchema = z
   .object({
@@ -93,27 +94,12 @@ function LandingSection(props) {
             </button>
 
             {/* Language selector */}
-            <label className="landing-ctrl-btn landing-lang-btn" title={t('language')}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
-              </svg>
-              <span className="landing-ctrl-label">{language.toUpperCase()}</span>
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <polyline points="6 9 12 15 18 9"/>
-              </svg>
-              <select
-                className="landing-lang-inner"
-                value={language}
-                onChange={(e) => setLanguage(e.target.value)}
-                aria-label={t('language')}
-              >
-                {LANGUAGE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <LanguageMenu
+              language={language}
+              setLanguage={setLanguage}
+              options={LANGUAGE_OPTIONS}
+              title={t('language')}
+            />
             <button
               type="button"
               className="landing-accedi-btn"

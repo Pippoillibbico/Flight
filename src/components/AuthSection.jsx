@@ -69,7 +69,12 @@ function AuthSection(props) {
   if (!showAccountPanel) return null;
 
   return (
-<div className={`account-drawer-backdrop ${!isAuthenticated ? 'auth-modal-backdrop' : ''}`} onClick={() => setShowAccountPanel(false)}>
+<div
+  className={`account-drawer-backdrop ${!isAuthenticated ? 'auth-modal-backdrop' : ''}`}
+  onClick={() => {
+    if (isAuthenticated) setShowAccountPanel(false);
+  }}
+>
           <aside
             className={`account-drawer ${!isAuthenticated ? 'auth-modal-drawer' : ''}`}
             role="dialog"
@@ -149,11 +154,7 @@ function AuthSection(props) {
                   <div className="auth-shell">
                     {!isMfaChallengeActive ? (
                       <>
-                        <div className="auth-brand-row">
-                          <button className="auth-close-btn" type="button" onClick={() => setShowAccountPanel(false)} aria-label={t('close')}>
-                            &times;
-                          </button>
-                        </div>
+                        <div className="auth-brand-row" />
                         <h3>{authUi.welcomeTitle}</h3>
                         <p className="muted auth-subtitle">{authUi.welcomeSub}</p>
 
