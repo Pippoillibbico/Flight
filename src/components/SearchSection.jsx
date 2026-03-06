@@ -45,7 +45,7 @@ function SearchSection(props) {
     isAdvancedMode,
     user,
     regionLabel,
-    TRAVEL_TIME_LABELS,
+    travelTimeLabel,
     MOOD_OPTIONS,
     CLIMATE_PREF_OPTIONS,
     defaultSearch
@@ -112,7 +112,7 @@ function SearchSection(props) {
                 <p className="ai-planner-hint">{t('aiPlannerHint')}</p>
                 <textarea
                   className="ai-intake-box"
-                  placeholder='Es: "Ho 450€, parto da FCO, 4 giorni, caldo, niente posti affollati, ritmo slow"'
+                  placeholder={t('aiInputPlaceholder')}
                   value={intakePrompt}
                   onChange={(e) => setIntakePrompt(e.target.value)}
                   onKeyDown={(e) => {
@@ -162,7 +162,7 @@ function SearchSection(props) {
               {t('keyword')}
               <div className="suggest-wrap">
                 <input
-                  placeholder="Japan, Tokyo, Bangkok..."
+                  placeholder={t('keywordPlaceholder')}
                   value={searchForm.destinationQuery}
                   onFocus={() => setShowDestinationSuggestions(true)}
                   onBlur={() => setTimeout(() => setShowDestinationSuggestions(false), 120)}
@@ -208,7 +208,7 @@ function SearchSection(props) {
               <select value={searchForm.travelTime} onChange={(e) => setSearchForm((p) => ({ ...p, travelTime: e.target.value }))}>
                 {config.travelTimes.map((timeBand) => (
                   <option key={timeBand} value={timeBand}>
-                    {TRAVEL_TIME_LABELS[timeBand] || timeBand}
+                    {travelTimeLabel(timeBand)}
                   </option>
                 ))}
               </select>
@@ -263,7 +263,7 @@ function SearchSection(props) {
                   {t('country')}
                   <div className="suggest-wrap">
                     <input
-                      placeholder="Japan, Italy, Germany..."
+                      placeholder={t('countryPlaceholder')}
                       value={searchForm.country}
                       onFocus={() => setShowCountrySuggestions(true)}
                       onBlur={() => setTimeout(() => setShowCountrySuggestions(false), 120)}

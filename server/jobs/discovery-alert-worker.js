@@ -24,8 +24,16 @@ function matchRegion(subscriptionRegion, destinationRegion) {
   return wanted === String(destinationRegion || 'all').toLowerCase();
 }
 
-function shortMessage({ destination, price }) {
-  return `Hot deal: ${destination} at EUR ${Number(price).toFixed(0)}. Jump on it.`;
+function badgeFromLevel(level) {
+  const normalized = String(level || '').toLowerCase();
+  if (normalized === 'scream') return 'STEAL';
+  if (normalized === 'great') return 'GREAT';
+  if (normalized === 'good') return 'GOOD';
+  return 'OK';
+}
+
+function shortMessage({ destination, price, badge, dealScore }) {
+  return `${badge} deal to ${destination} - EUR ${Number(price).toFixed(0)} (score ${Math.round(Number(dealScore) || 0)}/100).`;
 }
 
 export async function runDiscoveryAlertWorkerOnce({ limit = 500 } = {}) {
@@ -64,7 +72,12 @@ export async function runDiscoveryAlertWorkerOnce({ limit = 500 } = {}) {
       });
       if (!firstTime) continue;
 
-      const msg = shortMessage({ destination: obs.destination_iata, price: obs.total_price });
+      const badge = badgeFromLevel(score.dealLevel);
+      const reasons = [
+        String(score.why || ''),
+        `Confidence: ${score.confidence?.level || 'very_low'} (${Number(score.confidence?.observationCount || 0)} samples)`
+      ].filter(Boolean);
+      const msg = shortMessage({ destination: obs.destination_iata, price: obs.total_price, badge, dealScore: score.dealScore });
       await withDb((db) => {
         db.notifications = db.notifications || [];
         if (db.notifications.some((n) => n.dedupeKey === dedupeKey)) return db;
@@ -79,6 +92,9 @@ export async function runDiscoveryAlertWorkerOnce({ limit = 500 } = {}) {
           metadata: {
             dealLevel: score.dealLevel,
             dealScore: score.dealScore,
+            badge,
+            reasons,
+            confidence: score.confidence,
             price: Number(obs.total_price),
             origin: obs.origin_iata,
             destination: obs.destination_iata,
@@ -104,4 +120,3 @@ export async function runDiscoveryAlertWorkerOnce({ limit = 500 } = {}) {
   logger.info({ processed, triggered, from: cursor, to: lastObservedAt || null }, 'discovery_alert_worker_completed');
   return { processed, triggered };
 }
-

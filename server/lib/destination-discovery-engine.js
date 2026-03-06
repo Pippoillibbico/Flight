@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { detectDeal } from './deal-detector.js';
+import { getRouteBaselinePercentiles } from './deal-engine-store.js';
+import { canonicalScoreFromPercentiles, confidenceForCount, legacyLevelFromBadge } from './discovery-score.js';
 import { listPopularRoutesByOrigin } from './price-history-store.js';
 import { logger } from './logger.js';
 
@@ -18,8 +19,35 @@ const routesSchema = z.object({
   limit: z.number().int().min(1).max(50).default(20)
 });
 
-function monthToDate(month) {
-  return `${month}-15`;
+function monthStartToday() {
+  const now = new Date();
+  const y = now.getUTCFullYear();
+  const m = String(now.getUTCMonth() + 1).padStart(2, '0');
+  return `${y}-${m}-01`;
+}
+
+async function mapLimit(items, concurrency, iteratee) {
+  const out = new Array(items.length);
+  let cursor = 0;
+  const workers = Array.from({ length: Math.max(1, Math.min(concurrency, items.length || 1)) }, async () => {
+    while (true) {
+      const idx = cursor;
+      cursor += 1;
+      if (idx >= items.length) break;
+      out[idx] = await iteratee(items[idx], idx);
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
+
+async function getBaselineForRouteMonth({ origin, destination, travelMonth }) {
+  const baseline = await getRouteBaselinePercentiles({
+    originIata: origin,
+    destinationIata: destination,
+    travelMonth
+  });
+  return baseline;
 }
 
 function scoreForDiscovery({ avgPrice, dealScore, observations, underrated = false }) {
@@ -32,28 +60,38 @@ function scoreForDiscovery({ avgPrice, dealScore, observations, underrated = fal
 export async function findCheapestDestinations(origin, month, limit = 12) {
   const parsed = cheapestSchema.parse({ origin, month, limit });
   try {
+    const travelMonth = `${parsed.month}-01`;
     const rows = await listPopularRoutesByOrigin({ origin: parsed.origin, month: `${parsed.month}-01`, limit: parsed.limit * 3 });
-    const scored = [];
-    for (const row of rows) {
-      const deal = await detectDeal({
-        origin: parsed.origin,
-        destination: row.destination,
-        date: monthToDate(parsed.month),
-        price: Number(row.avgPrice)
+    const scored = await mapLimit(rows, 8, async (row) => {
+      const baseline = await getBaselineForRouteMonth({ origin: parsed.origin, destination: row.destination, travelMonth });
+      const fallbackConfidence = confidenceForCount(Number(row.observations || 0));
+      const canonical = canonicalScoreFromPercentiles({
+        p10: Number(baseline?.p10_price),
+        p25: Number(baseline?.p25_price),
+        p50: Number(baseline?.p50_price),
+        p75: Number(baseline?.p75_price),
+        p90: Number(baseline?.p90_price),
+        observationCount: Number(baseline?.observation_count || row.observations || 0),
+        price: Number(row.avgPrice),
+        travelMonth
       });
-      scored.push({
+      return {
         destination: row.destination,
         avg_price: row.avgPrice,
         observations: row.observations,
-        deal_score: deal.deal_score,
-        deal_type: deal.deal_type,
+        deal_score: canonical.score,
+        deal_type: canonical.badge.toLowerCase(),
+        badge: canonical.badge,
+        reasons: canonical.reasons,
+        confidence: canonical.confidence?.observationCount ? canonical.confidence : { ...fallbackConfidence, observationCount: Number(row.observations || 0) },
+        deal_level: legacyLevelFromBadge({ badge: canonical.badge, price: Number(row.avgPrice), p75: Number(baseline?.p75_price || row.avgPrice) }),
         score: scoreForDiscovery({
           avgPrice: Number(row.avgPrice),
-          dealScore: deal.deal_score,
+          dealScore: canonical.score,
           observations: row.observations
         })
-      });
-    }
+      };
+    });
     return scored.sort((a, b) => b.score - a.score || a.avg_price - b.avg_price).slice(0, parsed.limit);
   } catch (error) {
     logger.error({ err: error, origin: parsed.origin, month: parsed.month }, 'find_cheapest_destinations_failed');
@@ -70,30 +108,41 @@ export async function findCheapestDestinations(origin, month, limit = 12) {
 export async function findUnderratedRoutes(origin, limit = 20) {
   const parsed = routesSchema.parse({ origin, limit });
   try {
+    const travelMonth = monthStartToday();
     const rows = await listPopularRoutesByOrigin({ origin: parsed.origin, limit: parsed.limit * 4 });
-    const out = [];
-    for (const row of rows) {
-      const deal = await detectDeal({
-        origin: parsed.origin,
-        destination: row.destination,
-        date: new Date().toISOString().slice(0, 10),
-        price: Number(row.avgPrice)
+    const computed = await mapLimit(rows, 8, async (row) => {
+      if (row.observations > 250) return null;
+      const baseline = await getBaselineForRouteMonth({ origin: parsed.origin, destination: row.destination, travelMonth });
+      const fallbackConfidence = confidenceForCount(Number(row.observations || 0));
+      const canonical = canonicalScoreFromPercentiles({
+        p10: Number(baseline?.p10_price),
+        p25: Number(baseline?.p25_price),
+        p50: Number(baseline?.p50_price),
+        p75: Number(baseline?.p75_price),
+        p90: Number(baseline?.p90_price),
+        observationCount: Number(baseline?.observation_count || row.observations || 0),
+        price: Number(row.avgPrice),
+        travelMonth
       });
-      if (row.observations > 250) continue;
-      out.push({
+      return {
         destination: row.destination,
         avg_price: row.avgPrice,
         observations: row.observations,
-        deal_score: deal.deal_score,
-        deal_type: deal.deal_type,
+        deal_score: canonical.score,
+        deal_type: canonical.badge.toLowerCase(),
+        badge: canonical.badge,
+        reasons: canonical.reasons,
+        confidence: canonical.confidence?.observationCount ? canonical.confidence : { ...fallbackConfidence, observationCount: Number(row.observations || 0) },
+        deal_level: legacyLevelFromBadge({ badge: canonical.badge, price: Number(row.avgPrice), p75: Number(baseline?.p75_price || row.avgPrice) }),
         score: scoreForDiscovery({
           avgPrice: Number(row.avgPrice),
-          dealScore: deal.deal_score,
+          dealScore: canonical.score,
           observations: row.observations,
           underrated: true
         })
-      });
-    }
+      };
+    });
+    const out = computed.filter(Boolean);
     return out.sort((a, b) => b.score - a.score).slice(0, parsed.limit);
   } catch (error) {
     logger.error({ err: error, origin: parsed.origin }, 'find_underrated_routes_failed');
@@ -110,31 +159,43 @@ export async function findUnderratedRoutes(origin, limit = 20) {
 export async function findPriceDrops(origin, limit = 20) {
   const parsed = routesSchema.parse({ origin, limit });
   try {
+    const travelMonth = monthStartToday();
     const rows = await listPopularRoutesByOrigin({ origin: parsed.origin, limit: parsed.limit * 4 });
-    const out = [];
-    for (const row of rows) {
-      const deal = await detectDeal({
-        origin: parsed.origin,
-        destination: row.destination,
-        date: new Date().toISOString().slice(0, 10),
-        price: Number(row.avgPrice)
+    const computed = await mapLimit(rows, 8, async (row) => {
+      const baseline = await getBaselineForRouteMonth({ origin: parsed.origin, destination: row.destination, travelMonth });
+      const baselineP50 = Number(baseline?.p50_price || 0);
+      const drop = baselineP50 > 0 ? Math.max(0, ((baselineP50 - Number(row.avgPrice)) / baselineP50) * 100) : 0;
+      if (drop < 8) return null;
+      const fallbackConfidence = confidenceForCount(Number(row.observations || 0));
+      const canonical = canonicalScoreFromPercentiles({
+        p10: Number(baseline?.p10_price),
+        p25: Number(baseline?.p25_price),
+        p50: baselineP50,
+        p75: Number(baseline?.p75_price),
+        p90: Number(baseline?.p90_price),
+        observationCount: Number(baseline?.observation_count || row.observations || 0),
+        price: Number(row.avgPrice),
+        travelMonth
       });
-      const drop = Math.max(0, -Number(deal.deviation?.percent || 0));
-      if (drop < 8) continue;
-      out.push({
+      return {
         destination: row.destination,
         avg_price: row.avgPrice,
         observations: row.observations,
         price_drop_pct: drop,
-        deal_score: deal.deal_score,
-        deal_type: deal.deal_type,
+        deal_score: canonical.score,
+        deal_type: canonical.badge.toLowerCase(),
+        badge: canonical.badge,
+        reasons: canonical.reasons,
+        confidence: canonical.confidence?.observationCount ? canonical.confidence : { ...fallbackConfidence, observationCount: Number(row.observations || 0) },
+        deal_level: legacyLevelFromBadge({ badge: canonical.badge, price: Number(row.avgPrice), p75: Number(baseline?.p75_price || row.avgPrice) }),
         score: scoreForDiscovery({
           avgPrice: Number(row.avgPrice),
-          dealScore: deal.deal_score,
+          dealScore: canonical.score,
           observations: row.observations
         })
-      });
-    }
+      };
+    });
+    const out = computed.filter(Boolean);
     return out.sort((a, b) => b.price_drop_pct - a.price_drop_pct || b.score - a.score).slice(0, parsed.limit);
   } catch (error) {
     logger.error({ err: error, origin: parsed.origin }, 'find_price_drops_failed');
