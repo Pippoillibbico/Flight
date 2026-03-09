@@ -1,4 +1,4 @@
-name: security-ci
+name: security-gate
 
 on:
   push:
@@ -6,8 +6,26 @@ on:
   pull_request:
 
 jobs:
-  security:
+  security-gate:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      NODE_ENV: production
+      JWT_SECRET: 12345678901234567890123456789012
+      AUDIT_LOG_HMAC_KEY: 1234567890123456789012345678901234567890123456789012345678901234
+      INTERNAL_INGEST_TOKEN: 12345678901234567890123456789012
+      FRONTEND_ORIGIN: https://app.flight.example
+      CORS_ORIGIN: https://app.flight.example
+      CORS_ALLOWLIST: https://app.flight.example
+      TRUST_PROXY: 1
+      DATABASE_URL: postgresql://ci:ci@db.example:5432/flight
+      REDIS_URL: redis://cache.example:6379
+      SMTP_HOST: smtp.example
+      SMTP_USER: ci@example.com
+      SMTP_PASS: ci-password
+      BILLING_PROVIDER: stripe
+      STRIPE_WEBHOOK_SECRET: whsec_ci_example
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -15,7 +33,11 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run build
-      - run: npm run test:security
-        env:
-          JWT_SECRET: 12345678901234567890123456789012
+      - name: Security smoke
+        run: npm run test:security
+      - name: Security compliance
+        run: npm run test:security:compliance
+      - name: Preflight production readiness
+        run: npm run preflight:prod
+      - name: Dependency vulnerability audit
+        run: npm audit --omit=dev

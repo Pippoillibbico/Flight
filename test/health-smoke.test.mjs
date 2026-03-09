@@ -23,7 +23,8 @@ test('smoke /api/health returns ok', async () => {
       NODE_ENV: 'test',
       PORT: String(port),
       JWT_SECRET: process.env.JWT_SECRET || '12345678901234567890123456789012',
-      REDIS_URL: ''
+      REDIS_URL: '',
+      DATABASE_URL: ''
     },
     stdio: 'pipe'
   });
@@ -37,4 +38,3 @@ test('smoke /api/health returns ok', async () => {
     await delay(200);
   }
 }, 30000);
-

@@ -50,6 +50,8 @@ import { requestIdMiddleware } from './middleware/request-id.js';
 import { buildErrorPayload, errorHandler, getErrorCode, getHumanErrorMessage } from './middleware/error-handler.js';
 import { logger, requestLogger } from './lib/logger.js';
 import { getDataFoundationStatus } from './lib/deal-engine-store.js';
+import { getRuntimeConfigAudit } from './lib/runtime-config.js';
+import { evaluateStartupReadiness } from './lib/startup-readiness.js';
 
 dotenv.config();
 try {
@@ -107,18 +109,33 @@ const ACCESS_COOKIE_TTL_MS = 15 * 60 * 1000;
 const REFRESH_COOKIE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const AUTH_COOKIE_DOMAIN = String(process.env.AUTH_COOKIE_DOMAIN || '').trim() || null;
 const DEFAULT_CORS_ALLOWLIST = ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:3000', 'http://127.0.0.1:3000'];
-const ENV_CORS_ALLOWLIST = String(process.env.CORS_ORIGIN || process.env.FRONTEND_ORIGIN || process.env.CORS_ALLOWLIST || '')
+const ENV_CORS_ALLOWLIST = [process.env.CORS_ORIGIN, process.env.FRONTEND_ORIGIN, process.env.CORS_ALLOWLIST]
+  .filter((value) => String(value || '').trim().length > 0)
+  .join(',')
   .split(',')
   .map((entry) => entry.trim())
   .filter(Boolean);
 const CORS_ALLOWLIST = new Set(ENV_CORS_ALLOWLIST.length > 0 ? ENV_CORS_ALLOWLIST : process.env.NODE_ENV === 'production' ? [] : DEFAULT_CORS_ALLOWLIST);
 const RATE_LIMIT_WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW || 60_000);
 const RATE_LIMIT_MAX = Number(process.env.RATE_LIMIT_MAX || process.env.RL_API_PER_MINUTE || 120);
+const RL_AUTH_PER_MINUTE = Number(process.env.RL_AUTH_PER_MINUTE || 15);
 const CRON_RETRY_ATTEMPTS = Math.max(0, Number(process.env.CRON_RETRY_ATTEMPTS || 1));
 const CRON_RETRY_DELAY_MS = Math.max(0, Number(process.env.CRON_RETRY_DELAY_MS || 1500));
 const SHUTDOWN_TIMEOUT_MS = Math.max(1_000, Number(process.env.SHUTDOWN_TIMEOUT_MS || 12_000));
+const ALLOW_INSECURE_STARTUP_FOR_TESTS = String(process.env.ALLOW_INSECURE_STARTUP_FOR_TESTS || 'false').trim().toLowerCase() === 'true';
+const LOGIN_DUMMY_PASSWORD_HASH =
+  '$2b$10$7EqJtq98hPqEX7fNZaFWoOHiA6fQh6J1M4nA4sIY5Pja/qvpDMAYA'; // bcrypt("password")
+const TRUST_PROXY_RAW = String(process.env.TRUST_PROXY || '').trim().toLowerCase();
+const TRUST_PROXY =
+  TRUST_PROXY_RAW === '' || TRUST_PROXY_RAW === 'false' || TRUST_PROXY_RAW === '0'
+    ? false
+    : TRUST_PROXY_RAW === 'true'
+    ? 1
+    : Number.isFinite(Number(TRUST_PROXY_RAW))
+    ? Number(TRUST_PROXY_RAW)
+    : TRUST_PROXY_RAW;
 
-app.set('trust proxy', 1);
+app.set('trust proxy', TRUST_PROXY);
 app.use(requestIdMiddleware);
 app.use(requestLogger);
 app.use((req, res, next) => {
@@ -241,7 +258,7 @@ const standardApiLimiter = rateLimit({
 
 const strictAuthPathLimiter = rateLimit({
   windowMs: 60 * 1000,
-  limit: Number(process.env.RL_AUTH_PER_MINUTE || 15),
+  limit: RL_AUTH_PER_MINUTE,
   standardHeaders: true,
   legacyHeaders: false,
   handler: (req, res) => sendMachineError(req, res, 429, 'limit_exceeded', { reset_at: toIsoFromRateLimit(req) })
@@ -275,6 +292,10 @@ app.use('/api', (req, res, next) => {
 app.use('/auth', strictAuthPathLimiter);
 app.use('/demo', moderateDemoLimiter);
 app.use('/api/auth', strictAuthPathLimiter);
+app.use('/api/auth', (_req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store');
+  next();
+});
 app.use('/api', standardApiLimiter);
 app.use('/api', apiKeyAuth);
 app.use('/', buildFreeFoundationRouter({ corsAllowlist: Array.from(CORS_ALLOWLIST) }));
@@ -298,6 +319,47 @@ const flightProviderRegistry = createFlightProviderRegistry({
     buildBookingLink({ origin, destinationIata, dateFrom, dateTo, travellers, cabinClass })
 });
 const dataProviderRegistry = createProviderRegistry();
+const startupReadiness = evaluateStartupReadiness();
+const runtimeConfigAudit = startupReadiness.runtimeAudit;
+if (!startupReadiness.ok && process.env.NODE_ENV === 'production') {
+  if (!ALLOW_INSECURE_STARTUP_FOR_TESTS) {
+    logger.fatal(
+      {
+        blockingRuntimeMissing: startupReadiness.blockingFailed.runtime,
+        blockingPolicyMissing: startupReadiness.blockingFailed.policy,
+        summary: startupReadiness.summary
+      },
+      'startup_blocked_missing_required_runtime_config'
+    );
+    process.exit(1);
+  }
+  logger.warn(
+    {
+      blockingRuntimeMissing: startupReadiness.blockingFailed.runtime,
+      blockingPolicyMissing: startupReadiness.blockingFailed.policy,
+      summary: startupReadiness.summary
+    },
+    'startup_insecure_bypass_enabled_for_tests'
+  );
+}
+if (runtimeConfigAudit.summary.recommendedFailed > 0) {
+  logger.warn(
+    {
+      recommendedMissing: runtimeConfigAudit.recommendedFailedKeys,
+      summary: runtimeConfigAudit.summary
+    },
+    'runtime_config_recommended_values_missing'
+  );
+}
+if (startupReadiness.recommendedFailed.policy.length > 0) {
+  logger.warn(
+    {
+      recommendedPolicyMissing: startupReadiness.recommendedFailed.policy,
+      policySummary: startupReadiness.summary.policy
+    },
+    'runtime_policy_recommended_values_missing'
+  );
+}
 const PARTNER_ENUM = flightProviderRegistry.allowedPartners;
 const OUTBOUND_SURFACE_ENUM = ['results', 'top_picks', 'compare', 'watchlist', 'insights'];
 const COUNTRIES = worldCountries
@@ -716,11 +778,7 @@ function verifyOutboundClickToken({ clickId, targetUrl, expiresAt, clickToken })
 }
 
 function isSecureRequest(req) {
-  const forwardedProto = String(req.headers['x-forwarded-proto'] || '')
-    .split(',')[0]
-    .trim()
-    .toLowerCase();
-  return Boolean(req.secure || forwardedProto === 'https');
+  return Boolean(req.secure);
 }
 
 function authCookieOptions(req, maxAgeMs) {
@@ -824,8 +882,15 @@ function optionalAuth(req) {
 
 function isTrustedOrigin(req) {
   const origin = String(req.headers.origin || '').trim();
-  if (!origin) return true;
-  return CORS_ALLOWLIST.has(origin);
+  if (origin) return CORS_ALLOWLIST.has(origin);
+  const referer = String(req.headers.referer || '').trim();
+  if (!referer) return false;
+  try {
+    const refererOrigin = new URL(referer).origin;
+    return CORS_ALLOWLIST.has(refererOrigin);
+  } catch {
+    return false;
+  }
 }
 
 function userIsLocked(user) {
@@ -851,11 +916,8 @@ function registerFailedLogin(user) {
 }
 
 function getClientIp(req) {
-  const forwarded = req.headers['x-forwarded-for'];
-  if (typeof forwarded === 'string' && forwarded.trim()) {
-    return forwarded.split(',')[0].trim();
-  }
-  return req.ip || req.socket?.remoteAddress || 'unknown';
+  const ip = String(req.ip || req.socket?.remoteAddress || '').trim();
+  return ip || 'unknown';
 }
 
 function hashPasswordResetToken(token) {
@@ -1877,9 +1939,12 @@ app.use(
     CORS_ALLOWLIST,
     LOGIN_MAX_FAILURES,
     LOGIN_LOCK_MINUTES,
+    RL_AUTH_PER_MINUTE,
     runFeatureAudit,
     getDataFoundationStatus,
-    providerRegistry: dataProviderRegistry
+    providerRegistry: dataProviderRegistry,
+    getRuntimeConfigAudit,
+    evaluateStartupReadiness
   })
 );
 app.get('/api/security/audit/verify', authGuard, async (_req, res) => {
@@ -2031,6 +2096,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
   });
 
   if (!user) {
+    await verifyPassword(parsed.data.password, LOGIN_DUMMY_PASSWORD_HASH).catch(() => false);
     await logAuthEvent({
       email,
       type: 'login_user_not_found',
@@ -2053,6 +2119,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
   }
 
   if (!user.passwordHash) {
+    await verifyPassword(parsed.data.password, LOGIN_DUMMY_PASSWORD_HASH).catch(() => false);
     await logAuthEvent({
       userId: user.id,
       email: user.email,
@@ -2060,7 +2127,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
       success: false,
       req
     });
-    return res.status(401).json({ error: 'Use social login for this account.' });
+    return res.status(401).json({ error: 'Wrong credentials.' });
   }
 
   const ok = await verifyPassword(parsed.data.password, user.passwordHash);

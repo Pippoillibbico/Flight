@@ -101,3 +101,5 @@ docker compose up --build
 - [Go-Live Checklist](docs/go-live-checklist.md)
 - [Incident Runbook](docs/incident-runbook.md)
 - [Backup Strategy](docs/backup-strategy.md)
+- [Security Operations Checklist](docs/SECURITY_OPERATIONS_CHECKLIST.md)
+- [Threat Model P0/P1](docs/THREAT_MODEL_P0_P1.md)

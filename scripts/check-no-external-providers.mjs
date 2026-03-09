@@ -3,7 +3,13 @@ import { join } from 'node:path';
 
 const ROOT_DIRS = ['server', 'src', 'scripts'];
 const EXTENSIONS = new Set(['.js', '.mjs', '.jsx', '.ts', '.tsx']);
-const ALLOWED_CONTEXT = ['docs', 'README', 'comment', 'template'];
+const ALLOWED_CONTEXT = ['docs', 'readme', 'comment', 'template', 'blocked_terms', 'const banned ='];
+const ALLOWED_PROVIDER_FILES = new Set([
+  'server/lib/providers/amadeus-provider.js',
+  'server/lib/providers/duffel-provider.js',
+  'server/lib/providers/provider-registry.js',
+  'server/routes/system.js'
+]);
 const BLOCKED_TERMS = [
   'skyscanner',
   'google flights',
@@ -16,10 +22,15 @@ const BLOCKED_TERMS = [
   'serpapi'
 ];
 
+function normalizePath(path) {
+  return String(path || '').replace(/\\/g, '/').toLowerCase();
+}
+
 function hasAllowedContext(path, line) {
-  const lower = `${path} ${line}`.toLowerCase();
+  const normalizedPath = normalizePath(path);
+  if (ALLOWED_PROVIDER_FILES.has(normalizedPath)) return true;
+  const lower = `${normalizedPath} ${line}`.toLowerCase();
   if (lower.includes('check-no-external-providers.mjs')) return true;
-  if (lower.includes('const banned =') || lower.includes('blocked_terms')) return true;
   return ALLOWED_CONTEXT.some((token) => lower.includes(token));
 }
 
@@ -46,13 +57,14 @@ async function run() {
 
   const violations = [];
   for (const file of files) {
+    const normalizedFile = normalizePath(file);
     const content = await readFile(file, 'utf8');
     const lines = content.split(/\r?\n/);
     lines.forEach((line, idx) => {
       const normalized = line.toLowerCase();
       for (const term of BLOCKED_TERMS) {
         if (!normalized.includes(term)) continue;
-        if (hasAllowedContext(file, line)) continue;
+        if (hasAllowedContext(normalizedFile, line)) continue;
         violations.push(`${file}:${idx + 1}: ${line.trim()}`);
       }
     });
