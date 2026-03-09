@@ -29,6 +29,7 @@ import { buildUsageRouter } from './routes/usage.js';
 import { buildFreeFoundationRouter } from './routes/free-foundation.js';
 import { buildDealEngineRouter } from './routes/deal-engine.js';
 import { buildDiscoveryRouter } from './routes/discovery.js';
+import { buildOpportunitiesRouter } from './routes/opportunities.js';
 import { buildAlertsRouter } from './routes/alerts.js';
 import { buildSystemRouter } from './routes/system.js';
 import { buildSearchRouter } from './routes/search.js';
@@ -42,6 +43,8 @@ import { getPriceDatasetStatus, initPriceHistoryStore } from './lib/price-histor
 import { runBaselineRecomputeOnce } from './jobs/baseline-recompute-worker.js';
 import { runProviderCollectionOnce } from './jobs/provider-collection-worker.js';
 import { runSeedImportOnce } from './jobs/seed-import-worker.js';
+import { runOpportunityPipelineOnce } from './jobs/opportunity-pipeline-worker.js';
+import { runRadarMatchPrecomputeOnce } from './jobs/radar-match-precompute-worker.js';
 import { captureUserPriceObservation } from './lib/observation-capture.js';
 import { closeCacheClient, getCacheClient } from './lib/free-cache.js';
 import { createFlightProviderRegistry } from './lib/flight-provider.js';
@@ -50,8 +53,10 @@ import { requestIdMiddleware } from './middleware/request-id.js';
 import { buildErrorPayload, errorHandler, getErrorCode, getHumanErrorMessage } from './middleware/error-handler.js';
 import { logger, requestLogger } from './lib/logger.js';
 import { getDataFoundationStatus } from './lib/deal-engine-store.js';
+import { getOpportunityIntelligenceDebugStats, getOpportunityPipelineStats } from './lib/opportunity-store.js';
 import { getRuntimeConfigAudit } from './lib/runtime-config.js';
 import { evaluateStartupReadiness } from './lib/startup-readiness.js';
+import { canUseAITravel, canUseRadar, resolveUserPlan } from './lib/plan-access.js';
 
 dotenv.config();
 try {
@@ -97,6 +102,10 @@ const PRICE_INGEST_WORKER_TIMEZONE = process.env.PRICE_INGEST_WORKER_TIMEZONE ||
 const PROVIDER_COLLECTION_ENABLED = String(process.env.PROVIDER_COLLECTION_ENABLED || 'false').trim().toLowerCase() === 'true';
 const PROVIDER_COLLECTION_CRON = process.env.PROVIDER_COLLECTION_CRON || '17 * * * *';
 const PROVIDER_COLLECTION_TIMEZONE = process.env.PROVIDER_COLLECTION_TIMEZONE || FREE_JOBS_TIMEZONE;
+const OPPORTUNITY_PIPELINE_CRON = process.env.OPPORTUNITY_PIPELINE_CRON || '*/30 * * * *';
+const OPPORTUNITY_PIPELINE_TIMEZONE = process.env.OPPORTUNITY_PIPELINE_TIMEZONE || FREE_JOBS_TIMEZONE;
+const RADAR_MATCH_PRECOMPUTE_CRON = process.env.RADAR_MATCH_PRECOMPUTE_CRON || '*/40 * * * *';
+const RADAR_MATCH_PRECOMPUTE_TIMEZONE = process.env.RADAR_MATCH_PRECOMPUTE_TIMEZONE || FREE_JOBS_TIMEZONE;
 const BOOTSTRAP_SEED_IMPORT_FILE = String(process.env.BOOTSTRAP_SEED_IMPORT_FILE || '').trim();
 const BOOTSTRAP_SEED_IMPORT_DRY_RUN = String(process.env.BOOTSTRAP_SEED_IMPORT_DRY_RUN || 'false').trim().toLowerCase() === 'true';
 const JSON_BODY_LIMIT = String(process.env.BODY_JSON_LIMIT || '256kb').trim() || '256kb';
@@ -1116,8 +1125,8 @@ async function ensureAiPremiumAccess(req, aiProvider) {
   const userId = req.user?.id || req.user?.sub;
   if (!userId) return { allowed: false, status: 401, error: 'auth_required' };
   const sub = await getOrCreateSubscription(userId);
-  const plan = PLANS[sub.planId] || PLANS.free;
-  if (!plan.aiEnabled) return { allowed: false, status: 402, error: 'premium_required' };
+  const planId = String(sub?.planId || 'free').toLowerCase();
+  if (planId !== 'creator') return { allowed: false, status: 402, error: 'premium_required' };
   return { allowed: true };
 }
 
@@ -1178,7 +1187,7 @@ async function fetchCurrentUser(userId) {
 async function premiumGuard(req, res, next) {
   const user = await fetchCurrentUser(req.user.sub);
   if (!user) return sendMachineError(req, res, 404, 'user_not_found');
-  if (!user.isPremium) return sendMachineError(req, res, 402, 'premium_required');
+  if (!canUseAITravel(user)) return sendMachineError(req, res, 402, 'premium_required');
   req.currentUser = user;
   return next();
 }
@@ -1304,6 +1313,8 @@ async function findOrCreateOAuthUser(profile) {
     if (byEmail) {
       byEmail.name = byEmail.name || profile.name;
       byEmail.isPremium = Boolean(byEmail.isPremium);
+      byEmail.planType = resolveUserPlan(byEmail).planType;
+      byEmail.planStatus = resolveUserPlan(byEmail).planStatus;
       byEmail.onboardingDone = Boolean(byEmail.onboardingDone);
       byEmail.authChannel = oauthChannel;
       byEmail.oauthProviders = byEmail.oauthProviders || [];
@@ -1325,6 +1336,8 @@ async function findOrCreateOAuthUser(profile) {
       email: profile.email,
       passwordHash: null,
       isPremium: false,
+      planType: 'free',
+      planStatus: 'active',
       onboardingDone: false,
       mfaEnabled: false,
       mfaSecret: null,
@@ -1365,7 +1378,16 @@ async function completeOAuthLogin({ req, res, profile }) {
   return {
     token: accessToken,
     session: { cookie: true, expiresInDays: 7, csrfToken },
-    user: { id: user.id, name: user.name, email: user.email, mfaEnabled: Boolean(user.mfaEnabled), isPremium: Boolean(user.isPremium), onboardingDone: Boolean(user.onboardingDone) }
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      mfaEnabled: Boolean(user.mfaEnabled),
+      isPremium: Boolean(user.isPremium),
+      planType: resolveUserPlan(user).planType,
+      planStatus: resolveUserPlan(user).planStatus,
+      onboardingDone: Boolean(user.onboardingDone)
+    }
   };
 }
 
@@ -1808,8 +1830,8 @@ async function scanSubscriptionsOnce() {
           subscriptionId: subscription.id,
           createdAt: new Date().toISOString(),
           readAt: null,
-          title: `Cheapest month found for ${best.destination}`,
-          message: `Best deal in ${monthLabel}: ${best.origin} -> ${best.destination} on ${best.dateFrom}, return ${best.dateTo}, EUR ${best.price}.`,
+          title: '\u26A1 Opportunita rara trovata',
+          message: `${best.origin} -> ${best.destination}\n${Math.round(Number(best.price || 0))}\u20AC\nFinestra consigliata: ${monthLabel}.`,
           data: {
             origin: best.origin,
             destination: best.destination,
@@ -1826,8 +1848,8 @@ async function scanSubscriptionsOnce() {
           pendingEmails.push({
             userId: user.id,
             email: user.email,
-            subject: `Cheapest month found for ${best.destination}`,
-            text: `Best deal in ${monthLabel}: ${best.origin} -> ${best.destination} on ${best.dateFrom}, return ${best.dateTo}, EUR ${best.price}.`
+            subject: '\u26A1 Opportunita rara trovata',
+            text: `${best.origin} -> ${best.destination}\n${Math.round(Number(best.price || 0))}\u20AC\nFinestra consigliata: ${monthLabel}.\nQuesto volo potrebbe sparire presto.`
           });
         }
         continue;
@@ -1870,8 +1892,8 @@ async function scanSubscriptionsOnce() {
         subscriptionId: subscription.id,
         createdAt: new Date().toISOString(),
         readAt: null,
-        title: `Deal found for ${best.destination}`,
-        message: `${best.origin} -> ${best.destination} at EUR ${best.price} (target EUR ${subscription.targetPrice})`,
+        title: '\uD83D\uDD25 Nuova occasione',
+        message: `${best.origin} -> ${best.destination}\n${Math.round(Number(best.price || 0))}\u20AC\nTarget radar: ${Math.round(Number(subscription.targetPrice || 0))}\u20AC.`,
         data: {
           origin: best.origin,
           destination: best.destination,
@@ -1888,8 +1910,8 @@ async function scanSubscriptionsOnce() {
         pendingEmails.push({
           userId: user.id,
           email: user.email,
-          subject: `Deal found for ${best.destination}`,
-          text: `${best.origin} -> ${best.destination} at EUR ${best.price} (target EUR ${subscription.targetPrice}).`
+          subject: '\uD83D\uDD25 Nuova occasione',
+          text: `${best.origin} -> ${best.destination}\n${Math.round(Number(best.price || 0))}\u20AC\nTarget radar: ${Math.round(Number(subscription.targetPrice || 0))}\u20AC.\nQuesto volo potrebbe sparire presto.`
         });
       }
     }
@@ -1942,9 +1964,14 @@ app.use(
     RL_AUTH_PER_MINUTE,
     runFeatureAudit,
     getDataFoundationStatus,
+    getOpportunityPipelineStats,
+    getOpportunityIntelligenceDebugStats,
     providerRegistry: dataProviderRegistry,
     getRuntimeConfigAudit,
-    evaluateStartupReadiness
+    evaluateStartupReadiness,
+    authGuard,
+    requireApiScope,
+    quotaGuard
   })
 );
 app.get('/api/security/audit/verify', authGuard, async (_req, res) => {
@@ -2034,6 +2061,8 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
       email: normalizedEmail,
       passwordHash: hashed,
       isPremium: false,
+      planType: 'free',
+      planStatus: 'active',
       onboardingDone: false,
       mfaEnabled: false,
       mfaSecret: null,
@@ -2078,6 +2107,8 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
       email: createdUser.email,
       mfaEnabled: Boolean(createdUser.mfaEnabled),
       isPremium: Boolean(createdUser.isPremium),
+      planType: resolveUserPlan(createdUser).planType,
+      planStatus: resolveUserPlan(createdUser).planStatus,
       onboardingDone: Boolean(createdUser.onboardingDone)
     }
   });
@@ -2206,6 +2237,8 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
       email: user.email,
       mfaEnabled: Boolean(user.mfaEnabled),
       isPremium: Boolean(user.isPremium),
+      planType: resolveUserPlan(user).planType,
+      planStatus: resolveUserPlan(user).planStatus,
       onboardingDone: Boolean(user.onboardingDone)
     }
   });
@@ -2273,7 +2306,16 @@ app.post('/api/auth/login/mfa', authLimiter, async (req, res) => {
   return res.json({
     token: accessToken,
     session: { cookie: true, expiresInDays: 7, csrfToken },
-    user: { id: user.id, name: user.name, email: user.email, mfaEnabled: Boolean(user.mfaEnabled), isPremium: Boolean(user.isPremium), onboardingDone: Boolean(user.onboardingDone) }
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      mfaEnabled: Boolean(user.mfaEnabled),
+      isPremium: Boolean(user.isPremium),
+      planType: resolveUserPlan(user).planType,
+      planStatus: resolveUserPlan(user).planStatus,
+      onboardingDone: Boolean(user.onboardingDone)
+    }
   });
 });
 
@@ -3044,6 +3086,7 @@ app.use('/api/billing', buildBillingRouter({ authGuard }));
 app.use('/api/usage',   buildUsageRouter({ authGuard }));
 app.use('/', buildDealEngineRouter());
 app.use('/api/discovery', buildDiscoveryRouter({ authGuard, csrfGuard, quotaGuard, requireApiScope }));
+app.use('/api/opportunities', buildOpportunitiesRouter({ authGuard, csrfGuard, requireApiScope, quotaGuard, withDb, optionalAuth }));
 
 app.use(errorHandler);
 
@@ -3134,6 +3177,8 @@ scheduleCronJob('route_baseline', DEAL_BASELINE_CRON, () => runNightlyRouteBasel
 scheduleCronJob('baseline_recompute_worker', DEAL_BASELINE_CRON, () => runBaselineRecomputeOnce(), { timezone: DEAL_BASELINE_CRON_TIMEZONE });
 scheduleCronJob('discovery_alert_worker', DISCOVERY_ALERT_WORKER_CRON, () => runDiscoveryAlertWorkerOnce(), { timezone: DISCOVERY_ALERT_WORKER_TIMEZONE });
 scheduleCronJob('price_ingestion_worker', PRICE_INGEST_WORKER_CRON, () => runPriceIngestionWorkerOnce({ maxJobs: 500 }), { timezone: PRICE_INGEST_WORKER_TIMEZONE });
+scheduleCronJob('opportunity_pipeline_worker', OPPORTUNITY_PIPELINE_CRON, () => runOpportunityPipelineOnce(), { timezone: OPPORTUNITY_PIPELINE_TIMEZONE });
+scheduleCronJob('radar_match_precompute_worker', RADAR_MATCH_PRECOMPUTE_CRON, () => runRadarMatchPrecomputeOnce(), { timezone: RADAR_MATCH_PRECOMPUTE_TIMEZONE });
 if (PROVIDER_COLLECTION_ENABLED) {
   scheduleCronJob('provider_collection_worker', PROVIDER_COLLECTION_CRON, () => runProviderCollectionOnce(), { timezone: PROVIDER_COLLECTION_TIMEZONE });
 }
@@ -3144,6 +3189,8 @@ runStartupTask('route_baseline_startup', () => runNightlyRouteBaselineJob({ reas
 runStartupTask('baseline_recompute_startup', () => runBaselineRecomputeOnce());
 runStartupTask('discovery_alert_worker_startup', () => runDiscoveryAlertWorkerOnce({ limit: 200 }));
 runStartupTask('price_ingestion_worker_startup', () => runPriceIngestionWorkerOnce({ maxJobs: 500 }));
+runStartupTask('opportunity_pipeline_startup', () => runOpportunityPipelineOnce());
+runStartupTask('radar_match_precompute_startup', () => runRadarMatchPrecomputeOnce());
 if (PROVIDER_COLLECTION_ENABLED) {
   runStartupTask('provider_collection_startup', () => runProviderCollectionOnce());
 }

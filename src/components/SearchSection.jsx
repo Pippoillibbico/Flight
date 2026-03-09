@@ -76,6 +76,8 @@ function SearchSection(props) {
     searchLoading,
     createDurationAlert,
     upgradeToPremium,
+    canUseProFeatures = false,
+    canUseEliteFeatures = false,
     searchError,
     searchResult,
     autoFixSearchFilters,
@@ -104,6 +106,7 @@ function SearchSection(props) {
               </div>
             </div>
           </div>
+          <p className="muted">Scopri le destinazioni piu economiche in questo momento.</p>
 
           <form className="search-grid" onSubmit={submitSearch}>
             <div className="ai-intake-row">
@@ -404,7 +407,7 @@ function SearchSection(props) {
                   {searchLoading ? t('deciding') : t('justGo')}
                 </button>
                 <button type="submit" disabled={searchLoading}>
-                  {searchLoading ? t('searching') : t('search')}
+                  {searchLoading ? t('searching') : t('landingHeroCta')}
                 </button>
               </div>
             </div>
@@ -440,16 +443,17 @@ function SearchSection(props) {
           {isAdvancedMode ? (
             <details className="advanced-block" open>
               <summary>{t('advancedTools')}</summary>
-              {!user?.isPremium ? <p className="muted">{t('premiumRequired')}</p> : null}
+              {!canUseProFeatures ? <p className="muted">{t('premiumRequired')}</p> : null}
               <div className="item-actions">
-                <button type="button" className="ghost" onClick={createDurationAlert} disabled={!user?.isPremium}>
+                <button type="button" className="ghost" onClick={createDurationAlert} disabled={!canUseProFeatures}>
                   {t('durationAlert')}
                 </button>
-                {!user?.isPremium ? (
+                {!canUseProFeatures ? (
                   <button type="button" className="ghost" onClick={upgradeToPremium}>
                     {t('upgradePremium')}
                   </button>
                 ) : null}
+                {!canUseEliteFeatures ? <span className="muted">Route insights disponibili su ELITE.</span> : null}
               </div>
             </details>
           ) : null}

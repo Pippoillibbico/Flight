@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { canUseRadar } from '../lib/plan-access.js';
 
 export function buildAlertsRouter({
   authGuard,
@@ -113,7 +114,7 @@ export function buildAlertsRouter({
     if (isDurationMode) {
       const user = await fetchCurrentUser(req.user.sub);
       if (!user) return sendMachineError(req, res, 404, 'user_not_found');
-      if (!user.isPremium) return sendMachineError(req, res, 402, 'premium_required');
+      if (!canUseRadar(user)) return sendMachineError(req, res, 402, 'premium_required');
     }
 
     const subscription = {

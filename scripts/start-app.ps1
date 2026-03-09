@@ -1,8 +1,10 @@
-﻿param(
-  [switch]$NoBuild
+param(
+  [switch]$NoBuild,
+  [switch]$OpenBrowser
 )
 
 $ErrorActionPreference = 'Stop'
+$frontendUrl = if ([string]::IsNullOrWhiteSpace($env:FRONTEND_APP_URL)) { 'http://127.0.0.1:8080' } else { $env:FRONTEND_APP_URL }
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $projectRoot
@@ -16,6 +18,39 @@ function Test-DockerReady {
   }
 }
 
+function Test-AppReady {
+  try {
+    $api = curl.exe -s http://localhost:3000/health
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($api)) { return $false }
+    $web = curl.exe -s -I $frontendUrl
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($web)) { return $false }
+    return $true
+  } catch {
+    return $false
+  }
+}
+
+function Open-AppUrl {
+  if (-not $OpenBrowser) { return }
+  try {
+    Start-Process $frontendUrl -ErrorAction Stop | Out-Null
+    return
+  } catch {
+    try {
+      Start-Process 'explorer.exe' $frontendUrl -ErrorAction Stop | Out-Null
+      return
+    } catch {
+      Write-Host "Impossibile aprire il browser automaticamente. Apri manualmente: $frontendUrl" -ForegroundColor Yellow
+    }
+  }
+}
+
+if (Test-AppReady) {
+  Write-Host "App gia pronta: $frontendUrl" -ForegroundColor Green
+  Open-AppUrl
+  exit 0
+}
+
 if (-not (Test-DockerReady)) {
   Write-Host 'Docker daemon non disponibile. Avvio Docker Desktop...'
   try {
@@ -24,13 +59,18 @@ if (-not (Test-DockerReady)) {
     throw 'Docker Desktop non trovato. Installa Docker Desktop o avvialo manualmente.'
   }
 
-  $maxWaitSec = 120
+  $maxWaitSec = 300
   $elapsed = 0
   while (-not (Test-DockerReady)) {
     Start-Sleep -Seconds 3
     $elapsed += 3
+    if (Test-AppReady) {
+      Write-Host "App pronta: $frontendUrl" -ForegroundColor Green
+      Open-AppUrl
+      exit 0
+    }
     if ($elapsed -ge $maxWaitSec) {
-      throw 'Docker daemon non raggiungibile entro 120s.'
+      throw 'Docker daemon non raggiungibile entro 300s.'
     }
   }
 }
@@ -81,5 +121,6 @@ if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($health)) {
   throw 'Health endpoint non raggiungibile.'
 }
 
-Write-Host 'App pronta: http://localhost' -ForegroundColor Green
-Start-Process 'http://localhost' | Out-Null
+Write-Host "App pronta: $frontendUrl" -ForegroundColor Green
+Open-AppUrl
+

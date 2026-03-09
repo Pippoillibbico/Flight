@@ -40,6 +40,7 @@ function AuthSection(props) {
     loadBillingPricing,
     billingPricingError,
     upgradeToPremium,
+    chooseElitePlan,
     setupMfa,
     disableMfa,
     mfaActionCode,
@@ -66,6 +67,8 @@ function AuthSection(props) {
     deleteAccount,
     deletingAccount
   } = validateProps(AuthSectionPropsSchema, props, 'AuthSection');
+  const planTypeRaw = String(user?.planType || user?.plan_type || '').trim().toLowerCase();
+  const planType = planTypeRaw === 'creator' ? 'elite' : planTypeRaw || (user?.isPremium ? 'pro' : 'free');
   if (!showAccountPanel) return null;
 
   return (
@@ -101,12 +104,12 @@ function AuthSection(props) {
                 <div className="user-box">
                   <strong>{user.name}</strong>
                   <span>{user.email}</span>
-                  <span>{user.isPremium ? t('premiumActive') : t('premiumFeatures')}</span>
+                  <span>Piano attivo: {String(planType || 'free').toUpperCase()}</span>
                   <span>{user.mfaEnabled ? t('mfaEnabledOn') : t('mfaDisabledOn')}</span>
                   <div className="watch-item">
                     <div>
                       <strong>{t('pricingLive')}</strong>
-                      <p>Free EUR {formatEur(billingPricing.free?.monthlyEur)} | Pro EUR {formatEur(billingPricing.pro?.monthlyEur)} | Creator EUR {formatEur(billingPricing.creator?.monthlyEur)}</p>
+                      <p>Free EUR {formatEur(billingPricing.free?.monthlyEur)} | Pro EUR {formatEur(billingPricing.pro?.monthlyEur)} | Elite EUR {formatEur(billingPricing.creator?.monthlyEur)}</p>
                       <p className="muted">
                         {t('pricingLastCheck')}: {formatPricingDate(billingPricing.lastCostCheckAt || billingPricing.updatedAt)}
                       </p>
@@ -119,9 +122,14 @@ function AuthSection(props) {
                   </div>
                   {billingPricingError ? <p className="error">{billingPricingError}</p> : null}
                   <div className="item-actions">
-                    {!user.isPremium ? (
+                    {planType === 'free' ? (
                       <button className="ghost" type="button" onClick={upgradeToPremium}>
-                        {t('upgradePremium')}
+                        Passa a PRO
+                      </button>
+                    ) : null}
+                    {planType !== 'elite' ? (
+                      <button className="ghost" type="button" onClick={chooseElitePlan}>
+                        Passa a ELITE
                       </button>
                     ) : null}
                     {!user.mfaEnabled ? (

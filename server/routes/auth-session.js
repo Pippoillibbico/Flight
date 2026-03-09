@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { getSaasPool } from '../lib/saas-db.js';
+import { resolveUserPlan, setUserPlan } from '../lib/plan-access.js';
 
 export function buildAuthSessionRouter({
   authGuard,
@@ -39,6 +40,7 @@ export function buildAuthSessionRouter({
     });
 
     if (!user) return res.status(404).json({ error: 'User not found.' });
+    const plan = resolveUserPlan(user);
     return res.json({
       user: {
         id: user.id,
@@ -46,6 +48,8 @@ export function buildAuthSessionRouter({
         email: user.email,
         mfaEnabled: Boolean(user.mfaEnabled),
         isPremium: Boolean(user.isPremium),
+        planType: plan.planType,
+        planStatus: plan.planStatus,
         onboardingDone: Boolean(user.onboardingDone),
         authChannel: String(user.authChannel || 'direct')
       },
@@ -87,13 +91,41 @@ export function buildAuthSessionRouter({
     await withDb(async (db) => {
       user = db.users.find((item) => item.id === req.user.sub) || null;
       if (!user) return db;
-      user.isPremium = true;
-      user.premiumSince = new Date().toISOString();
+      setUserPlan(user, 'pro');
       return db;
     });
     if (!user) return res.status(404).json({ error: 'User not found.' });
     await logAuthEvent({ userId: user.id, email: user.email, type: 'billing_upgrade_demo', success: true, req });
-    return res.json({ ok: true, isPremium: true });
+    const plan = resolveUserPlan(user);
+    return res.json({ ok: true, isPremium: true, planType: plan.planType, planStatus: plan.planStatus });
+  });
+
+  router.post('/upgrade/pro', authGuard, csrfGuard, async (req, res) => {
+    let user = null;
+    await withDb(async (db) => {
+      user = db.users.find((item) => item.id === req.user.sub) || null;
+      if (!user) return db;
+      setUserPlan(user, 'pro');
+      return db;
+    });
+    if (!user) return res.status(404).json({ error: 'User not found.' });
+    const plan = resolveUserPlan(user);
+    await logAuthEvent({ userId: user.id, email: user.email, type: 'billing_upgrade_pro_mock', success: true, req });
+    return res.json({ ok: true, planType: plan.planType, planStatus: plan.planStatus, isPremium: true });
+  });
+
+  router.post('/upgrade/elite', authGuard, csrfGuard, async (req, res) => {
+    let user = null;
+    await withDb(async (db) => {
+      user = db.users.find((item) => item.id === req.user.sub) || null;
+      if (!user) return db;
+      setUserPlan(user, 'elite');
+      return db;
+    });
+    if (!user) return res.status(404).json({ error: 'User not found.' });
+    const plan = resolveUserPlan(user);
+    await logAuthEvent({ userId: user.id, email: user.email, type: 'billing_upgrade_elite_mock', success: true, req });
+    return res.json({ ok: true, planType: plan.planType, planStatus: plan.planStatus, isPremium: true });
   });
 
   router.post('/auth/logout', authGuard, csrfGuard, async (req, res) => {
@@ -325,7 +357,17 @@ export function buildAuthSessionRouter({
     return res.json({
       token: accessToken,
       session: { cookie: true, csrfToken: payload.csrf },
-      user: { id: user.id, name: user.name, email: user.email, mfaEnabled: Boolean(user.mfaEnabled), isPremium: Boolean(user.isPremium), onboardingDone: Boolean(user.onboardingDone), authChannel }
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        mfaEnabled: Boolean(user.mfaEnabled),
+        isPremium: Boolean(user.isPremium),
+        planType: resolveUserPlan(user).planType,
+        planStatus: resolveUserPlan(user).planStatus,
+        onboardingDone: Boolean(user.onboardingDone),
+        authChannel
+      }
     });
   });
 

@@ -8,6 +8,11 @@ import LandingSection from './components/LandingSection';
 import AuthSection from './components/AuthSection';
 import SearchSection from './components/SearchSection';
 import LanguageMenu from './components/LanguageMenu';
+import OpportunityFeedSection from './components/OpportunityFeedSection';
+import OpportunityDetailSection from './components/OpportunityDetailSection';
+import RadarSection from './components/RadarSection';
+import AITravelSection from './components/AITravelSection';
+import SectionAccessGate from './components/SectionAccessGate';
 
 const AdvancedAnalyticsSection = lazy(() => import('./components/AdvancedAnalyticsSection'));
 const prefetchAdvancedAnalyticsChunk = () => import('./components/AdvancedAnalyticsSection');
@@ -77,7 +82,7 @@ const POST_AUTH_MODE_STORAGE_KEY = 'flight_post_auth_mode';
 const POST_AUTH_VIEW_STORAGE_KEY = 'flight_post_auth_view';
 
 function App() {
-  const [language, setLanguage] = useState('en');
+  const [language, setLanguage] = useState('it');
   const [i18nPack, setI18nPack] = useState(DEFAULT_LANGUAGE_PACK);
   const isGarbledI18nText = (value) => {
     if (typeof value !== 'string') return false;
@@ -216,8 +221,8 @@ function App() {
   const [monetizationError, setMonetizationError] = useState('');
   const [billingPricing, setBillingPricing] = useState({
     free: { monthlyEur: 0 },
-    pro: { monthlyEur: 12.99 },
-    creator: { monthlyEur: 29.99 },
+    pro: { monthlyEur: 7 },
+    creator: { monthlyEur: 19 },
     updatedAt: null,
     lastCostCheckAt: null
   });
@@ -247,6 +252,41 @@ function App() {
   });
   const [onboardingSaving, setOnboardingSaving] = useState(false);
   const [pendingPostAuthAction, setPendingPostAuthAction] = useState(null);
+  const [activeMainSection, setActiveMainSection] = useState('home');
+  const [opportunityFeed, setOpportunityFeed] = useState([]);
+  const [opportunityFeedAccess, setOpportunityFeedAccess] = useState(null);
+  const [destinationClusters, setDestinationClusters] = useState([]);
+  const [selectedOpportunityCluster, setSelectedOpportunityCluster] = useState('');
+  const [destinationClustersLoading, setDestinationClustersLoading] = useState(false);
+  const [destinationClustersError, setDestinationClustersError] = useState('');
+  const [opportunityFeedLoading, setOpportunityFeedLoading] = useState(false);
+  const [opportunityFeedError, setOpportunityFeedError] = useState('');
+  const [opportunityDetail, setOpportunityDetail] = useState(null);
+  const [opportunityDetailLoading, setOpportunityDetailLoading] = useState(false);
+  const [opportunityDetailError, setOpportunityDetailError] = useState('');
+  const [radarDraft, setRadarDraft] = useState({
+    originAirports: '',
+    favoriteDestinations: '',
+    favoriteCountries: '',
+    budgetCeiling: '',
+    preferredTravelMonths: ''
+  });
+  const [radarSaving, setRadarSaving] = useState(false);
+  const [radarMessage, setRadarMessage] = useState('');
+  const [radarError, setRadarError] = useState('');
+  const [radarMatches, setRadarMatches] = useState([]);
+  const [radarMatchesLoading, setRadarMatchesLoading] = useState(false);
+  const [radarMatchesError, setRadarMatchesError] = useState('');
+  const [radarFollows, setRadarFollows] = useState([]);
+  const [radarFollowsLoading, setRadarFollowsLoading] = useState(false);
+  const [radarFollowsError, setRadarFollowsError] = useState('');
+  const [opportunityPipelineStatus, setOpportunityPipelineStatus] = useState(null);
+  const [opportunityPipelineStatusLoading, setOpportunityPipelineStatusLoading] = useState(false);
+  const [opportunityPipelineStatusError, setOpportunityPipelineStatusError] = useState('');
+  const [aiTravelPrompt, setAiTravelPrompt] = useState('');
+  const [aiTravelLoading, setAiTravelLoading] = useState(false);
+  const [aiTravelResult, setAiTravelResult] = useState(null);
+  const [aiTravelError, setAiTravelError] = useState('');
 
   function persistPostAuthAction(action) {
     setPendingPostAuthAction(action || null);
@@ -340,6 +380,7 @@ function App() {
     if (!token) {
       setCsrfToken('');
       setUser(null);
+      setOpportunityFeedAccess(null);
       setWatchlist([]);
       setSubscriptions([]);
       setAlertDraftById({});
@@ -347,6 +388,8 @@ function App() {
       setUnreadCount(0);
       setSecurityEvents([]);
       setSecurityInfo({ isLocked: false, lockUntil: null, failedLoginCount: 0 });
+      setRadarFollows([]);
+      setOpportunityPipelineStatus(null);
       return;
     }
 
@@ -370,10 +413,27 @@ function App() {
     refreshNotifications();
     refreshSearchHistory();
     refreshSecurityActivity();
+    loadOpportunityFeed();
+    loadOpportunityClusters();
+    loadRadarPreferences();
+    loadRadarMatches();
+    loadRadarFollows();
+    loadOpportunityPipelineStatus();
 
     const timer = setInterval(() => refreshNotifications(true), 30000);
     return () => clearInterval(timer);
   }, [user]);
+
+  useEffect(() => {
+    if (showLandingPage) return;
+    loadOpportunityFeed();
+    loadOpportunityClusters();
+  }, [showLandingPage, user]);
+
+  useEffect(() => {
+    if (showLandingPage) return;
+    loadOpportunityFeed();
+  }, [selectedOpportunityCluster, showLandingPage]);
 
   useEffect(() => {
     if (!user || !pendingPostAuthAction) return;
@@ -432,12 +492,6 @@ function App() {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [showAccountPanel, user]);
-
-  useEffect(() => {
-    if (showLandingPage) return;
-    if (user) return;
-    if (!showAccountPanel) setShowAccountPanel(true);
-  }, [showLandingPage, user, showAccountPanel]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -501,9 +555,19 @@ function App() {
   }, [showLandingPage, darkMode]);
 
   const isAuthenticated = Boolean(user);
+  const userPlanType = useMemo(() => {
+    if (!user) return 'free';
+    const raw = String(user.planType || user.plan_type || '').trim().toLowerCase();
+    if (raw === 'elite' || raw === 'creator') return 'elite';
+    if (raw === 'pro') return 'pro';
+    if (raw === 'free') return 'free';
+    return user.isPremium ? 'pro' : 'free';
+  }, [user]);
+  const canUseRadarPlan = userPlanType === 'pro' || userPlanType === 'elite';
+  const canUseAiTravelPlan = userPlanType === 'elite';
   const isMfaChallengeActive = Boolean(authMfa.ticket);
   const isAdvancedMode = uiMode === 'advanced';
-  const showAuthGateModal = !isAuthenticated && !showLandingPage;
+  const showAuthGateModal = false;
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -707,6 +771,333 @@ function App() {
     }
   }
 
+  async function loadOpportunityFeed() {
+    setOpportunityFeedLoading(true);
+    setOpportunityFeedError('');
+    try {
+      const payload = await api.opportunityFeed(token, { limit: 24, cluster: selectedOpportunityCluster || undefined });
+      setOpportunityFeed(payload.items || []);
+      setOpportunityFeedAccess(payload.access || null);
+    } catch (error) {
+      setOpportunityFeed([]);
+      setOpportunityFeedAccess(null);
+      setOpportunityFeedError(resolveApiError(error));
+    } finally {
+      setOpportunityFeedLoading(false);
+    }
+  }
+
+  async function loadOpportunityClusters() {
+    setDestinationClustersLoading(true);
+    setDestinationClustersError('');
+    try {
+      const payload = await api.opportunityClusters(token, { limit: 12 });
+      setDestinationClusters(Array.isArray(payload?.items) ? payload.items : []);
+    } catch (error) {
+      setDestinationClusters([]);
+      setDestinationClustersError(resolveApiError(error));
+    } finally {
+      setDestinationClustersLoading(false);
+    }
+  }
+
+  async function openOpportunityDetail(opportunityId) {
+    if (!opportunityId) return;
+    setOpportunityDetailLoading(true);
+    setOpportunityDetailError('');
+    try {
+      const payload = await api.opportunityDetail(token, opportunityId);
+      setOpportunityDetail(payload);
+    } catch (error) {
+      setOpportunityDetail(null);
+      setOpportunityDetailError(resolveApiError(error));
+    } finally {
+      setOpportunityDetailLoading(false);
+    }
+  }
+
+  async function followOpportunity(opportunityId) {
+    if (!isAuthenticated) {
+      beginSetAlertAuthFlow({ keepLandingVisible: false });
+      return setSubMessage(t('loginRequiredAlert'));
+    }
+    if (!canUseRadarPlan) {
+      setSubMessage('Sblocca tutte le opportunita con PRO');
+      setActiveMainSection('premium');
+      return;
+    }
+    try {
+      await api.followOpportunity(token, opportunityId);
+      await refreshSubscriptions();
+      await api.runNotificationScan(token);
+      await refreshNotifications();
+      setSubMessage(t('alertCreated'));
+    } catch (error) {
+      setSubMessage(resolveApiError(error));
+    }
+  }
+
+  async function followDestinationCluster(cluster) {
+    const slug = String(cluster?.slug || '').trim();
+    const displayName = String(cluster?.cluster_name || slug || '').trim();
+    if (!slug) return;
+    if (!isAuthenticated) {
+      beginSetAlertAuthFlow({ keepLandingVisible: false });
+      setSubMessage(t('loginRequiredAlert'));
+      return;
+    }
+    if (!canUseRadarPlan) {
+      setSubMessage('Il follow destinazioni e disponibile su PRO.');
+      setActiveMainSection('premium');
+      return;
+    }
+    try {
+      await api.followEntity(token, {
+        entityType: 'destination_cluster',
+        slug,
+        displayName,
+        followType: 'radar',
+        metadata: { source: 'cluster_follow' }
+      });
+      await loadRadarFollows();
+      setSubMessage(`Cluster seguito: ${displayName}`);
+    } catch (error) {
+      setSubMessage(resolveApiError(error));
+    }
+  }
+
+  async function loadRadarPreferences() {
+    if (!isAuthenticated) return;
+    setRadarError('');
+    try {
+      const payload = await api.getRadarPreferences(token);
+      setRadarDraft(toRadarDraft(payload.item));
+    } catch (error) {
+      setRadarError(resolveApiError(error));
+    }
+  }
+
+  async function loadRadarMatches() {
+    if (!isAuthenticated) return;
+    setRadarMatchesLoading(true);
+    setRadarMatchesError('');
+    try {
+      const payload = await api.radarMatches(token);
+      setRadarMatches(Array.isArray(payload?.items) ? payload.items : []);
+    } catch (error) {
+      setRadarMatches([]);
+      setRadarMatchesError(resolveApiError(error));
+    } finally {
+      setRadarMatchesLoading(false);
+    }
+  }
+
+  async function loadRadarFollows() {
+    if (!isAuthenticated) return;
+    setRadarFollowsLoading(true);
+    setRadarFollowsError('');
+    try {
+      const payload = await api.listFollows(token);
+      const items = Array.isArray(payload?.items) ? payload.items : [];
+      setRadarFollows(items.filter((item) => String(item.follow_type || '').toLowerCase() === 'radar'));
+    } catch (error) {
+      setRadarFollows([]);
+      setRadarFollowsError(resolveApiError(error));
+    } finally {
+      setRadarFollowsLoading(false);
+    }
+  }
+
+  async function loadOpportunityPipelineStatus() {
+    if (!isAuthenticated) return;
+    setOpportunityPipelineStatusLoading(true);
+    setOpportunityPipelineStatusError('');
+    try {
+      const payload = await api.opportunityDebug(token);
+      if (payload?.opportunityPipeline) {
+        setOpportunityPipelineStatus(payload);
+      } else {
+        const fallback = await api.opportunityPipelineStatus(token);
+        setOpportunityPipelineStatus({ opportunityPipeline: fallback?.status || null });
+      }
+    } catch (error) {
+      try {
+        const fallback = await api.opportunityPipelineStatus(token);
+        setOpportunityPipelineStatus({ opportunityPipeline: fallback?.status || null });
+      } catch {
+        setOpportunityPipelineStatus(null);
+      }
+      setOpportunityPipelineStatusError(resolveApiError(error));
+    } finally {
+      setOpportunityPipelineStatusLoading(false);
+    }
+  }
+
+  async function openOpportunityDebugView() {
+    let payload = opportunityPipelineStatus;
+    if (!payload) {
+      try {
+        payload = await api.opportunityDebug(token);
+      } catch (error) {
+        setOpportunityPipelineStatusError(resolveApiError(error));
+        return;
+      }
+    }
+    if (!payload) return;
+    const text = JSON.stringify(payload, null, 2);
+    const blob = new Blob([text], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    if (typeof window !== 'undefined') {
+      window.open(url, '_blank', 'noopener,noreferrer');
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    }
+  }
+
+  async function exportOpportunityDebugSnapshot() {
+    let payload = opportunityPipelineStatus;
+    if (!payload) {
+      try {
+        payload = await api.opportunityDebug(token);
+      } catch (error) {
+        setOpportunityPipelineStatusError(resolveApiError(error));
+        return;
+      }
+    }
+    if (!payload) return;
+    const text = JSON.stringify(payload, null, 2);
+    const blob = new Blob([text], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `opportunity-debug-${format(new Date(), 'yyyy-MM-dd-HHmm')}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function slugifyFollowValue(value) {
+    return String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 80);
+  }
+
+  function monthsToSeasonSlugs(months) {
+    const out = new Set();
+    const list = Array.isArray(months) ? months : [];
+    if (list.some((m) => [12, 1, 2].includes(Number(m)))) out.add('winter');
+    if (list.some((m) => [3, 4, 5].includes(Number(m)))) out.add('spring');
+    if (list.some((m) => [6, 7, 8].includes(Number(m)))) out.add('summer');
+    if (list.some((m) => [9, 10, 11].includes(Number(m)))) out.add('autumn');
+    return Array.from(out);
+  }
+
+  async function saveRadarPreferences() {
+    if (!isAuthenticated) return;
+    if (!canUseRadarPlan) {
+      setRadarError('Radar completo disponibile su PRO.');
+      setActiveMainSection('premium');
+      return;
+    }
+    setRadarSaving(true);
+    setRadarError('');
+    setRadarMessage('');
+    try {
+      const body = {
+        originAirports: parseCsvText(radarDraft.originAirports, (x) => x.toUpperCase()),
+        favoriteDestinations: parseCsvText(radarDraft.favoriteDestinations),
+        favoriteCountries: parseCsvText(radarDraft.favoriteCountries),
+        budgetCeiling: radarDraft.budgetCeiling ? Number(radarDraft.budgetCeiling) : null,
+        preferredTravelMonths: parseCsvText(radarDraft.preferredTravelMonths, (x) => Number(x)).filter((x) => Number.isFinite(x) && x >= 1 && x <= 12)
+      };
+      await api.updateRadarPreferences(token, body);
+      const existingRadarFollowsPayload = await api.listFollows(token);
+      const existingRadarFollows = Array.isArray(existingRadarFollowsPayload?.items)
+        ? existingRadarFollowsPayload.items.filter((item) => String(item.follow_type || '').toLowerCase() === 'radar')
+        : [];
+      for (const item of existingRadarFollows) {
+        await api.unfollowEntity(token, item.id);
+      }
+
+      const followItems = [];
+      for (const airport of body.originAirports) {
+        followItems.push({ entityType: 'airport', slug: slugifyFollowValue(airport), displayName: airport });
+      }
+      for (const city of body.favoriteDestinations) {
+        followItems.push({ entityType: 'city', slug: slugifyFollowValue(city), displayName: city });
+      }
+      for (const country of body.favoriteCountries) {
+        followItems.push({ entityType: 'country', slug: slugifyFollowValue(country), displayName: country });
+      }
+      if (Number.isFinite(Number(body.budgetCeiling)) && Number(body.budgetCeiling) > 0) {
+        const value = Number(body.budgetCeiling);
+        const bucket = value <= 250 ? 'under_250' : value <= 400 ? 'under_400' : value <= 600 ? 'under_600' : 'above_600';
+        followItems.push({ entityType: 'budget_bucket', slug: bucket, displayName: bucket.replace(/_/g, ' ') });
+      }
+      for (const season of monthsToSeasonSlugs(body.preferredTravelMonths)) {
+        followItems.push({ entityType: 'season', slug: season, displayName: season });
+      }
+
+      const dedupe = new Set();
+      for (const item of followItems) {
+        const key = `${item.entityType}:${item.slug}`;
+        if (!item.slug || dedupe.has(key)) continue;
+        dedupe.add(key);
+        await api.followEntity(token, { ...item, followType: 'radar', metadata: { source: 'radar_preferences' } });
+      }
+
+      setRadarMessage('Radar aggiornato con successo.');
+      await loadRadarMatches();
+      await loadRadarFollows();
+      await loadOpportunityPipelineStatus();
+    } catch (error) {
+      setRadarError(resolveApiError(error));
+    } finally {
+      setRadarSaving(false);
+    }
+  }
+
+  async function removeRadarFollow(followId) {
+    if (!isAuthenticated || !followId) return;
+    setRadarFollowsError('');
+    try {
+      await api.unfollowEntity(token, followId);
+      await loadRadarFollows();
+      setRadarMessage('Follow radar aggiornato.');
+    } catch (error) {
+      setRadarFollowsError(resolveApiError(error));
+    }
+  }
+
+  async function runAiTravelQuery() {
+    if (!isAuthenticated) return setAiTravelError(t('loginRequiredAlert'));
+    if (!canUseAiTravelPlan) {
+      setAiTravelError('AI Travel e disponibile solo nel piano ELITE.');
+      setActiveMainSection('premium');
+      return;
+    }
+    if (!aiTravelPrompt.trim()) return;
+    setAiTravelLoading(true);
+    setAiTravelError('');
+    try {
+      const payload = await api.queryAiTravel(token, { prompt: aiTravelPrompt.trim(), limit: 12 });
+      setAiTravelResult(payload);
+    } catch (error) {
+      setAiTravelResult(null);
+      setAiTravelError(resolveApiError(error));
+    } finally {
+      setAiTravelLoading(false);
+    }
+  }
+
+  function openOpportunityBooking(url) {
+    if (!url) return;
+    if (typeof window !== 'undefined') window.open(url, '_blank', 'noopener,noreferrer');
+  }
+
   async function runSecurityAuditCheck() {
     setSecurityAuditLoading(true);
     setSecurityAuditError('');
@@ -795,8 +1186,8 @@ function App() {
       const pricing = payload?.pricing || {};
       setBillingPricing({
         free: { monthlyEur: Number(pricing?.free?.monthlyEur || 0) },
-        pro: { monthlyEur: Number(pricing?.pro?.monthlyEur || 12.99) },
-        creator: { monthlyEur: Number(pricing?.creator?.monthlyEur || 29.99) },
+        pro: { monthlyEur: Number(pricing?.pro?.monthlyEur || 7) },
+        creator: { monthlyEur: Number(pricing?.creator?.monthlyEur || 19) },
         updatedAt: pricing?.updatedAt || null,
         lastCostCheckAt: pricing?.lastCostCheckAt || null
       });
@@ -823,12 +1214,53 @@ function App() {
   }
 
   async function upgradeToPremium() {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated) {
+      beginAuthFlow({
+        action: 'enter_app',
+        authMode: 'register',
+        authView: 'options',
+        keepLandingVisible: false
+      });
+      return;
+    }
     try {
-      await api.upgradeDemo(token);
+      await api.upgradePro(token);
       const payload = await api.me(token);
       setUser(payload.user);
-      setSubMessage(t('premiumActive'));
+      setSubMessage('Piano PRO attivo. Opportunita illimitate e radar completo sbloccati.');
+    } catch (error) {
+      setSubMessage(resolveApiError(error));
+    }
+  }
+
+  function activateFreePlan() {
+    if (!isAuthenticated) {
+      beginAuthFlow({
+        action: 'enter_app',
+        authMode: 'register',
+        authView: 'options',
+        keepLandingVisible: false
+      });
+      return;
+    }
+    setSubMessage('Piano Free attivo. Continua a scoprire opportunita.');
+  }
+
+  async function chooseElitePlan() {
+    if (!isAuthenticated) {
+      beginAuthFlow({
+        action: 'enter_app',
+        authMode: 'register',
+        authView: 'options',
+        keepLandingVisible: false
+      });
+      return;
+    }
+    try {
+      await api.upgradeElite(token);
+      const payload = await api.me(token);
+      setUser(payload.user);
+      setSubMessage('Piano ELITE attivo. AI travel planner e opportunita rare sbloccate.');
     } catch (error) {
       setSubMessage(resolveApiError(error));
     }
@@ -903,6 +1335,32 @@ function App() {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return '-';
     return date.toLocaleString();
+  }
+
+  function parseCsvText(value, mapper = (x) => x) {
+    return String(value || '')
+      .split(',')
+      .map((item) => mapper(String(item || '').trim()))
+      .filter(Boolean);
+  }
+
+  function toRadarDraft(item) {
+    if (!item) {
+      return {
+        originAirports: '',
+        favoriteDestinations: '',
+        favoriteCountries: '',
+        budgetCeiling: '',
+        preferredTravelMonths: ''
+      };
+    }
+    return {
+      originAirports: Array.isArray(item.originAirports) ? item.originAirports.join(', ') : '',
+      favoriteDestinations: Array.isArray(item.favoriteDestinations) ? item.favoriteDestinations.join(', ') : '',
+      favoriteCountries: Array.isArray(item.favoriteCountries) ? item.favoriteCountries.join(', ') : '',
+      budgetCeiling: Number.isFinite(Number(item.budgetCeiling)) ? String(item.budgetCeiling) : '',
+      preferredTravelMonths: Array.isArray(item.preferredTravelMonths) ? item.preferredTravelMonths.join(', ') : ''
+    };
   }
 
   function updateAlertDraft(id, patch) {
@@ -1303,7 +1761,7 @@ function App() {
 
   async function createDurationAlert() {
     if (!isAuthenticated) return setSubMessage(t('loginRequiredAlert'));
-    if (!user?.isPremium) return setSubMessage(t('premiumRequired'));
+    if (!canUseRadarPlan) return setSubMessage(t('premiumRequired'));
 
     const stayDays = Math.max(2, differenceInCalendarDays(parseISO(searchForm.dateTo), parseISO(searchForm.dateFrom)));
 
@@ -1335,7 +1793,7 @@ function App() {
   }
 
   async function loadDestinationInsights(flight) {
-    if (!user?.isPremium) return setSubMessage(t('premiumRequired'));
+    if (!canUseAiTravelPlan) return setSubMessage('Route insights disponibili su ELITE.');
     const stayDays = Math.max(2, differenceInCalendarDays(parseISO(searchForm.dateTo), parseISO(searchForm.dateFrom)));
     setInsightErrorByFlight((prev) => ({ ...prev, [flight.id]: '' }));
     setInsightLoadingByFlight((prev) => ({ ...prev, [flight.id]: true }));
@@ -1584,7 +2042,7 @@ function App() {
     {
       id: 'pro',
       name: t('landingPricingProName') || 'Pro',
-      amount: formatEur(billingPricing.pro?.monthlyEur),
+      amount: formatEur(7),
       currency: 'EUR',
       period: t('landingPricingMonthly'),
       desc: t('landingPricingProDesc') || 'For regular travellers',
@@ -1595,9 +2053,9 @@ function App() {
       featured: true
     },
     {
-      id: 'creator',
-      name: t('landingPricingCreatorName') || 'Creator',
-      amount: formatEur(billingPricing.creator?.monthlyEur),
+      id: 'elite',
+      name: t('landingPricingCreatorName') || 'Elite',
+      amount: formatEur(19),
       currency: 'EUR',
       period: t('landingPricingMonthly'),
       desc: t('landingPricingCreatorDesc') || 'For professionals and analysts',
@@ -1612,7 +2070,7 @@ function App() {
   const landingContactCards = [
     { icon: '\u2709', label: t('landingEmailLabel'), value: 'hello@flightsuite.app', href: 'mailto:hello@flightsuite.app' },
     { icon: '\u260E', label: t('landingPhoneLabel'), value: '+39 02 0000 0000' },
-    { icon: '\u{1F4CD}', label: t('landingAddressLabel'), value: 'Milano, Italia' }
+    { icon: '\u{1F4CD}', label: t('landingAddressLabel'), value: t('landingAddressValue') }
   ];
 
   function handleLandingPrimaryCta() {
@@ -1638,6 +2096,20 @@ function App() {
       return;
     }
     beginSetAlertAuthFlow({ keepLandingVisible: false });
+  }
+
+  function requireSectionLogin(targetSection) {
+    if (isAuthenticated) {
+      setActiveMainSection(targetSection);
+      return;
+    }
+    setActiveMainSection(targetSection);
+    beginAuthFlow({
+      action: 'enter_app',
+      authMode: 'register',
+      authView: 'options',
+      keepLandingVisible: false
+    });
   }
 
   return (
@@ -1689,15 +2161,34 @@ function App() {
               options={LANGUAGE_OPTIONS}
               title={t('language')}
             />
-            {isAuthenticated ? (
-              <button type="button" className="landing-accedi-btn" onClick={() => setShowAccountPanel((prev) => !prev)}>
-                {user?.name || t('account')}
-              </button>
-            ) : null}
+            <button
+              type="button"
+              className="landing-accedi-btn"
+              onClick={() => (isAuthenticated ? setShowAccountPanel((prev) => !prev) : beginAuthFlow({ action: 'enter_app', keepLandingVisible: false }))}
+            >
+              {isAuthenticated ? user?.name || t('account') : t('signIn')}
+            </button>
           </nav>
         </div>
         <h1>{t('appTitle')}</h1>
         <p className="hero-sub">{heroSubText}</p>
+        <div className="app-main-nav">
+          <button type="button" className={activeMainSection === 'home' ? 'tab active' : 'tab'} onClick={() => setActiveMainSection('home')}>
+            Home
+          </button>
+          <button type="button" className={activeMainSection === 'explore' ? 'tab active' : 'tab'} onClick={() => setActiveMainSection('explore')}>
+            Explore
+          </button>
+          <button type="button" className={activeMainSection === 'radar' ? 'tab active' : 'tab'} onClick={() => setActiveMainSection('radar')}>
+            Radar
+          </button>
+          <button type="button" className={activeMainSection === 'ai-travel' ? 'tab active' : 'tab'} onClick={() => setActiveMainSection('ai-travel')}>
+            AI Travel
+          </button>
+          <button type="button" className={activeMainSection === 'premium' ? 'tab active' : 'tab'} onClick={() => setActiveMainSection('premium')}>
+            Premium
+          </button>
+        </div>
       </header>
 
       {showOnboarding && isAuthenticated ? (
@@ -1765,6 +2256,7 @@ function App() {
         loadBillingPricing={loadBillingPricing}
         billingPricingError={billingPricingError}
         upgradeToPremium={upgradeToPremium}
+        chooseElitePlan={chooseElitePlan}
         setupMfa={setupMfa}
         disableMfa={disableMfa}
         mfaActionCode={mfaActionCode}
@@ -1792,8 +2284,201 @@ function App() {
         deletingAccount={deletingAccount}
       />
 
-      {isAuthenticated ? (
+      {activeMainSection === 'home' ? (
         <>
+          <OpportunityFeedSection
+            items={opportunityFeed}
+            clusters={destinationClusters}
+            clustersLoading={destinationClustersLoading}
+            clustersError={destinationClustersError}
+            selectedCluster={selectedOpportunityCluster}
+            loading={opportunityFeedLoading}
+            error={opportunityFeedError}
+            onRefresh={loadOpportunityFeed}
+            onSelectCluster={setSelectedOpportunityCluster}
+            onClearCluster={() => setSelectedOpportunityCluster('')}
+            onFollowCluster={followDestinationCluster}
+            onView={openOpportunityDetail}
+            onFollow={followOpportunity}
+            onAlert={followOpportunity}
+            onDiscover={() => setActiveMainSection('explore')}
+            onActivateRadar={() => setActiveMainSection('radar')}
+            isAuthenticated={isAuthenticated}
+            onCreateAccount={() => beginAuthFlow({ action: 'enter_app', authMode: 'register', authView: 'options', keepLandingVisible: false })}
+            showUpgradePrompt={Boolean(opportunityFeedAccess?.showUpgradePrompt)}
+            upgradeMessage={opportunityFeedAccess?.upgradeMessage || 'Sblocca tutte le opportunita con PRO'}
+            onUpgradePro={upgradeToPremium}
+            onUpgradeElite={chooseElitePlan}
+          />
+          {(opportunityDetailLoading || opportunityDetailError || opportunityDetail) ? (
+            <OpportunityDetailSection
+              loading={opportunityDetailLoading}
+              error={opportunityDetailError}
+              detail={opportunityDetail}
+              onClose={() => setOpportunityDetail(null)}
+              onFollow={followOpportunity}
+              onActivateAlert={followOpportunity}
+              onOpenBooking={openOpportunityBooking}
+              onViewRelated={openOpportunityDetail}
+            />
+          ) : null}
+        </>
+      ) : null}
+
+      {activeMainSection === 'radar' ? (
+        isAuthenticated ? (
+          <RadarSection
+            draft={radarDraft}
+            setDraft={setRadarDraft}
+            saving={radarSaving}
+            message={radarMessage}
+            error={radarError}
+            matches={radarMatches}
+            matchesLoading={radarMatchesLoading}
+            matchesError={radarMatchesError}
+            follows={radarFollows}
+            followsLoading={radarFollowsLoading}
+            followsError={radarFollowsError}
+            suggestedClusters={destinationClusters}
+            clustersLoading={destinationClustersLoading}
+            clustersError={destinationClustersError}
+            pipelineStatus={opportunityPipelineStatus}
+            pipelineStatusLoading={opportunityPipelineStatusLoading}
+            pipelineStatusError={opportunityPipelineStatusError}
+            onRefreshMatches={loadRadarMatches}
+            onRefreshFollows={loadRadarFollows}
+            onRefreshPipeline={loadOpportunityPipelineStatus}
+            onOpenDebug={openOpportunityDebugView}
+            onExportDebug={exportOpportunityDebugSnapshot}
+            onRemoveFollow={removeRadarFollow}
+            onFollowCluster={followDestinationCluster}
+            onSave={saveRadarPreferences}
+            canUseRadar={canUseRadarPlan}
+            onUpgradePro={upgradeToPremium}
+            onUpgradeElite={chooseElitePlan}
+          />
+        ) : (
+          <SectionAccessGate
+            title="Attiva il radar delle opportunita"
+            description="Segui aeroporti, destinazioni e budget. Ti avviseremo quando troveremo un'opportunita davvero interessante."
+            ctaLabel="Crea account gratis"
+            onCta={() => requireSectionLogin('radar')}
+          />
+        )
+      ) : null}
+
+      {activeMainSection === 'ai-travel' ? (
+        isAuthenticated ? (
+          <>
+            <AITravelSection
+              prompt={aiTravelPrompt}
+              setPrompt={setAiTravelPrompt}
+              loading={aiTravelLoading}
+              result={aiTravelResult}
+              error={aiTravelError}
+              onRun={runAiTravelQuery}
+              onView={openOpportunityDetail}
+              canUseAiTravel={canUseAiTravelPlan}
+              onUpgradePro={upgradeToPremium}
+              onUpgradeElite={chooseElitePlan}
+            />
+            {(opportunityDetailLoading || opportunityDetailError || opportunityDetail) ? (
+              <OpportunityDetailSection
+                loading={opportunityDetailLoading}
+                error={opportunityDetailError}
+                detail={opportunityDetail}
+                onClose={() => setOpportunityDetail(null)}
+                onFollow={followOpportunity}
+                onActivateAlert={followOpportunity}
+                onOpenBooking={openOpportunityBooking}
+                onViewRelated={openOpportunityDetail}
+              />
+            ) : null}
+          </>
+        ) : (
+          <SectionAccessGate
+            title="Trova il prossimo viaggio con l'AI"
+            description="Descrivi cosa cerchi e lascia che il sistema trovi opportunita reali gia presenti nel feed."
+            ctaLabel="Accedi per usare AI Travel"
+            onCta={() => requireSectionLogin('ai-travel')}
+          />
+        )
+      ) : null}
+
+      {activeMainSection === 'premium' ? (
+        <section className="panel premium-panel">
+          <div className="panel-head">
+            <h2>Sblocca tutte le opportunita</h2>
+          </div>
+          <p className="muted">Con PRO ed ELITE ricevi piu radar, piu alert e accesso alle opportunita piu rare.</p>
+          <div className="premium-grid">
+            <article className="premium-card">
+              <p className="premium-plan-tag">FREE</p>
+              <p className="premium-price">Gratis</p>
+              <p className="premium-card-sub">Per iniziare a scoprire opportunita.</p>
+              <ul className="premium-feature-list">
+                <li>3 opportunita al giorno</li>
+                <li>Feed base</li>
+                <li>Ricerca limitata</li>
+              </ul>
+              <button type="button" className="premium-cta premium-cta-light" onClick={activateFreePlan}>Inizia gratis</button>
+            </article>
+            <article className="premium-card premium-card-featured">
+              <p className="premium-plan-tag">PRO</p>
+              <p className="premium-price">7€/mese</p>
+              <p className="premium-card-sub">Per chi vuole catturare opportunita in tempo reale.</p>
+              <ul className="premium-feature-list">
+                <li>Opportunita illimitate</li>
+                <li>Radar personalizzato</li>
+                <li>Notifiche in tempo reale</li>
+                <li>Analisi voli avanzata</li>
+              </ul>
+              <button type="button" className="premium-cta" onClick={upgradeToPremium}>Passa a PRO</button>
+            </article>
+            <article className="premium-card">
+              <p className="premium-plan-tag">ELITE</p>
+              <p className="premium-price">19€/mese</p>
+              <p className="premium-card-sub">Per power user e travel intelligence avanzata.</p>
+              <ul className="premium-feature-list">
+                <li>AI travel planner</li>
+                <li>Alert immediati</li>
+                <li>Opportunita rare</li>
+                <li>Analisi completa delle rotte</li>
+              </ul>
+              <button type="button" className="premium-cta premium-cta-dark" onClick={chooseElitePlan}>Passa a ELITE</button>
+            </article>
+          </div>
+        </section>
+      ) : null}
+
+      {activeMainSection === 'explore' ? (
+        <>
+      <section className="panel">
+        <div className="panel-head">
+          <h2>Dove puoi andare spendendo poco</h2>
+          {selectedOpportunityCluster ? (
+            <button type="button" className="ghost" onClick={() => setSelectedOpportunityCluster('')}>
+              Rimuovi filtro cluster
+            </button>
+          ) : null}
+        </div>
+        <p className="muted">Scopri le destinazioni piu economiche in questo momento. Usa i filtri qui sotto o un cluster del radar.</p>
+        <div className="item-actions">
+          {destinationClusters.slice(0, 6).map((cluster) => (
+            <button
+              key={cluster.slug}
+              type="button"
+              className={selectedOpportunityCluster === cluster.slug ? 'tab active' : 'tab'}
+              onClick={() => {
+                setSelectedOpportunityCluster(cluster.slug);
+                setActiveMainSection('home');
+              }}
+            >
+              {cluster.cluster_name}
+            </button>
+          ))}
+        </div>
+      </section>
 
       <SearchSection
         uiMode={uiMode}
@@ -1821,6 +2506,8 @@ function App() {
         searchLoading={searchLoading}
         createDurationAlert={createDurationAlert}
         upgradeToPremium={upgradeToPremium}
+        canUseProFeatures={canUseRadarPlan}
+        canUseEliteFeatures={canUseAiTravelPlan}
         searchError={searchError}
         searchResult={searchResult}
         autoFixSearchFilters={autoFixSearchFilters}
@@ -1991,12 +2678,12 @@ function App() {
                 </button>
                 <InfoTip text={tt('compare_help')} />
                 {isAdvancedMode ? (
-                  <button
-                    type="button"
-                    className="ghost"
-                    onClick={() => loadDestinationInsights(flight)}
-                    disabled={Boolean(insightLoadingByFlight[flight.id]) || !user?.isPremium}
-                  >
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() => loadDestinationInsights(flight)}
+                  disabled={Boolean(insightLoadingByFlight[flight.id]) || !canUseAiTravelPlan}
+                >
                     {insightLoadingByFlight[flight.id] ? t('bestDatesLoading') : t('bestDates')}
                   </button>
                 ) : null}
@@ -2076,196 +2763,161 @@ function App() {
         </section>
       ) : null}
 
-      <section className="middle-grid">
-        <article className="panel">
-          <div className="panel-head">
-            <h2>{t('priceAlerts')}</h2>
-            <button className="ghost" type="button" onClick={refreshSubscriptions} disabled={!isAuthenticated}>{t('refresh')}</button>
-          </div>
-          {subMessage ? <p className="muted">{subMessage}</p> : null}
-          {subscriptions.length === 0 ? <p className="muted">{t('noAlerts')}</p> : null}
-          <div className="list-stack">
-            {subscriptions.map((s) => {
-              const draft = getAlertDraft(s);
-              return (
-                <div key={s.id} className="watch-item">
-                  <div className="alert-row-main">
-                    <strong>{t('myAlerts')}</strong>
-                    <p>
-                      {s.origin} | {regionLabel(s.region)} | {s.scanMode === 'duration_auto' ? `${t('smart')} ${s.stayDays}d` : `EUR ${s.targetPrice}`} |{' '}
-                      {connectionLabel(s.connectionType) || t('any')} | {s.enabled ? t('on') : t('off')}
-                    </p>
-                    {isAdvancedMode ? (
-                      <details className="advanced-block" open>
-                        <summary>{t('editAlert')}</summary>
-                        <div className="alert-inline-grid">
-                          <label>
-                            {t('eurTarget')}
-                            <input
-                              type="number"
-                              min={0}
-                              value={draft.targetPrice}
-                              onChange={(e) => updateAlertDraft(s.id, { targetPrice: e.target.value })}
-                              placeholder={t('emptyAuto')}
-                            />
-                          </label>
-                          <label>
-                            {t('stayDays')}
-                            <input type="number" min={2} max={30} value={draft.stayDays} onChange={(e) => updateAlertDraft(s.id, { stayDays: e.target.value })} />
-                          </label>
-                          <label>
-                            {t('travellers')}
-                            <input
-                              type="number"
-                              min={1}
-                              max={9}
-                              value={draft.travellers}
-                              onChange={(e) => updateAlertDraft(s.id, { travellers: e.target.value })}
-                            />
-                          </label>
-                          <label>
-                            {t('cabin')}
-                            <select value={draft.cabinClass} onChange={(e) => updateAlertDraft(s.id, { cabinClass: e.target.value })}>
-                              {config.cabins.map((c) => (
-                                <option key={c} value={c}>
-                                  {c}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                          <label className="check-row">
-                            <input
-                              type="checkbox"
-                              checked={Boolean(draft.cheapOnly)}
-                              onChange={(e) => updateAlertDraft(s.id, { cheapOnly: e.target.checked })}
-                            />
-                            {t('dealsOnly')}
-                          </label>
-                        </div>
-                        <button className="ghost" type="button" onClick={() => saveSubscriptionEdit(s)}>
-                          {t('saveChanges')}
-                        </button>
-                      </details>
-                    ) : null}
-                  </div>
-                  <div className="item-actions">
-                    <button className="ghost" type="button" onClick={() => toggleSubscriptionEnabled(s)}>
-                      {s.enabled ? t('disableAlert') : t('enableAlert')}
-                    </button>
-                    <button className="ghost" type="button" onClick={() => deleteSubscription(s.id)}>
-                      {t('remove')}
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </article>
-
-        <article className="panel">
-          <div className="panel-head">
-            <h2>{t('notifications')} ({unreadCount})</h2>
-            <div className="item-actions">
-              <button className="ghost" type="button" onClick={enableBrowserNotifications}>{t('enableBrowser')}</button>
-              <button className="ghost" type="button" onClick={markAllRead} disabled={!isAuthenticated}>{t('markAllRead')}</button>
-            </div>
-          </div>
-          {notifError ? <p className="error">{notifError}</p> : null}
-          {notifications.length === 0 ? <p className="muted">{t('noNotifications')}</p> : null}
-          <div className="list-stack">
-            {notifications.map((n) => (
-              <div key={n.id} className={n.readAt ? 'watch-item muted-item' : 'watch-item'}>
-                <div>
-                  <strong>{n.title}</strong>
-                  <p>{n.message}</p>
-                </div>
-                {!n.readAt ? <button className="ghost" type="button" onClick={() => markNotificationRead(n.id)}>{t('markRead')}</button> : null}
-              </div>
-            ))}
-          </div>
-        </article>
-      </section>
-
-      <section className="middle-grid">
-        <article className="panel">
-          <div className="panel-head">
-            <h2>{t('watchlist')}</h2>
-            <button className="ghost" type="button" onClick={refreshWatchlist} disabled={!isAuthenticated}>{t('refresh')}</button>
-          </div>
-          {watchlistError ? <p className="error">{watchlistError}</p> : null}
-          {watchlist.length === 0 ? <p className="muted">{t('emptyWatchlist')}</p> : null}
-          <div className="list-stack">
-            {watchlist.map((item) => (
-              <div key={item.id} className="watch-item">
-                <div>
-                  <strong>{item.destination}</strong>
-                  <p>EUR {item.price} | {item.dateFrom} {t('to')} {item.dateTo}</p>
-                </div>
-                <div className="item-actions">
-                  <a
-                    href={buildOutboundHref(
-                      {
-                        origin: item.flightId?.split('-')?.[0] || searchForm.origin,
-                        destinationIata: item.destinationIata,
-                        destination: item.destination,
-                        dateFrom: item.dateFrom,
-                        dateTo: item.dateTo
-                      },
-                      'watchlist'
-                    )}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    {t('partnerCta')}
-                  </a>
-                  <button className="ghost" type="button" onClick={() => removeWatchlistItem(item.id)}>{t('remove')}</button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </article>
-      </section>
-      </>
-      ) : (
+      {isAuthenticated ? (
         <>
-        <section className="app-ghost-grid" aria-hidden="true">
-          <article className="panel app-ghost-card">
-            <div className="panel-head"><h2>{t('search')}</h2></div>
-            <div className="app-ghost-lines">
-              <span />
-              <span />
-              <span />
-              <span />
-            </div>
-          </article>
-          <article className="panel app-ghost-card">
-            <div className="panel-head"><h2>{t('results')}</h2></div>
-            <div className="app-ghost-lines">
-              <span />
-              <span />
-              <span />
-              <span />
-            </div>
-          </article>
-          <article className="panel app-ghost-card">
-            <div className="panel-head"><h2>{t('priceAlerts')}</h2></div>
-            <div className="app-ghost-lines">
-              <span />
-              <span />
-              <span />
-            </div>
-          </article>
-          <article className="panel app-ghost-card">
-            <div className="panel-head"><h2>{t('watchlist')}</h2></div>
-            <div className="app-ghost-lines">
-              <span />
-              <span />
-              <span />
-            </div>
-          </article>
-        </section>
+          <section className="middle-grid">
+            <article className="panel">
+              <div className="panel-head">
+                <h2>{t('priceAlerts')}</h2>
+                <button className="ghost" type="button" onClick={refreshSubscriptions} disabled={!isAuthenticated}>{t('refresh')}</button>
+              </div>
+              {subMessage ? <p className="muted">{subMessage}</p> : null}
+              {subscriptions.length === 0 ? <p className="muted">{t('noAlerts')}</p> : null}
+              <div className="list-stack">
+                {subscriptions.map((s) => {
+                  const draft = getAlertDraft(s);
+                  return (
+                    <div key={s.id} className="watch-item">
+                      <div className="alert-row-main">
+                        <strong>{t('myAlerts')}</strong>
+                        <p>
+                          {s.origin} | {regionLabel(s.region)} | {s.scanMode === 'duration_auto' ? `${t('smart')} ${s.stayDays}d` : `EUR ${s.targetPrice}`} |{' '}
+                          {connectionLabel(s.connectionType) || t('any')} | {s.enabled ? t('on') : t('off')}
+                        </p>
+                        {isAdvancedMode ? (
+                          <details className="advanced-block" open>
+                            <summary>{t('editAlert')}</summary>
+                            <div className="alert-inline-grid">
+                              <label>
+                                {t('eurTarget')}
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={draft.targetPrice}
+                                  onChange={(e) => updateAlertDraft(s.id, { targetPrice: e.target.value })}
+                                  placeholder={t('emptyAuto')}
+                                />
+                              </label>
+                              <label>
+                                {t('stayDays')}
+                                <input type="number" min={2} max={30} value={draft.stayDays} onChange={(e) => updateAlertDraft(s.id, { stayDays: e.target.value })} />
+                              </label>
+                              <label>
+                                {t('travellers')}
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={9}
+                                  value={draft.travellers}
+                                  onChange={(e) => updateAlertDraft(s.id, { travellers: e.target.value })}
+                                />
+                              </label>
+                              <label>
+                                {t('cabin')}
+                                <select value={draft.cabinClass} onChange={(e) => updateAlertDraft(s.id, { cabinClass: e.target.value })}>
+                                  {config.cabins.map((c) => (
+                                    <option key={c} value={c}>
+                                      {c}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                              <label className="check-row">
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(draft.cheapOnly)}
+                                  onChange={(e) => updateAlertDraft(s.id, { cheapOnly: e.target.checked })}
+                                />
+                                {t('dealsOnly')}
+                              </label>
+                            </div>
+                            <button className="ghost" type="button" onClick={() => saveSubscriptionEdit(s)}>
+                              {t('saveChanges')}
+                            </button>
+                          </details>
+                        ) : null}
+                      </div>
+                      <div className="item-actions">
+                        <button className="ghost" type="button" onClick={() => toggleSubscriptionEnabled(s)}>
+                          {s.enabled ? t('disableAlert') : t('enableAlert')}
+                        </button>
+                        <button className="ghost" type="button" onClick={() => deleteSubscription(s.id)}>
+                          {t('remove')}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </article>
+
+            <article className="panel">
+              <div className="panel-head">
+                <h2>{t('notifications')} ({unreadCount})</h2>
+                <div className="item-actions">
+                  <button className="ghost" type="button" onClick={enableBrowserNotifications}>{t('enableBrowser')}</button>
+                  <button className="ghost" type="button" onClick={markAllRead} disabled={!isAuthenticated}>{t('markAllRead')}</button>
+                </div>
+              </div>
+              {notifError ? <p className="error">{notifError}</p> : null}
+              {notifications.length === 0 ? <p className="muted">{t('noNotifications')}</p> : null}
+              <div className="list-stack">
+                {notifications.map((n) => (
+                  <div key={n.id} className={n.readAt ? 'watch-item muted-item' : 'watch-item'}>
+                    <div>
+                      <strong>{n.title}</strong>
+                      <p>{n.message}</p>
+                    </div>
+                    {!n.readAt ? <button className="ghost" type="button" onClick={() => markNotificationRead(n.id)}>{t('markRead')}</button> : null}
+                  </div>
+                ))}
+              </div>
+            </article>
+          </section>
+
+          <section className="middle-grid">
+            <article className="panel">
+              <div className="panel-head">
+                <h2>{t('watchlist')}</h2>
+                <button className="ghost" type="button" onClick={refreshWatchlist} disabled={!isAuthenticated}>{t('refresh')}</button>
+              </div>
+              {watchlistError ? <p className="error">{watchlistError}</p> : null}
+              {watchlist.length === 0 ? <p className="muted">{t('emptyWatchlist')}</p> : null}
+              <div className="list-stack">
+                {watchlist.map((item) => (
+                  <div key={item.id} className="watch-item">
+                    <div>
+                      <strong>{item.destination}</strong>
+                      <p>EUR {item.price} | {item.dateFrom} {t('to')} {item.dateTo}</p>
+                    </div>
+                    <div className="item-actions">
+                      <a
+                        href={buildOutboundHref(
+                          {
+                            origin: item.flightId?.split('-')?.[0] || searchForm.origin,
+                            destinationIata: item.destinationIata,
+                            destination: item.destination,
+                            dateFrom: item.dateFrom,
+                            dateTo: item.dateTo
+                          },
+                          'watchlist'
+                        )}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {t('partnerCta')}
+                      </a>
+                      <button className="ghost" type="button" onClick={() => removeWatchlistItem(item.id)}>{t('remove')}</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </article>
+          </section>
         </>
-      )}
+      ) : null}
+      </>
+      ) : null}
     </main>
     )}
     </AppProvider>

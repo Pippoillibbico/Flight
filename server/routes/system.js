@@ -15,6 +15,7 @@ export function buildSystemRouter({
   RL_AUTH_PER_MINUTE,
   runFeatureAudit,
   getDataFoundationStatus,
+  getOpportunityPipelineStats,
   providerRegistry,
   getRuntimeConfigAudit,
   evaluateStartupReadiness
@@ -237,11 +238,13 @@ export function buildSystemRouter({
 
   router.get('/api/system/data-status', async (_req, res) => {
     const base = await getDataFoundationStatus();
+    const opportunityPipeline = (await getOpportunityPipelineStats?.()) || null;
     const providers = providerRegistry?.listProviders?.() || [];
     const duffel = providers.find((p) => p.name === 'duffel');
     const amadeus = providers.find((p) => p.name === 'amadeus');
     return res.json({
       ...base,
+      opportunityPipeline,
       providers: {
         duffelConfigured: Boolean(duffel?.configured),
         amadeusConfigured: Boolean(amadeus?.configured)

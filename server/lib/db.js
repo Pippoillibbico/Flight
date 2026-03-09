@@ -39,7 +39,9 @@ const initialData = {
   freePrecomputedRankings: [],
   freeTravelScores: [],
   freeAlertSignals: [],
-  stripeWebhookEvents: []
+  stripeWebhookEvents: [],
+  radarPreferences: [],
+  radarMatchSnapshots: []
 };
 
 let queue = Promise.resolve();
@@ -80,7 +82,9 @@ export async function readDb() {
     freePrecomputedRankings: parsed.freePrecomputedRankings ?? [],
     freeTravelScores: parsed.freeTravelScores ?? [],
     freeAlertSignals: parsed.freeAlertSignals ?? [],
-    stripeWebhookEvents: parsed.stripeWebhookEvents ?? []
+    stripeWebhookEvents: parsed.stripeWebhookEvents ?? [],
+    radarPreferences: parsed.radarPreferences ?? [],
+    radarMatchSnapshots: parsed.radarMatchSnapshots ?? []
   };
 }
 
