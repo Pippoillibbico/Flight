@@ -2337,36 +2337,46 @@ a:focus-visible {
 
 .landing-stats-row {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  align-items: center;
-  gap: 10px 12px;
-  margin-top: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  align-items: stretch;
+  gap: 12px;
+  margin-top: 14px;
   padding-top: 20px;
   border-top: 1px solid #dce9ff;
 }
 
 .landing-stat {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 15px;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: start;
+  column-gap: 10px;
+  font-size: 14px;
   font-weight: 700;
   color: #2a4a7a;
   min-width: 0;
-  padding: 0 16px;
+  padding: 10px 12px;
+  border: 1px solid #dce9ff;
+  border-radius: 12px;
+  background: rgba(244, 249, 255, 0.72);
+  min-height: 72px;
 }
 
-.landing-stat + .landing-stat {
-  border-left: 1px solid #dce9ff;
-}
-
-.landing-stat span:last-child {
+.landing-stat-copy {
+  display: block;
   min-width: 0;
-  line-height: 1.35;
+  line-height: 1.32;
+  text-wrap: balance;
+  letter-spacing: 0.005em;
+  margin-top: 1px;
 }
 
 .landing-stat-icon {
-  font-size: 18px;
+  font-size: 17px;
+  line-height: 1;
+  width: 22px;
+  text-align: center;
+  margin-top: 2px;
+  opacity: 0.95;
 }
 
 .landing-stat-divider {
@@ -3035,11 +3045,7 @@ a:focus-visible {
   }
 
   .landing-stat {
-    padding: 0;
-  }
-
-  .landing-stat + .landing-stat {
-    border-left: 0;
+    padding: 10px 12px;
   }
 
   .landing-hero-cta {
@@ -3298,9 +3304,12 @@ body.landing-dark-active {
 }
 
 .landing-dark .landing-stats-row { border-top-color: rgba(255, 255, 255, 0.08); }
-.landing-dark .landing-stat { color: rgba(255, 255, 255, 0.72); }
+.landing-dark .landing-stat {
+  color: rgba(255, 255, 255, 0.82);
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+}
 .landing-dark .landing-stat-divider { background: rgba(255, 255, 255, 0.12); }
-.landing-dark .landing-stat + .landing-stat { border-left-color: rgba(255, 255, 255, 0.16); }
 
 /* Hero flight cards */
 .landing-dark .landing-hero-visual { position: relative; z-index: 2; }

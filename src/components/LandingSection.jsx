@@ -142,17 +142,17 @@ function LandingSection(props) {
             <div className="landing-stats-row">
               <div className="landing-stat">
                 <span className="landing-stat-icon">{'\u2708'}</span>
-                <span>{t('landingStatsDestinations')}</span>
+                <span className="landing-stat-copy">{t('landingStatsDestinations')}</span>
               </div>
               <div className="landing-stat-divider" />
               <div className="landing-stat">
                 <span className="landing-stat-icon">{'\u{1F514}'}</span>
-                <span>{t('landingStatsAlert')}</span>
+                <span className="landing-stat-copy">{t('landingStatsAlert')}</span>
               </div>
               <div className="landing-stat-divider" />
               <div className="landing-stat">
                 <span className="landing-stat-icon">{'\u{1F9E0}'}</span>
-                <span>{t('landingStatsAI')}</span>
+                <span className="landing-stat-copy">{t('landingStatsAI')}</span>
               </div>
             </div>
           </div>
