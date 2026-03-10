@@ -44,6 +44,7 @@ body.app-dark-active {
 
 .app-shell {
   transition: background-color 0.2s ease, color 0.2s ease;
+  color: var(--ink);
 }
 
 .app-shell .hero {
@@ -100,6 +101,10 @@ body.app-dark-active {
   --ink: #eef2f8;
   --muted: #a9b4c4;
   --line: #394556;
+}
+
+.app-shell.app-dark h3 {
+  color: #e8effa;
 }
 
 .app-shell.app-dark .hero {
@@ -186,6 +191,10 @@ body.app-dark-active {
 
 .app-shell.app-dark .landing-lang-option {
   color: #d8e2ef;
+}
+
+.app-shell.app-dark .landing-lang-check {
+  color: #9fc8ff;
 }
 
 .app-shell.app-dark .landing-lang-option:hover,
@@ -337,19 +346,131 @@ body.app-dark-active {
 
 .app-main-nav .tab {
   min-height: 36px;
+  color: #1f4f96;
+  border-color: #b8cef8;
+  background: #eff5ff;
+}
+
+.app-main-nav .tab:hover {
+  color: #163f84;
+  background: #deebff;
+  border-color: #8db4ff;
+  box-shadow: 0 8px 18px rgba(44, 88, 158, 0.18);
+}
+
+.app-main-nav .tab.active,
+.app-main-nav .tab.active:hover {
+  background: linear-gradient(180deg, #2f87ff, var(--brand));
+  border-color: #2d74df;
+  color: #ffffff;
+}
+
+.app-shell.app-dark .app-main-nav .tab {
+  background: rgba(227, 237, 255, 0.92);
+  border-color: rgba(143, 176, 224, 0.82);
+  color: #0f3f86;
+}
+
+.app-shell.app-dark .app-main-nav .tab:hover {
+  background: rgba(244, 248, 255, 0.96);
+  border-color: rgba(167, 194, 235, 0.95);
+  color: #0d356f;
+  box-shadow: 0 10px 20px rgba(8, 20, 38, 0.28);
+}
+
+.app-shell.app-dark .app-main-nav .tab.active,
+.app-shell.app-dark .app-main-nav .tab.active:hover {
+  background: linear-gradient(180deg, #2f87ff, #1666d9);
+  border-color: #3a7fe6;
+  color: #ffffff;
 }
 
 .opportunity-hero {
-  padding: 14px;
+  padding: 16px;
   border: 1px solid var(--line);
   border-radius: 14px;
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(239, 247, 255, 0.9));
+}
+
+.opportunity-hero h2 {
+  line-height: 1.14;
+  max-width: 22ch;
+}
+
+.opportunity-hero .hero-sub {
+  line-height: 1.3;
+  max-width: 62ch;
+}
+
+.opportunity-hero .item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  margin-top: 12px;
+  margin-left: 0;
+  padding-left: 0;
+}
+
+.opportunity-hero .item-actions button {
+  min-height: 48px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  white-space: nowrap;
+  margin-left: 0;
+}
+
+.app-shell.app-dark .opportunity-hero {
+  border-color: #3e4d62;
+  background:
+    radial-gradient(460px 180px at 98% 8%, rgba(245, 197, 24, 0.14), transparent 72%),
+    linear-gradient(155deg, #18212d, #111823);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.28);
+}
+
+.app-shell.app-dark .opportunity-hero .eyebrow {
+  background: rgba(32, 47, 66, 0.92);
+  border-color: rgba(110, 136, 169, 0.46);
+  color: #7fb0ff;
+}
+
+.app-shell.app-dark .opportunity-hero h2 {
+  color: #f5f8ff;
+}
+
+.app-shell.app-dark .opportunity-hero .hero-sub {
+  color: rgba(224, 233, 246, 0.82);
 }
 
 .opportunity-feed-list {
   display: grid;
   gap: 12px;
   margin-top: 12px;
+}
+
+.opportunity-feed-panel {
+  gap: 10px;
+}
+
+.opportunity-feed-panel > .panel-head {
+  margin-top: 2px;
+  padding-bottom: 8px;
+}
+
+.opportunity-feed-panel > .panel-head h3 {
+  margin: 0;
+  line-height: 1.2;
+}
+
+.opportunity-feed-panel > .muted {
+  margin-top: -2px;
+  margin-bottom: 2px;
+  line-height: 1.45;
+}
+
+.opportunity-feed-panel .opportunity-cluster-list {
+  margin-top: 4px;
 }
 
 .opportunity-cluster-list {
@@ -391,6 +512,13 @@ body.app-dark-active {
   background: var(--surface-soft);
   display: grid;
   gap: 10px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.18s ease;
+}
+
+.opportunity-card:hover {
+  border-color: #9fc0f6;
+  box-shadow: 0 10px 24px rgba(15, 111, 255, 0.14);
+  transform: translateY(-1px);
 }
 
 .opportunity-soft-gate {
@@ -440,6 +568,12 @@ body.app-dark-active {
   background: #eaf2ff;
 }
 
+.app-shell.app-dark .opportunity-badge {
+  border-color: rgba(119, 157, 210, 0.6);
+  color: #d9e8ff;
+  background: rgba(32, 52, 82, 0.72);
+}
+
 .opportunity-detail-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -461,6 +595,10 @@ body.app-dark-active {
   gap: 8px;
   border: 1px solid var(--line);
   background: var(--surface-soft);
+}
+
+.opportunity-related-btn:hover {
+  border-color: #9fc0f6;
 }
 
 .premium-panel .premium-grid {
@@ -636,6 +774,18 @@ body.app-dark-active {
   font-size: 13px;
 }
 
+.app-shell.app-dark .radar-metric {
+  color: #d8e5f7;
+  background: rgba(31, 43, 59, 0.75);
+  border-color: rgba(108, 131, 164, 0.45);
+}
+
+.app-shell.app-dark .premium-feature-list li {
+  background: rgba(28, 40, 57, 0.72);
+  color: #d5e4fa;
+  border-color: rgba(106, 131, 166, 0.42);
+}
+
 @media (max-width: 880px) {
   .premium-panel .premium-grid {
     grid-template-columns: 1fr;
@@ -752,6 +902,10 @@ p {
   padding-bottom: 10px;
 }
 
+.app-shell.app-dark .panel-head {
+  border-bottom-color: rgba(126, 147, 174, 0.3);
+}
+
 .panel-actions {
   display: inline-flex;
   align-items: center;
@@ -804,6 +958,7 @@ p {
   font-family: 'Segoe UI', 'Avenir Next', sans-serif;
   justify-items: stretch;
   text-align: left;
+  color: #223750;
 }
 
 .auth-brand-row {
@@ -1010,6 +1165,10 @@ p {
   color: #f3f8ff;
 }
 
+.app-shell.app-dark .auth-shell {
+  color: #dbe8fb;
+}
+
 .app-shell.app-dark .auth-subtitle {
   color: #c3d5ef;
 }
@@ -1042,6 +1201,25 @@ p {
 .app-shell.app-dark .auth-email-form {
   background: #0f2445;
   border-color: #335d90;
+}
+
+.auth-email-form label {
+  color: inherit;
+}
+
+.app-shell.app-dark .auth-email-form label {
+  color: #dbe8fb;
+}
+
+.app-shell.app-dark .auth-email-form input {
+  background: #0b1e38;
+  border-color: #4d74a8;
+  color: #f4f8ff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.app-shell.app-dark .auth-email-form input::placeholder {
+  color: #9cb4d5;
 }
 
 .app-shell.app-dark .auth-remember-row {
@@ -1551,7 +1729,7 @@ select:focus {
 .item-actions {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   flex-wrap: wrap;
 }
 
@@ -1591,6 +1769,11 @@ a:focus-visible {
 .muted {
   color: var(--muted);
   font-weight: 600;
+  line-height: 1.45;
+}
+
+.app-shell.app-dark .muted {
+  color: #bcc9dc;
 }
 
 .api-usage-note {
@@ -1659,6 +1842,14 @@ a:focus-visible {
   .search-actions button {
     width: 100%;
   }
+
+  .opportunity-hero .item-actions {
+    gap: 8px;
+  }
+
+  .opportunity-hero .item-actions button {
+    min-height: 44px;
+  }
 }
 
 @media (max-width: 640px) {
@@ -1689,6 +1880,20 @@ a:focus-visible {
     gap: 8px;
   }
 
+  .opportunity-hero .item-actions > button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .app-main-nav {
+    gap: 6px;
+  }
+
+  .app-main-nav .tab {
+    min-height: 40px;
+    padding: 8px 12px;
+  }
+
   .mode-switch {
     width: 100%;
     display: grid;
@@ -1704,7 +1909,8 @@ a:focus-visible {
   .item-actions > button,
   .item-actions > a,
   .panel-actions > button,
-  .hero-controls button {
+  .hero-controls > button,
+  .hero-controls > .landing-lang-btn > .landing-lang-trigger {
     display: inline-flex;
     align-items: center;
     width: 100%;
@@ -2013,11 +2219,13 @@ a:focus-visible {
   position: relative;
   padding: 0;
   overflow: visible;
+  isolation: isolate;
 }
 
 .landing-lang-trigger {
   width: 100%;
   height: 100%;
+  min-height: 100%;
   border: 0;
   background: transparent;
   box-shadow: none;
@@ -2028,6 +2236,24 @@ a:focus-visible {
   color: inherit;
   font: inherit;
   padding: 0 14px;
+  cursor: pointer;
+  text-align: left;
+  transition: none;
+}
+
+.landing-lang-trigger:focus-visible {
+  outline: 2px solid rgba(15, 111, 255, 0.38);
+  outline-offset: -2px;
+  border-radius: 10px;
+}
+
+.landing-lang-current {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.28;
+  padding-bottom: 1px;
+  text-overflow: ellipsis;
+  overflow: hidden;
 }
 
 .landing-lang-trigger:hover {
@@ -2040,28 +2266,62 @@ a:focus-visible {
   position: absolute;
   top: calc(100% + 8px);
   left: 0;
-  width: 100%;
+  right: auto;
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-auto-flow: row;
+  gap: 4px;
+  width: max-content;
   min-width: 170px;
+  max-width: min(240px, calc(100vw - 24px));
   border: 1px solid rgba(15, 111, 255, 0.22);
   background: #ffffff;
-  border-radius: 12px;
-  padding: 6px;
-  box-shadow: 0 16px 32px rgba(12, 42, 94, 0.2);
-  z-index: 80;
+  border-radius: 14px;
+  padding: 8px;
+  box-shadow:
+    0 18px 36px rgba(12, 42, 94, 0.2),
+    0 0 0 1px rgba(255, 255, 255, 0.75) inset;
+  z-index: 120;
+  overflow: clip;
 }
 
 .landing-lang-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   width: 100%;
   border: 0;
-  border-radius: 8px;
-  min-height: 38px;
-  padding: 8px 10px;
+  border-radius: 10px;
+  min-height: 40px;
+  padding: 9px 12px;
   text-align: left;
+  white-space: normal;
   background: transparent;
   color: #214372;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 700;
   box-shadow: none;
+  line-height: 1.3;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.landing-lang-name {
+  display: block;
+  flex: 1;
+  min-width: 0;
+}
+
+.landing-lang-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  min-width: 16px;
+  font-size: 13px;
+  font-weight: 800;
+  color: #0e4b99;
 }
 
 .landing-lang-option:hover {
@@ -2074,6 +2334,10 @@ a:focus-visible {
 .landing-lang-option.active {
   background: #e0eeff;
   color: #0e3d82;
+}
+
+.landing-lang-btn.open .landing-ctrl-caret {
+  transform: rotate(180deg);
 }
 
 /* ── Hero ──────────────────────────────────────────────────────── */
@@ -2911,34 +3175,6 @@ a:focus-visible {
   color: #8fa8c8;
 }
 
-/* ── Auth modal — Skyscanner-style improvements ─────────────────── */
-.auth-shell h3 {
-  font-size: clamp(26px, 4vw, 38px);
-  line-height: 1.08;
-  letter-spacing: -0.02em;
-  max-width: 440px;
-  color: #0a1e3d;
-}
-
-.auth-provider-btn {
-  background: #ffffff;
-  border: 1.5px solid #d4dde8;
-  color: #1a2638;
-  font-size: 16px;
-  font-weight: 600;
-  min-height: 54px;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
-}
-
-.auth-provider-btn:hover {
-  background: #f7faff;
-  border-color: #a8c0e8;
-  box-shadow: 0 4px 16px rgba(15, 60, 140, 0.1);
-  transform: none;
-}
-
 /* ── Responsive landing ────────────────────────────────────────── */
 @media (max-width: 960px) {
   .landing-section {
@@ -3201,6 +3437,10 @@ body.landing-dark-active {
   color: #d8e6fb;
 }
 
+.landing-dark .landing-lang-check {
+  color: #9fc8ff;
+}
+
 .landing-dark .landing-lang-option:hover {
   background: rgba(255, 255, 255, 0.08);
   color: #ffffff;
@@ -3239,13 +3479,7 @@ body.landing-dark-active {
 }
 
 .landing-dark .landing-hero::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
-  background-size: 36px 36px;
-  pointer-events: none;
-  z-index: 0;
+  content: none;
 }
 
 .landing-dark .landing-hero-body {

@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-03-10T08:28:20.952Z",
+  "lastRun": {
+    "executedAt": "2026-03-10T08:28:20.952Z",
+    "status": "green",
+    "failedStages": 0,
+    "openRegressions": 0,
+    "stageResults": [
+      {
+        "id": "lint",
+        "label": "Lint",
+        "command": "npm run lint",
+        "exitCode": 0,
+        "durationMs": 4532,
+        "failureCount": 0
+      },
+      {
+        "id": "lintProviders",
+        "label": "Provider Lint",
+        "command": "npm run lint:providers",
+        "exitCode": 0,
+        "durationMs": 454,
+        "failureCount": 0
+      },
+      {
+        "id": "nodeTests",
+        "label": "Node Tests",
+        "command": "npm test",
+        "exitCode": 0,
+        "durationMs": 13724,
+        "failureCount": 0
+      },
+      {
+        "id": "e2e",
+        "label": "E2E Playwright",
+        "command": "npx playwright test",
+        "exitCode": 0,
+        "durationMs": 70515,
+        "failureCount": 0
+      }
+    ]
+  },
+  "knownRegressions": [
+    {
+      "stage": "nodeTests",
+      "signature": "{\"level\":30,\"time\":\"2026-03-10T08:13:40.510Z\",\"pid\":20688,\"hostname\":\"Clariter_Ste_\",\"userId\":\"user_5hSmeQwV\",\"message\":\"Error fare spotted to GPV: EUR 149. Act fast.\",\"metadata\":{\"origin\":\"GLW\",\"destination\":\"GPV\",\"price\":149,\"date\":\"2027-11-15\",\"deal_score\":91,\"deal_type\":\"error_fare\",\"deviation_pct\":64.68},\"msg\":\"push_notification_stub\"}",
+      "firstSeen": "2026-03-10T08:15:28.012Z",
+      "lastSeen": "2026-03-10T08:15:28.012Z",
+      "occurrences": 1,
+      "status": "fixed",
+      "fixedAt": "2026-03-10T08:18:16.914Z"
+    }
+  ]
+}

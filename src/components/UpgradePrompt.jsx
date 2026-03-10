@@ -3,10 +3,10 @@ import { validateProps } from '../utils/validateProps';
 
 const UpgradePromptPropsSchema = z
   .object({
-    title: z.string().default('Vuoi vedere tutte le opportunita?'),
-    message: z.string().default('Sblocca tutte le opportunita con PRO'),
-    primaryLabel: z.string().default('Upgrade a PRO'),
-    secondaryLabel: z.string().default('Scopri ELITE'),
+    title: z.string().default('Want to see all opportunities?'),
+    message: z.string().default('Unlock all opportunities with PRO'),
+    primaryLabel: z.string().default('Upgrade to PRO'),
+    secondaryLabel: z.string().default('Discover ELITE'),
     onUpgradePro: z.function(),
     onUpgradeElite: z.function()
   })
@@ -36,4 +36,3 @@ function UpgradePrompt(props) {
 }
 
 export default UpgradePrompt;
-

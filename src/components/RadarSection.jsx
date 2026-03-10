@@ -4,6 +4,7 @@ import UpgradePrompt from './UpgradePrompt';
 
 const RadarSectionPropsSchema = z
   .object({
+    t: z.function().optional(),
     draft: z
       .object({
         originAirports: z.string(),
@@ -45,6 +46,7 @@ const RadarSectionPropsSchema = z
 
 function RadarSection(props) {
   const {
+    t,
     draft,
     setDraft,
     saving,
@@ -78,52 +80,55 @@ function RadarSection(props) {
     props,
     'RadarSection'
   );
+  const tt = (key, fallback) => (typeof t === 'function' ? t(key) : fallback) || fallback;
 
   return (
     <section className="panel radar-panel">
       <div className="panel-head">
-        <h2>Attiva il radar delle opportunita</h2>
+        <h2>{tt('radarPageTitle', 'Activate opportunity radar')}</h2>
       </div>
       <p className="muted">
-        Segui aeroporti, citta, paesi, budget e stagioni.
+        {tt('radarPageSubtitleLine1', 'Follow airports, cities, countries, budgets and seasons.')}
         <br />
-        Quando troviamo un'opportunita davvero interessante ti avviseremo subito.
+        {tt('radarPageSubtitleLine2', 'When we find a truly strong opportunity, we notify you immediately.')}
       </p>
       <div className="search-grid">
         <label>
-          Aeroporti di partenza preferiti (IATA, separati da virgola)
-          <input value={draft.originAirports} onChange={(e) => setDraft((p) => ({ ...p, originAirports: e.target.value }))} placeholder="FCO, MXP, BLQ" />
+          {tt('radarFieldOriginsLabel', 'Preferred origin airports (IATA, comma-separated)')}
+          <input value={draft.originAirports} onChange={(e) => setDraft((p) => ({ ...p, originAirports: e.target.value }))} placeholder={tt('radarFieldOriginsPlaceholder', 'FCO, MXP, BLQ')} />
         </label>
         <label>
-          Destinazioni preferite
+          {tt('radarFieldDestinationsLabel', 'Favorite destinations')}
           <input
             value={draft.favoriteDestinations}
             onChange={(e) => setDraft((p) => ({ ...p, favoriteDestinations: e.target.value }))}
-            placeholder="Tokyo, Lisbona, Bangkok"
+            placeholder={tt('radarFieldDestinationsPlaceholder', 'Tokyo, Lisbon, Bangkok')}
           />
         </label>
         <label>
-          Paesi preferiti
-          <input value={draft.favoriteCountries} onChange={(e) => setDraft((p) => ({ ...p, favoriteCountries: e.target.value }))} placeholder="Giappone, Spagna" />
+          {tt('radarFieldCountriesLabel', 'Favorite countries')}
+          <input value={draft.favoriteCountries} onChange={(e) => setDraft((p) => ({ ...p, favoriteCountries: e.target.value }))} placeholder={tt('radarFieldCountriesPlaceholder', 'Japan, Spain')} />
         </label>
         <label>
-          Budget massimo
+          {tt('radarFieldBudgetLabel', 'Max budget')}
           <input type="number" min={0} value={draft.budgetCeiling} onChange={(e) => setDraft((p) => ({ ...p, budgetCeiling: e.target.value }))} placeholder="500" />
         </label>
         <label>
-          Mesi preferiti (1-12, separati da virgola)
-          <input value={draft.preferredTravelMonths} onChange={(e) => setDraft((p) => ({ ...p, preferredTravelMonths: e.target.value }))} placeholder="4,5,10,11" />
+          {tt('radarFieldMonthsLabel', 'Preferred months (1-12, comma-separated)')}
+          <input value={draft.preferredTravelMonths} onChange={(e) => setDraft((p) => ({ ...p, preferredTravelMonths: e.target.value }))} placeholder={tt('radarFieldMonthsPlaceholder', '4,5,10,11')} />
         </label>
       </div>
       <div className="item-actions">
         <button type="button" onClick={onSave} disabled={saving}>
-          {saving ? 'Attivazione radar...' : 'Attiva radar'}
+          {saving ? tt('radarSavingCta', 'Activating radar...') : tt('radarActivateCta', 'Activate radar')}
         </button>
       </div>
       {!canUseRadar ? (
         <UpgradePrompt
-          title="Radar completo disponibile su PRO"
-          message="Il piano FREE ha radar limitato. Sblocca notifiche e follow illimitati."
+          title={tt('radarUpgradeTitle', 'Full radar available on PRO')}
+          message={tt('radarUpgradeMessage', 'FREE plan has limited radar. Unlock unlimited notifications and follows.')}
+          primaryLabel={tt('opportunityFeedUpgradePrimaryCta', 'Upgrade to PRO')}
+          secondaryLabel={tt('opportunityFeedUpgradeSecondaryCta', 'Discover ELITE')}
           onUpgradePro={onUpgradePro}
           onUpgradeElite={onUpgradeElite}
         />
@@ -131,11 +136,11 @@ function RadarSection(props) {
       {message ? <p className="muted">{message}</p> : null}
       {error ? <p className="error">{error}</p> : null}
       <div className="panel-head">
-        <h3>Cluster suggeriti da seguire</h3>
+        <h3>{tt('radarSuggestedClustersTitle', 'Suggested clusters to follow')}</h3>
       </div>
-      {clustersLoading ? <p className="muted">Caricamento cluster...</p> : null}
+      {clustersLoading ? <p className="muted">{tt('opportunityFeedClustersLoading', 'Loading clusters...')}</p> : null}
       {clustersError ? <p className="error">{clustersError}</p> : null}
-      {!clustersLoading && !clustersError && suggestedClusters.length === 0 ? <p className="muted">Nessun cluster suggerito disponibile.</p> : null}
+      {!clustersLoading && !clustersError && suggestedClusters.length === 0 ? <p className="muted">{tt('radarNoSuggestedClusters', 'No suggested clusters available.')}</p> : null}
       <div className="list-stack">
         {suggestedClusters.slice(0, 6).map((cluster) => (
           <article key={cluster.slug} className="watch-item radar-follow-item">
@@ -143,56 +148,56 @@ function RadarSection(props) {
               <strong>{cluster.cluster_name}</strong>
               <p className="radar-follow-meta">
                 <span className="radar-pill">CLUSTER</span>
-                <span>{cluster.min_price ? `da ${Math.round(cluster.min_price)} EUR` : 'Prezzo variabile'}</span>
-                <span>{Number(cluster.opportunities_count || 0)} opportunita</span>
+                <span>{cluster.min_price ? `${tt('opportunityFeedFromLabel', 'from')} ${Math.round(cluster.min_price)} EUR` : tt('opportunityFeedVariablePrice', 'Variable price')}</span>
+                <span>{Number(cluster.opportunities_count || 0)} {tt('opportunityFeedOpportunitiesWord', 'opportunities')}</span>
               </p>
             </div>
             <button type="button" className="ghost" onClick={() => onFollowCluster(cluster)}>
-              Segui cluster
+              {tt('opportunityFeedFollowClusterCta', 'Follow cluster')}
             </button>
           </article>
         ))}
       </div>
       <div className="panel-head">
-        <h3>Follow attivi (concetti di viaggio)</h3>
+        <h3>{tt('radarFollowsTitle', 'Active follows (travel concepts)')}</h3>
         <button type="button" className="ghost" onClick={onRefreshFollows} disabled={followsLoading}>
-          {followsLoading ? 'Aggiornamento...' : 'Aggiorna follow'}
+          {followsLoading ? tt('radarRefreshing', 'Refreshing...') : tt('radarRefreshFollowsCta', 'Refresh follows')}
         </button>
       </div>
       {followsError ? <p className="error">{followsError}</p> : null}
-      {!followsLoading && follows.length === 0 ? <p className="muted">Nessun follow attivo. Salva il radar per creare follow su aeroporti, citta, paesi, budget e stagioni.</p> : null}
+      {!followsLoading && follows.length === 0 ? <p className="muted">{tt('radarNoFollows', 'No active follows. Save radar preferences to create follows on airports, cities, countries, budget and seasons.')}</p> : null}
       <div className="list-stack">
         {follows.map((follow) => (
           <article key={follow.id} className="watch-item radar-follow-item">
             <div className="radar-follow-content">
-              <strong>{follow.entity?.display_name || follow.entity?.slug || 'Entity'}</strong>
+              <strong>{follow.entity?.display_name || follow.entity?.slug || tt('radarEntityFallback', 'Entity')}</strong>
               <p className="radar-follow-meta">
                 <span className="radar-pill">{String(follow.entity?.entity_type || 'entity').toUpperCase()}</span>
-                <span>slug: {follow.entity?.slug || '-'}</span>
+                <span>{tt('radarSlugLabel', 'slug')}: {follow.entity?.slug || '-'}</span>
               </p>
             </div>
             <button type="button" className="ghost" onClick={() => onRemoveFollow(follow.id)}>
-              Rimuovi follow
+              {tt('radarRemoveFollowCta', 'Remove follow')}
             </button>
           </article>
         ))}
       </div>
       <div className="panel-head">
-        <h3>Match radar recenti</h3>
+        <h3>{tt('radarRecentMatchesTitle', 'Recent radar matches')}</h3>
         <button type="button" className="ghost" onClick={onRefreshMatches} disabled={matchesLoading}>
-          {matchesLoading ? 'Aggiornamento...' : 'Aggiorna match'}
+          {matchesLoading ? tt('radarRefreshing', 'Refreshing...') : tt('radarRefreshMatchesCta', 'Refresh matches')}
         </button>
       </div>
       {matchesError ? <p className="error">{matchesError}</p> : null}
-      {!matchesLoading && matches.length === 0 ? <p className="muted">Nessun match recente. Continua a seguire il feed opportunita.</p> : null}
+      {!matchesLoading && matches.length === 0 ? <p className="muted">{tt('radarNoRecentMatches', 'No recent matches. Keep following the opportunity feed.')}</p> : null}
       <div className="list-stack">
         {matches.map((item) => (
           <article key={item.id} className="watch-item radar-match-item">
             <div>
-              <strong>Radar match: {Number(item.totalMatches || item.matchCount || 0)} opportunita</strong>
-              <p>{item.createdAt ? new Date(item.createdAt).toLocaleString() : 'Aggiornamento recente'}</p>
+              <strong>{tt('radarMatchLabel', 'Radar match')}: {Number(item.totalMatches || item.matchCount || 0)} {tt('opportunityFeedOpportunitiesWord', 'opportunities')}</strong>
+              <p>{item.createdAt ? new Date(item.createdAt).toLocaleString() : tt('radarRecentUpdateLabel', 'Recent update')}</p>
               {Array.isArray(item.opportunityIds) && item.opportunityIds.length > 0 ? (
-                <p>ID: {item.opportunityIds.slice(0, 4).join(', ')}{item.opportunityIds.length > 4 ? '...' : ''}</p>
+                <p>{tt('radarIdsLabel', 'IDs')}: {item.opportunityIds.slice(0, 4).join(', ')}{item.opportunityIds.length > 4 ? '...' : ''}</p>
               ) : null}
               {Array.isArray(item.matches) && item.matches.length > 0 ? (
                 <div className="list-stack">
@@ -206,7 +211,7 @@ function RadarSection(props) {
                           {Math.round(Number(match.price || 0))} {match.currency} | {match.departDate} | {match.haulType}
                         </p>
                         <p>
-                          {match.destinationCountry || 'Country n/a'} | {String(match.destinationRegion || 'unknown').toUpperCase()} | Score {Math.round(Number(match.finalScore || 0))}
+                          {match.destinationCountry || tt('radarCountryNA', 'Country n/a')} | {String(match.destinationRegion || tt('radarUnknownLabel', 'unknown')).toUpperCase()} | {tt('radarScoreLabel', 'Score')} {Math.round(Number(match.finalScore || 0))}
                         </p>
                       </div>
                     </div>
@@ -218,16 +223,16 @@ function RadarSection(props) {
         ))}
       </div>
       <div className="panel-head">
-        <h3>Debug pipeline opportunita</h3>
+        <h3>{tt('radarDebugTitle', 'Opportunity pipeline debug')}</h3>
         <div className="item-actions">
           <button type="button" className="ghost" onClick={onRefreshPipeline} disabled={pipelineStatusLoading}>
-            {pipelineStatusLoading ? 'Aggiornamento...' : 'Aggiorna stato'}
+            {pipelineStatusLoading ? tt('radarRefreshing', 'Refreshing...') : tt('radarRefreshStatusCta', 'Refresh status')}
           </button>
           <button type="button" className="ghost" onClick={onOpenDebug}>
-            Apri debug esteso
+            {tt('radarOpenDebugCta', 'Open extended debug')}
           </button>
           <button type="button" className="ghost" onClick={onExportDebug}>
-            Esporta JSON
+            {tt('radarExportJsonCta', 'Export JSON')}
           </button>
         </div>
       </div>
@@ -235,39 +240,39 @@ function RadarSection(props) {
       {(pipelineStatus?.opportunityPipeline?.totals || pipelineStatus?.totals) ? (
         <article className="watch-item radar-debug-card">
           <div>
-            <strong>Stato intelligence</strong>
+            <strong>{tt('radarIntelligenceStatusTitle', 'Intelligence status')}</strong>
             <div className="radar-debug-metrics">
-              <span className="radar-metric">Pubblicate: {Number((pipelineStatus.opportunityPipeline?.totals || pipelineStatus.totals).published || 0)}</span>
-              <span className="radar-metric">Totali: {Number((pipelineStatus.opportunityPipeline?.totals || pipelineStatus.totals).total || 0)}</span>
-              <span className="radar-metric">Normalizzate: {Number((pipelineStatus.opportunityPipeline?.totals || pipelineStatus.totals).normalizedFlights || 0)}</span>
-              <span className="radar-metric">Taggate: {Number((pipelineStatus.opportunityPipeline?.totals || pipelineStatus.totals).taggedOpportunities || 0)}</span>
-              <span className="radar-metric">Match preparati: {Number((pipelineStatus.opportunityPipeline?.totals || pipelineStatus.totals).preparedMatches || 0)}</span>
+              <span className="radar-metric">{tt('radarMetricPublished', 'Published')}: {Number((pipelineStatus.opportunityPipeline?.totals || pipelineStatus.totals).published || 0)}</span>
+              <span className="radar-metric">{tt('radarMetricTotal', 'Total')}: {Number((pipelineStatus.opportunityPipeline?.totals || pipelineStatus.totals).total || 0)}</span>
+              <span className="radar-metric">{tt('radarMetricNormalized', 'Normalized')}: {Number((pipelineStatus.opportunityPipeline?.totals || pipelineStatus.totals).normalizedFlights || 0)}</span>
+              <span className="radar-metric">{tt('radarMetricTagged', 'Tagged')}: {Number((pipelineStatus.opportunityPipeline?.totals || pipelineStatus.totals).taggedOpportunities || 0)}</span>
+              <span className="radar-metric">{tt('radarMetricPreparedMatches', 'Prepared matches')}: {Number((pipelineStatus.opportunityPipeline?.totals || pipelineStatus.totals).preparedMatches || 0)}</span>
             </div>
             {pipelineStatus?.radarPrecompute ? (
               <p className="radar-debug-line">
-                Radar 24h: {Number(pipelineStatus.radarPrecompute.snapshots24h || 0)} snapshot | Follow match:{' '}
-                {Number(pipelineStatus.radarPrecompute.followMatchCount || 0)} | Expanded match:{' '}
+                {tt('radar24hLabel', 'Radar 24h')}: {Number(pipelineStatus.radarPrecompute.snapshots24h || 0)} {tt('radarSnapshotsLabel', 'snapshots')} | {tt('radarFollowMatchLabel', 'Follow match')}:{' '}
+                {Number(pipelineStatus.radarPrecompute.followMatchCount || 0)} | {tt('radarExpandedMatchLabel', 'Expanded match')}:{' '}
                 {Number(pipelineStatus.radarPrecompute.expandedMatchCount || 0)}
               </p>
             ) : null}
             {pipelineStatus?.providers ? (
               <p className="radar-debug-line">
-                Provider enabled: {(pipelineStatus.providers.enabled || []).join(', ') || 'none'} | Configured:{' '}
-                {(pipelineStatus.providers.configured || []).join(', ') || 'none'} | Missing creds:{' '}
-                {(pipelineStatus.providers.missing || []).join(', ') || 'none'}
+                {tt('radarProvidersEnabledLabel', 'Providers enabled')}: {(pipelineStatus.providers.enabled || []).join(', ') || tt('none', 'none')} | {tt('radarConfiguredLabel', 'Configured')}:{' '}
+                {(pipelineStatus.providers.configured || []).join(', ') || tt('none', 'none')} | {tt('radarMissingCredsLabel', 'Missing creds')}:{' '}
+                {(pipelineStatus.providers.missing || []).join(', ') || tt('none', 'none')}
               </p>
             ) : null}
             {pipelineStatus?.alertDelivery ? (
               <p className="radar-debug-line">
-                Alert delivery: SMTP {pipelineStatus.alertDelivery.smtpConfigured ? 'configured' : 'not configured'} | Push{' '}
-                {pipelineStatus.alertDelivery.pushConfigured ? 'configured' : 'not configured'}
+                {tt('radarAlertDeliveryLabel', 'Alert delivery')}: SMTP {pipelineStatus.alertDelivery.smtpConfigured ? tt('radarConfiguredStatus', 'configured') : tt('radarNotConfiguredStatus', 'not configured')} | Push{' '}
+                {pipelineStatus.alertDelivery.pushConfigured ? tt('radarConfiguredStatus', 'configured') : tt('radarNotConfiguredStatus', 'not configured')}
               </p>
             ) : null}
             {pipelineStatus?.opportunityPipeline?.recentRuns?.[0]?.metadata?.graphSeed ? (
               <p className="radar-debug-line">
-                Graph seed (ultimo run): same_country {Number(pipelineStatus.opportunityPipeline.recentRuns[0].metadata.graphSeed.seededSameCountry || 0)} | same_region{' '}
-                {Number(pipelineStatus.opportunityPipeline.recentRuns[0].metadata.graphSeed.seededSameRegion || 0)} | budget_cluster{' '}
-                {Number(pipelineStatus.opportunityPipeline.recentRuns[0].metadata.graphSeed.seededBudgetCluster || 0)} | season_cluster{' '}
+                {tt('radarGraphSeedLabel', 'Graph seed (last run)')}: {tt('radarSameCountryLabel', 'same_country')} {Number(pipelineStatus.opportunityPipeline.recentRuns[0].metadata.graphSeed.seededSameCountry || 0)} | {tt('radarSameRegionLabel', 'same_region')}{' '}
+                {Number(pipelineStatus.opportunityPipeline.recentRuns[0].metadata.graphSeed.seededSameRegion || 0)} | {tt('radarBudgetClusterLabel', 'budget_cluster')}{' '}
+                {Number(pipelineStatus.opportunityPipeline.recentRuns[0].metadata.graphSeed.seededBudgetCluster || 0)} | {tt('radarSeasonClusterLabel', 'season_cluster')}{' '}
                 {Number(pipelineStatus.opportunityPipeline.recentRuns[0].metadata.graphSeed.seededSeasonCluster || 0)}
               </p>
             ) : null}

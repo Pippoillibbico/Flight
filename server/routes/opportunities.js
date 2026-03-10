@@ -116,7 +116,7 @@ export function buildOpportunitiesRouter({ authGuard, csrfGuard, requireApiScope
           visibleCount,
           totalCount,
           showUpgradePrompt,
-          upgradeMessage: showUpgradePrompt ? 'Sblocca tutte le opportunita con PRO' : null
+          upgradeMessageKey: showUpgradePrompt ? 'upgradePromptUnlockAll' : null
         }
       });
     } catch (error) {

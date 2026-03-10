@@ -4,6 +4,7 @@ import UpgradePrompt from './UpgradePrompt';
 
 const AITravelSectionPropsSchema = z
   .object({
+    t: z.function().optional(),
     prompt: z.string(),
     setPrompt: z.function(),
     loading: z.boolean(),
@@ -18,37 +19,40 @@ const AITravelSectionPropsSchema = z
   .passthrough();
 
 function AITravelSection(props) {
-  const { prompt, setPrompt, loading, result, error, onRun, onView, canUseAiTravel, onUpgradePro, onUpgradeElite } = validateProps(
+  const { t, prompt, setPrompt, loading, result, error, onRun, onView, canUseAiTravel, onUpgradePro, onUpgradeElite } = validateProps(
     AITravelSectionPropsSchema,
     props,
     'AITravelSection'
   );
+  const tt = (key, fallback) => (typeof t === 'function' ? t(key) : fallback) || fallback;
 
   return (
     <section className="panel">
       <div className="panel-head">
-        <h2>Trova il prossimo viaggio con l'AI</h2>
+        <h2>{tt('aiTravelPageTitle', "Find your next trip with AI")}</h2>
       </div>
-      <p className="muted">Descrivi cosa cerchi e lascia che il sistema trovi opportunita reali gia presenti nel feed.</p>
+      <p className="muted">{tt('aiTravelPageSubtitle', 'Describe what you are looking for and let the system find real opportunities already in the feed.')}</p>
       <label>
-        Descrivi il viaggio
+        {tt('aiTravelPromptLabel', 'Describe your trip')}
         <textarea
           className="ai-intake-box"
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
-          placeholder="Voglio partire con 400\u20AC a novembre."
+          placeholder={tt('aiTravelPromptPlaceholder', 'I want to leave with 400 EUR in November.')}
         />
       </label>
-      <p className="muted">L'AI interpreta la richiesta e filtra opportunita reali, senza inventare voli o prezzi.</p>
+      <p className="muted">{tt('aiTravelPageHelper', 'AI interprets your request and filters real opportunities only, without inventing flights or prices.')}</p>
       <div className="item-actions">
         <button type="button" onClick={onRun} disabled={loading || !canUseAiTravel}>
-          {loading ? 'Analisi in corso...' : "Chiedi all'AI"}
+          {loading ? tt('aiTravelRunLoading', 'Analyzing...') : tt('aiTravelRunCta', 'Ask AI')}
         </button>
       </div>
       {!canUseAiTravel ? (
         <UpgradePrompt
-          title="AI Travel disponibile su ELITE"
-          message="Passa a ELITE per usare il travel planner AI e alert immediati."
+          title={tt('aiTravelUpgradeTitle', 'AI Travel available on ELITE')}
+          message={tt('aiTravelUpgradeMessage', 'Upgrade to ELITE to use AI travel planner and instant alerts.')}
+          primaryLabel={tt('opportunityFeedUpgradePrimaryCta', 'Upgrade to PRO')}
+          secondaryLabel={tt('opportunityFeedUpgradeSecondaryCta', 'Discover ELITE')}
           onUpgradePro={onUpgradePro}
           onUpgradeElite={onUpgradeElite}
         />
@@ -68,7 +72,7 @@ function AITravelSection(props) {
                 </p>
               </div>
               <button type="button" className="ghost" onClick={() => onView(item.id)}>
-                Vedi itinerario
+                {tt('opportunityFeedViewItineraryCta', 'View itinerary')}
               </button>
             </article>
           ))}
