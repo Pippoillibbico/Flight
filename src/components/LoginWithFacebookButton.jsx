@@ -1,6 +1,6 @@
 function LoginWithFacebookButton() {
   const handleFacebookLogin = () => {
-    window.location.href = 'http://localhost:8080/auth/facebook';
+    window.location.href = '/api/auth/oauth/facebook/start';
   };
 
   return (
@@ -11,4 +11,3 @@ function LoginWithFacebookButton() {
 }
 
 export default LoginWithFacebookButton;
-
