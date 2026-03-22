@@ -6,10 +6,19 @@ data/*.db
 data/*.db-shm
 data/*.db-wal
 data/db.json
+data/db.json.bak
+data/db.json.tmp-*
+data/db.json.corrupt-*
 data/audit-log.ndjson
 data/*.ndjson
 data/logs/
 data/logs/*.log
+data/db-security-smoke-*.json
+data/db-security-smoke-*.json.bak
+data/db-security-compliance-*.json
+data/db-security-compliance-*.json.bak
+data/db-security-compliance-*.json.tmp-*
+data/db-security-compliance-*.json.corrupt-*
 
 # variabili ambiente
 .env
