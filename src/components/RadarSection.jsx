@@ -268,6 +268,11 @@ function RadarSection(props) {
                 {pipelineStatus.alertDelivery.pushConfigured ? tt('radarConfiguredStatus', 'configured') : tt('radarNotConfiguredStatus', 'not configured')}
               </p>
             ) : null}
+            {pipelineStatus?.opportunityPipeline?.apiQuality ? (
+              <p className="radar-debug-line">
+                {tt('radarApiQualityLabel', 'API quality')}: {tt('radarApiFilteredOutLabel', 'filtered out')} {Number(pipelineStatus.opportunityPipeline.apiQuality.filteredOutSinceBoot || 0)}
+              </p>
+            ) : null}
             {pipelineStatus?.opportunityPipeline?.recentRuns?.[0]?.metadata?.graphSeed ? (
               <p className="radar-debug-line">
                 {tt('radarGraphSeedLabel', 'Graph seed (last run)')}: {tt('radarSameCountryLabel', 'same_country')} {Number(pipelineStatus.opportunityPipeline.recentRuns[0].metadata.graphSeed.seededSameCountry || 0)} | {tt('radarSameRegionLabel', 'same_region')}{' '}

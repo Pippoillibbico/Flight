@@ -16,6 +16,19 @@ function hasMinLength(rawValue, min) {
   return String(rawValue || '').trim().length >= min;
 }
 
+function parseFlag(rawValue, fallback = false) {
+  const value = String(rawValue || '').trim().toLowerCase();
+  if (!value) return fallback;
+  return ['1', 'true', 'yes', 'on'].includes(value);
+}
+
+function parseList(rawValue) {
+  return String(rawValue || '')
+    .split(/[,\n;]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 function isLikelyUrl(rawValue) {
   const value = String(rawValue || '').trim();
   if (!value) return false;
@@ -25,6 +38,18 @@ function isLikelyUrl(rawValue) {
   } catch {
     return false;
   }
+}
+
+function isValidBillingProvider(rawValue) {
+  const value = String(rawValue || '').trim().toLowerCase();
+  return !value || value === 'stripe' || value === 'braintree';
+}
+
+function resolveBillingProvider(env) {
+  const value = String(env?.BILLING_PROVIDER || '').trim().toLowerCase();
+  if (value === 'stripe' || value === 'braintree') return value;
+  const isProduction = String(env?.NODE_ENV || '').trim().toLowerCase() === 'production';
+  return isProduction ? 'braintree' : 'stripe';
 }
 
 function evaluateCheck({ key, label, severity, validator, detailOnFail, detailOnPass }, env) {
@@ -43,11 +68,8 @@ const CHECKS = [
   {
     key: 'BILLING_PROVIDER',
     label: 'Billing provider selection',
-    severity: 'recommended',
-    validator: (value) => {
-      const normalized = String(value || 'stripe').trim().toLowerCase();
-      return ['stripe', 'braintree'].includes(normalized);
-    },
+    severity: 'blocking',
+    validator: (value) => isValidBillingProvider(value),
     detailOnFail: 'use BILLING_PROVIDER=stripe or BILLING_PROVIDER=braintree',
     detailOnPass: 'configured'
   },
@@ -152,7 +174,124 @@ const CHECKS = [
 
 export function getRuntimeConfigAudit(env = process.env) {
   const checks = CHECKS.map((check) => evaluateCheck(check, env));
-  const billingProvider = String(env.BILLING_PROVIDER || 'stripe').trim().toLowerCase();
+  const isProduction = String(env.NODE_ENV || '').trim().toLowerCase() === 'production';
+  const billingProvider = resolveBillingProvider(env);
+  const duffelEnabled = parseFlag(env.ENABLE_PROVIDER_DUFFEL, false);
+  const amadeusEnabled = parseFlag(env.ENABLE_PROVIDER_AMADEUS, false);
+  const scanEnabled = parseFlag(env.FLIGHT_SCAN_ENABLED, false);
+  const providerCollectionEnabled = parseFlag(env.PROVIDER_COLLECTION_ENABLED, false);
+  const dealsContentEnabled = parseFlag(env.DEALS_CONTENT_ENABLED, true);
+  const dealsContentInAppEnabled = parseFlag(env.DEALS_CONTENT_INAPP_ENABLED, true);
+  const dealsContentPushReady = isLikelyUrl(env.PUSH_WEBHOOK_URL) && !valueLooksPlaceholder(env.PUSH_WEBHOOK_URL);
+  const dealsContentSocialReady =
+    isLikelyUrl(env.DEALS_CONTENT_SOCIAL_WEBHOOK_URL) && !valueLooksPlaceholder(env.DEALS_CONTENT_SOCIAL_WEBHOOK_URL);
+  const dealsNewsletterRecipients = parseList(env.DEALS_CONTENT_NEWSLETTER_RECIPIENTS);
+  const dealsContentNewsletterReady =
+    dealsNewsletterRecipients.length > 0 &&
+    String(env.SMTP_HOST || '').trim().length > 0 &&
+    String(env.SMTP_USER || '').trim().length > 0 &&
+    String(env.SMTP_PASS || '').trim().length > 0;
+  const dealsContentAtLeastOneChannel =
+    dealsContentInAppEnabled || dealsContentPushReady || dealsContentSocialReady || dealsContentNewsletterReady;
+
+  checks.push(
+    evaluateCheck(
+      {
+        key: 'DEALS_CONTENT_DELIVERY_CHANNELS',
+        label: 'Deals content delivery channels',
+        severity: dealsContentEnabled && isProduction ? 'blocking' : 'recommended',
+        validator: () => !dealsContentEnabled || dealsContentAtLeastOneChannel,
+        detailOnFail:
+          'DEALS_CONTENT enabled but no delivery channel configured (enable in-app or configure push/social/newsletter)',
+        detailOnPass: !dealsContentEnabled ? 'deals content disabled' : 'at least one channel configured'
+      },
+      env
+    )
+  );
+
+  checks.push(
+    evaluateCheck(
+      {
+        key: 'DUFFEL_PROVIDER_CREDENTIALS',
+        label: 'Duffel provider credentials',
+        severity: duffelEnabled ? 'blocking' : 'recommended',
+        validator: (_value, envContext) => {
+          if (!parseFlag(envContext.ENABLE_PROVIDER_DUFFEL, false)) return true;
+          return hasMinLength(envContext.DUFFEL_API_KEY, 8) && !valueLooksPlaceholder(envContext.DUFFEL_API_KEY);
+        },
+        detailOnFail: 'ENABLE_PROVIDER_DUFFEL=true requires DUFFEL_API_KEY',
+        detailOnPass: duffelEnabled ? 'configured' : 'provider disabled'
+      },
+      env
+    )
+  );
+
+  checks.push(
+    evaluateCheck(
+      {
+        key: 'AMADEUS_PROVIDER_CREDENTIALS',
+        label: 'Amadeus provider credentials',
+        severity: amadeusEnabled ? 'blocking' : 'recommended',
+        validator: (_value, envContext) => {
+          if (!parseFlag(envContext.ENABLE_PROVIDER_AMADEUS, false)) return true;
+          const clientIdOk = hasMinLength(envContext.AMADEUS_CLIENT_ID, 6) && !valueLooksPlaceholder(envContext.AMADEUS_CLIENT_ID);
+          const clientSecretOk = hasMinLength(envContext.AMADEUS_CLIENT_SECRET, 8) && !valueLooksPlaceholder(envContext.AMADEUS_CLIENT_SECRET);
+          return clientIdOk && clientSecretOk;
+        },
+        detailOnFail: 'ENABLE_PROVIDER_AMADEUS=true requires AMADEUS_CLIENT_ID and AMADEUS_CLIENT_SECRET',
+        detailOnPass: amadeusEnabled ? 'configured' : 'provider disabled'
+      },
+      env
+    )
+  );
+
+  checks.push(
+    evaluateCheck(
+      {
+        key: 'AT_LEAST_ONE_PROVIDER_CONFIGURED',
+        label: 'At least one provider configured when scan/collection enabled',
+        severity: scanEnabled || providerCollectionEnabled ? 'blocking' : 'recommended',
+        validator: (_value, envContext) => {
+          const scanOrCollectionEnabled =
+            parseFlag(envContext.FLIGHT_SCAN_ENABLED, false) || parseFlag(envContext.PROVIDER_COLLECTION_ENABLED, false);
+          if (!scanOrCollectionEnabled) return true;
+
+          const duffelReady =
+            parseFlag(envContext.ENABLE_PROVIDER_DUFFEL, false) &&
+            hasMinLength(envContext.DUFFEL_API_KEY, 8) &&
+            !valueLooksPlaceholder(envContext.DUFFEL_API_KEY);
+          const amadeusReady =
+            parseFlag(envContext.ENABLE_PROVIDER_AMADEUS, false) &&
+            hasMinLength(envContext.AMADEUS_CLIENT_ID, 6) &&
+            !valueLooksPlaceholder(envContext.AMADEUS_CLIENT_ID) &&
+            hasMinLength(envContext.AMADEUS_CLIENT_SECRET, 8) &&
+            !valueLooksPlaceholder(envContext.AMADEUS_CLIENT_SECRET);
+
+          return duffelReady || amadeusReady;
+        },
+        detailOnFail: 'scanner/provider collection enabled but no provider is fully configured',
+        detailOnPass: scanEnabled || providerCollectionEnabled ? 'configured' : 'scanner/provider collection disabled'
+      },
+      env
+    )
+  );
+
+  if (isProduction) {
+    checks.push(
+      evaluateCheck(
+        {
+          key: 'BILLING_PROVIDER_PRODUCTION_LOCK',
+          label: 'Billing provider production lock',
+          severity: 'blocking',
+          validator: (_value, envContext) => resolveBillingProvider(envContext) === 'braintree',
+          detailOnFail: 'production requires BILLING_PROVIDER=braintree for supported checkout flow',
+          detailOnPass: 'configured'
+        },
+        env
+      )
+    );
+  }
+
   if (billingProvider === 'braintree') {
     checks.push(
       evaluateCheck(

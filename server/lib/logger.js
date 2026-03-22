@@ -11,6 +11,14 @@ const securityLogFilePath = resolve(logDir, 'security.log');
 const LOG_ROTATION_MAX_BYTES = Math.max(1, Number(process.env.LOG_ROTATION_MAX_BYTES || 20 * 1024 * 1024));
 const LOG_RETENTION_DAYS = Math.max(1, Number(process.env.LOG_RETENTION_DAYS || 14));
 const LOG_ROTATION_INTERVAL_MS = Math.max(60_000, Number(process.env.LOG_ROTATION_INTERVAL_MS || 60 * 60 * 1000));
+const REQUEST_LOG_SUCCESS_SAMPLE_RATE = Math.max(0, Math.min(1, Number(process.env.REQUEST_LOG_SUCCESS_SAMPLE_RATE || 0.2)));
+const REQUEST_LOG_SLOW_MS = Math.max(50, Number(process.env.REQUEST_LOG_SLOW_MS || 1200));
+const REQUEST_LOG_EXPECTED_5XX_ENDPOINT_PREFIXES = String(
+  process.env.REQUEST_LOG_EXPECTED_5XX_ENDPOINT_PREFIXES || '/api/health/deploy-readiness'
+)
+  .split(',')
+  .map((item) => String(item || '').trim())
+  .filter(Boolean);
 const logFileStream = pino.destination({
   dest: logFilePath,
   sync: false,
@@ -95,6 +103,22 @@ function runLogMaintenance() {
 runLogMaintenance();
 setInterval(runLogMaintenance, LOG_ROTATION_INTERVAL_MS).unref();
 
+function normalizeEndpointPath(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  const queryIdx = text.indexOf('?');
+  const noQuery = queryIdx >= 0 ? text.slice(0, queryIdx) : text;
+  const hashIdx = noQuery.indexOf('#');
+  return hashIdx >= 0 ? noQuery.slice(0, hashIdx) : noQuery;
+}
+
+function isExpected5xxEndpoint(endpointPath) {
+  if (!endpointPath || REQUEST_LOG_EXPECTED_5XX_ENDPOINT_PREFIXES.length === 0) return false;
+  return REQUEST_LOG_EXPECTED_5XX_ENDPOINT_PREFIXES.some(
+    (prefix) => endpointPath === prefix || endpointPath.startsWith(`${prefix}/`)
+  );
+}
+
 export function requestLogger(req, res, next) {
   const start = process.hrtime.bigint();
 
@@ -111,8 +135,13 @@ export function requestLogger(req, res, next) {
       referer: String(req.headers.referer || ''),
       durationMs: Number(durationMs.toFixed(2))
     };
+    const endpointPath = normalizeEndpointPath(payload.endpoint);
 
     if (res.statusCode >= 500) {
+      if (isExpected5xxEndpoint(endpointPath)) {
+        logger.warn({ ...payload, expected_status: true }, 'request_warning_expected_5xx');
+        return;
+      }
       logger.error(payload, 'request_failed');
       return;
     }
@@ -120,7 +149,10 @@ export function requestLogger(req, res, next) {
       logger.warn(payload, 'request_warning');
       return;
     }
-    logger.info(payload, 'request_completed');
+    const isSlowRequest = payload.durationMs >= REQUEST_LOG_SLOW_MS;
+    if (isSlowRequest || Math.random() < REQUEST_LOG_SUCCESS_SAMPLE_RATE) {
+      logger.info(payload, isSlowRequest ? 'request_completed_slow' : 'request_completed');
+    }
   });
 
   return next();

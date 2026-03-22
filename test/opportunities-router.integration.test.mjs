@@ -57,6 +57,7 @@ test('opportunities feed endpoint returns list without auth', async () => {
     const res = await fetch(`${baseUrl}/api/opportunities/feed?limit=5`);
     assert.equal(res.status, 200);
     const body = await res.json();
+    assert.equal(body.source, 'travel_opportunities');
     assert.equal(Array.isArray(body.items), true);
     assert.equal(body.items.length <= 5, true);
   });
@@ -71,6 +72,7 @@ test('opportunities feed returns localized-agnostic upgrade message key for capp
     const res = await fetch(`${baseUrl}/api/opportunities/feed?limit=20`);
     assert.equal(res.status, 200);
     const body = await res.json();
+    assert.equal(body.source, 'travel_opportunities');
     assert.equal(Array.isArray(body.items), true);
     assert.equal(typeof body.access, 'object');
     assert.equal(body.access.planType, 'free');
@@ -162,5 +164,38 @@ test('AI query is gated when user plan is not ELITE', async () => {
     assert.equal(res.status, 402);
     const body = await res.json();
     assert.equal(body.error, 'premium_required');
+  });
+});
+
+test('opportunities explore budget endpoint returns sorted destinations', async () => {
+  const { app } = createRouterApp({ optionalAuthEnabled: false });
+  await withServer(app, async (baseUrl) => {
+    const res = await fetch(`${baseUrl}/api/opportunities/explore/budget?origin=FCO&budget_max=1200&limit=10`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.origin, 'FCO');
+    assert.equal(Array.isArray(body.items), true);
+    assert.equal(body.items.length <= 10, true);
+    if (body.items.length > 0) {
+      assert.equal(typeof body.items[0].destination_airport, 'string');
+      assert.equal(typeof body.items[0].min_price, 'number');
+      assert.equal(['one_way', 'round_trip'].includes(String(body.items[0].trip_type || '')), true);
+    }
+  });
+});
+
+test('opportunities explore map endpoint returns points', async () => {
+  const { app } = createRouterApp({ optionalAuthEnabled: false });
+  await withServer(app, async (baseUrl) => {
+    const res = await fetch(`${baseUrl}/api/opportunities/explore/map?origin=FCO&budget_max=1200&limit=10`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.origin, 'FCO');
+    assert.equal(Array.isArray(body.points), true);
+    assert.equal(body.points.length <= 10, true);
+    if (body.points.length > 0) {
+      assert.equal(typeof body.points[0].destination_airport, 'string');
+      assert.equal(body.points[0].origin_coords == null || typeof body.points[0].origin_coords.lat === 'number', true);
+    }
   });
 });

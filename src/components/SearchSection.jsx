@@ -223,8 +223,24 @@ function SearchSection(props) {
             </label>
 
             <label>
+              {t('tripType') || 'Trip type'}
+              <select
+                value={searchForm.tripType || 'round_trip'}
+                onChange={(e) => setSearchForm((p) => ({ ...p, tripType: e.target.value === 'one_way' ? 'one_way' : 'round_trip' }))}
+              >
+                <option value="round_trip">{t('roundTrip') || 'Round trip'}</option>
+                <option value="one_way">{t('oneWay') || 'One way'}</option>
+              </select>
+            </label>
+
+            <label>
               {t('ret')}
-              <input type="date" value={searchForm.dateTo} onChange={(e) => setSearchForm((p) => ({ ...p, periodPreset: 'custom', dateTo: e.target.value }))} />
+              <input
+                type="date"
+                value={searchForm.tripType === 'one_way' ? '' : searchForm.dateTo}
+                disabled={searchForm.tripType === 'one_way'}
+                onChange={(e) => setSearchForm((p) => ({ ...p, periodPreset: 'custom', dateTo: e.target.value }))}
+              />
             </label>
 
             <label>

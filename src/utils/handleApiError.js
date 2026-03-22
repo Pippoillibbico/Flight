@@ -14,5 +14,13 @@ export function handleApiError(error, { t }) {
     return t('sessionExpiredFriendly');
   }
 
+  if (code === 'request_timeout') {
+    return 'La richiesta sta impiegando troppo tempo. Riprova tra qualche secondo.';
+  }
+
+  if (code === 'request_failed') {
+    return 'Connessione temporaneamente non disponibile. Verifica la rete e riprova.';
+  }
+
   return `${t('genericErrorTitle')}. ${t('genericErrorSubtext')}`;
 }

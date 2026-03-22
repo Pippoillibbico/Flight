@@ -145,7 +145,7 @@ export function buildBookingLink({ origin, destinationIata, dateFrom, dateTo, tr
   url.searchParams.set('origin', origin);
   url.searchParams.set('destination', destinationIata);
   url.searchParams.set('dateFrom', dateFrom);
-  url.searchParams.set('dateTo', dateTo);
+  if (dateTo) url.searchParams.set('dateTo', dateTo);
   url.searchParams.set('travellers', String(travellers));
   url.searchParams.set('cabin', cabinClass);
   return url.toString();
@@ -168,11 +168,13 @@ export function searchFlights({
   cabinClass = 'economy'
 }) {
   const fromDate = parseISO(dateFrom);
-  const toDate = parseISO(dateTo);
-  const stayDays = differenceInCalendarDays(toDate, fromDate);
+  const toDate = dateTo ? parseISO(dateTo) : null;
+  const isRoundTrip = Boolean(dateTo);
+  const stayDays = toDate ? differenceInCalendarDays(toDate, fromDate) : 0;
   const month = fromDate.getMonth() + 1;
 
-  const isEuropeWeekendRule = getDay(fromDate) === 5 && getDay(toDate) === 1 && fromDate.getFullYear() <= 2030 && toDate.getFullYear() <= 2030;
+  const isEuropeWeekendRule =
+    Boolean(toDate) && getDay(fromDate) === 5 && getDay(toDate) === 1 && fromDate.getFullYear() <= 2030 && toDate.getFullYear() <= 2030;
   const isAsiaLongStayRule = region === 'asia' && stayDays >= 20;
 
   const safeOrigin = String(origin || '').toUpperCase().trim();
@@ -206,10 +208,13 @@ export function searchFlights({
       const savingVs2024 = computeSavingVs2024(variant.price, avg2024);
 
       return {
-        id: `${route.origin}-${route.destinationIata}-${dateFrom}-${dateTo}-${travellers}-${cabinClass}-${variant.stopCount}`,
+        id: `${route.origin}-${route.destinationIata}-${dateFrom}-${dateTo || 'ow'}-${travellers}-${cabinClass}-${variant.stopCount}`,
         origin: route.origin,
         destination: route.destinationName,
         destinationIata: route.destinationIata,
+        tripType: isRoundTrip ? 'round_trip' : 'one_way',
+        isBookable: false,
+        inventorySource: 'synthetic_local_model',
         region: route.region,
         area: route.decisionMetadata?.area || route.region,
         climate: route.decisionMetadata?.climateProfile || 'mixed',
@@ -259,6 +264,8 @@ export function searchFlights({
 
   return {
     meta: {
+      tripType: isRoundTrip ? 'round_trip' : 'one_way',
+      inventorySource: 'synthetic_local_model',
       stayDays,
       isEuropeWeekendRule,
       isAsiaLongStayRule,

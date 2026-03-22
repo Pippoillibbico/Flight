@@ -11,7 +11,12 @@ function baseProdEnv() {
     FRONTEND_ORIGIN: 'https://app.flightsuite.test',
     DATABASE_URL: 'postgresql://user:pass@db.flightsuite.internal:5432/flight',
     REDIS_URL: 'redis://cache.flightsuite.internal:6379',
-    CORS_ALLOWLIST: 'https://app.flightsuite.test'
+    CORS_ALLOWLIST: 'https://app.flightsuite.test',
+    BILLING_PROVIDER: 'braintree',
+    BT_MERCHANT_ID: 'merchant_test',
+    BT_PUBLIC_KEY: 'public_test',
+    BT_PRIVATE_KEY: 'private_key_test_12345',
+    BT_ENVIRONMENT: 'sandbox'
   };
 }
 

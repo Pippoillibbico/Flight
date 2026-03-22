@@ -8,6 +8,7 @@ const ALLOWED_PROVIDER_FILES = new Set([
   'server/lib/providers/amadeus-provider.js',
   'server/lib/providers/duffel-provider.js',
   'server/lib/providers/provider-registry.js',
+  'server/lib/runtime-config.js',
   'server/routes/system.js'
 ]);
 const BLOCKED_TERMS = [

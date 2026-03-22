@@ -16,7 +16,13 @@ import { appendImmutableAudit } from '../lib/audit-log.js';
 import { setUserPlan } from '../lib/plan-access.js';
 import { logger } from '../lib/logger.js';
 
-const BILLING_PROVIDER = String(process.env.BILLING_PROVIDER || 'stripe').trim().toLowerCase();
+function resolveBillingProvider(rawValue, { nodeEnv = process.env.NODE_ENV } = {}) {
+  const normalized = String(rawValue || '').trim().toLowerCase();
+  if (normalized === 'stripe' || normalized === 'braintree') return normalized;
+  return String(nodeEnv || '').trim().toLowerCase() === 'production' ? 'braintree' : 'stripe';
+}
+
+const BILLING_PROVIDER = resolveBillingProvider(process.env.BILLING_PROVIDER);
 let cachedBraintreeGateway = null;
 const checkoutPayloadSchema = z.object({
   planType: z.enum(['pro', 'elite']),
@@ -349,7 +355,9 @@ async function handleBraintreeNotification(notification) {
 
 export function buildBillingRouter({ authGuard, csrfGuard }, deps = {}) {
   const router = express.Router();
-  const billingProvider = String(deps.billingProvider || BILLING_PROVIDER).trim().toLowerCase();
+  const billingProvider = resolveBillingProvider(deps.billingProvider || BILLING_PROVIDER, {
+    nodeEnv: process.env.NODE_ENV
+  });
   const isBraintreeConfiguredSafe = deps.isBraintreeConfigured || isBraintreeConfigured;
   const getBraintreeGatewaySafe = deps.getBraintreeGateway || getBraintreeGateway;
   const getUserByIdSafe = deps.getUserById || getUserById;

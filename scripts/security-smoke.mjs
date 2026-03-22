@@ -1,10 +1,28 @@
 import { spawn } from 'node:child_process';
+import { unlink } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 
 const PORT = process.env.SECURITY_TEST_PORT || '3100';
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 const ORIGIN = process.env.SECURITY_TEST_ORIGIN || 'http://localhost:5173';
 const DB_FILE = process.env.SECURITY_TEST_DB_FILE || `data/db-security-smoke-${PORT}.json`;
+const AUDIT_LOG_FILE = process.env.SECURITY_TEST_AUDIT_LOG_FILE || `data/audit-log-security-smoke-${PORT}.ndjson`;
+const CLEAN_DB_ARTIFACTS = String(process.env.SECURITY_TEST_CLEAN_DB || 'true')
+  .trim()
+  .toLowerCase() !== 'false';
+
+function waitForExit(proc, timeoutMs = 4000) {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      resolve();
+    };
+    proc.once('exit', finish);
+    setTimeout(finish, timeoutMs).unref?.();
+  });
+}
 
 function mergeSetCookie(existing, setCookieHeaders = []) {
   const map = new Map();
@@ -42,6 +60,9 @@ const child = spawn(process.execPath, ['server/index.js'], {
     CORS_ORIGIN: ORIGIN,
     CORS_ALLOWLIST: ORIGIN,
     FLIGHT_DB_FILE: DB_FILE,
+    AUDIT_LOG_FILE,
+    AUDIT_LOG_HMAC_KEY: process.env.AUDIT_LOG_HMAC_KEY || 'security_smoke_hmac_key_1234567890',
+    RUN_STARTUP_TASKS: 'false',
     DATABASE_URL: '',
     REDIS_URL: ''
   },
@@ -94,4 +115,13 @@ try {
   console.log('security-smoke: PASS');
 } finally {
   child.kill('SIGTERM');
+  await waitForExit(child);
+  if (CLEAN_DB_ARTIFACTS) {
+    await Promise.allSettled([
+      unlink(DB_FILE),
+      unlink(`${DB_FILE}.bak`),
+      unlink(AUDIT_LOG_FILE),
+      unlink(`${AUDIT_LOG_FILE}.lock`)
+    ]);
+  }
 }

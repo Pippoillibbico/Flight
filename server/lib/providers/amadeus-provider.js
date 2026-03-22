@@ -16,6 +16,10 @@ export class AmadeusProvider extends BaseProvider {
     return this.clientId.length > 0 && this.clientSecret.length > 0;
   }
 
+  isStub() {
+    return true;
+  }
+
   async searchOffers({ originIata, destinationIata, departureDate, returnDate, cabinClass = 'economy' }) {
     if (!this.isEnabled() || !this.isConfigured()) return [];
     // Enterprise-ready adapter stub: safe no-op until credentials + contract are fully enabled.

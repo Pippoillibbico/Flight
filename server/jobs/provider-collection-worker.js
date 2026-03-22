@@ -39,6 +39,23 @@ function buildRouteSet(seedRoutes, popularRoutes, subscriptions, limit) {
 export async function runProviderCollectionOnce() {
   const enabled = parseFlag(process.env.PROVIDER_COLLECTION_ENABLED, false);
   if (!enabled) return { processedCount: 0, insertedCount: 0, dedupedCount: 0, failedCount: 0, skipped: true };
+  const overlapPolicy = String(process.env.SCAN_PROVIDER_OVERLAP_POLICY || 'mutual_exclusive').trim().toLowerCase();
+  const scanEnabled = parseFlag(process.env.FLIGHT_SCAN_ENABLED, false);
+  const allowOverlap = parseFlag(process.env.PROVIDER_COLLECTION_ALLOW_WITH_SCAN, false);
+  if (scanEnabled && overlapPolicy === 'mutual_exclusive' && !allowOverlap) {
+    logger.info(
+      { overlapPolicy, scanEnabled, allowOverlap },
+      'provider_collection_skipped_due_to_scan_overlap_policy'
+    );
+    return {
+      processedCount: 0,
+      insertedCount: 0,
+      dedupedCount: 0,
+      failedCount: 0,
+      skipped: true,
+      reason: 'scan_overlap_policy'
+    };
+  }
 
   const routeLimit = Math.max(1, Math.min(1000, Number(process.env.PROVIDER_COLLECTION_LIMIT_ROUTES || 200)));
   const horizonDays = Math.max(14, Math.min(365, Number(process.env.PROVIDER_COLLECTION_HORIZON_DAYS || 180)));
@@ -80,14 +97,28 @@ export async function runProviderCollectionOnce() {
         route.destinationIata && /^[A-Z]{3}$/.test(route.destinationIata) ? [route.destinationIata] : (seedRoutes?.origins?.[route.originIata] || []).slice(0, 5);
       for (const destinationIata of destinationCandidates) {
         processedCount += 1;
-        const offers = await registry.searchOffers({
-          originIata: route.originIata,
-          destinationIata,
-          departureDate,
-          returnDate,
-          adults: 1,
-          cabinClass: 'economy'
-        });
+        let offers = [];
+        try {
+          offers = await registry.searchOffers({
+            originIata: route.originIata,
+            destinationIata,
+            departureDate,
+            returnDate,
+            adults: 1,
+            cabinClass: 'economy'
+          });
+        } catch (error) {
+          failedCount += 1;
+          logger.warn(
+            {
+              originIata: route.originIata,
+              destinationIata,
+              err: error?.message || String(error)
+            },
+            'provider_collection_search_failed'
+          );
+          continue;
+        }
         for (const offer of offers) {
           try {
             const out = await ingestPriceObservation({
@@ -106,8 +137,17 @@ export async function runProviderCollectionOnce() {
             });
             if (out.inserted) insertedCount += 1;
             else dedupedCount += 1;
-          } catch {
+          } catch (error) {
             failedCount += 1;
+            logger.warn(
+              {
+                originIata: offer?.originIata || route.originIata,
+                destinationIata: offer?.destinationIata || destinationIata,
+                provider: offer?.provider || 'unknown',
+                err: error?.message || String(error)
+              },
+              'provider_collection_ingest_failed'
+            );
           }
         }
       }

@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-03-22T16:56:15.335Z",
+  "updatedAt": "2026-03-22T17:02:22.765Z",
   "lastRun": {
-    "executedAt": "2026-03-22T16:56:15.335Z",
+    "executedAt": "2026-03-22T17:02:22.765Z",
     "status": "green",
     "failedStages": 0,
     "openRegressions": 0,
@@ -12,7 +12,7 @@
         "label": "Lint",
         "command": "npm run lint",
         "exitCode": 0,
-        "durationMs": 7647,
+        "durationMs": 7461,
         "failureCount": 0,
         "skipped": false,
         "skipReason": null
@@ -22,7 +22,7 @@
         "label": "Provider Lint",
         "command": "npm run lint:providers",
         "exitCode": 0,
-        "durationMs": 466,
+        "durationMs": 430,
         "failureCount": 0,
         "skipped": false,
         "skipReason": null
@@ -32,7 +32,7 @@
         "label": "Node Tests",
         "command": "npm test",
         "exitCode": 0,
-        "durationMs": 12740,
+        "durationMs": 7573,
         "failureCount": 0,
         "skipped": false,
         "skipReason": null
@@ -42,7 +42,7 @@
         "label": "E2E Playwright",
         "command": "npx playwright test",
         "exitCode": 0,
-        "durationMs": 76142,
+        "durationMs": 71835,
         "failureCount": 0,
         "skipped": false,
         "skipReason": null

@@ -1,5 +1,103 @@
 import { Router } from 'express';
+import { z } from 'zod';
 import { canUseRadar } from '../lib/plan-access.js';
+import { getPriceAlertsStore } from '../lib/price-alerts-store.js';
+
+const iataSchema = z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/, 'Invalid IATA code.');
+const isoDateSchema = z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date format. Expected YYYY-MM-DD.');
+const currencySchema = z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/, 'Invalid currency. Expected ISO code.');
+
+const channelsSchema = z
+  .object({
+    push: z.boolean().optional(),
+    email: z.boolean().optional(),
+    in_app: z.boolean().optional(),
+    inApp: z.boolean().optional()
+  })
+  .strict();
+
+const priceAlertCreateSchema = z
+  .object({
+    originIata: iataSchema,
+    destinationIata: iataSchema,
+    dateFrom: isoDateSchema,
+    dateTo: isoDateSchema,
+    maxPrice: z.coerce.number().positive('Invalid maxPrice. Expected a positive number.'),
+    currency: currencySchema.optional(),
+    enabled: z.boolean().optional(),
+    channels: channelsSchema.optional()
+  })
+  .superRefine((value, ctx) => {
+    if (value.dateTo < value.dateFrom) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['dateTo'],
+        message: 'dateTo must be greater than or equal to dateFrom.'
+      });
+    }
+    if (value.originIata === value.destinationIata) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['destinationIata'],
+        message: 'destinationIata must be different from originIata.'
+      });
+    }
+    const channels = value.channels || {};
+    const inApp = channels.in_app ?? channels.inApp;
+    if (channels.push === false && channels.email === false && inApp === false) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['channels'],
+        message: 'At least one notification channel must be enabled.'
+      });
+    }
+  });
+
+const priceAlertUpdateSchema = z
+  .object({
+    originIata: iataSchema.optional(),
+    destinationIata: iataSchema.optional(),
+    dateFrom: isoDateSchema.optional(),
+    dateTo: isoDateSchema.optional(),
+    maxPrice: z.coerce.number().positive('Invalid maxPrice. Expected a positive number.').optional(),
+    currency: currencySchema.optional(),
+    enabled: z.boolean().optional(),
+    channels: channelsSchema.optional()
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (Object.keys(value).length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'At least one field is required for update.'
+      });
+    }
+    if (value.dateFrom && value.dateTo && value.dateTo < value.dateFrom) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['dateTo'],
+        message: 'dateTo must be greater than or equal to dateFrom.'
+      });
+    }
+    if (value.originIata && value.destinationIata && value.originIata === value.destinationIata) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['destinationIata'],
+        message: 'destinationIata must be different from originIata.'
+      });
+    }
+    const channels = value.channels || null;
+    if (channels) {
+      const inApp = channels.in_app ?? channels.inApp;
+      if (channels.push === false && channels.email === false && inApp === false) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['channels'],
+          message: 'At least one notification channel must be enabled.'
+        });
+      }
+    }
+  });
 
 export function buildAlertsRouter({
   authGuard,
@@ -13,9 +111,23 @@ export function buildAlertsRouter({
   alertSubscriptionSchema,
   alertSubscriptionUpdateSchema,
   fetchCurrentUser,
-  sendMachineError
+  sendMachineError,
+  priceAlertsStore = getPriceAlertsStore(),
+  scanPriceAlertsOnce = async () => ({ skipped: true, reason: 'price_alert_worker_not_configured' })
 }) {
   const router = Router();
+  const sendInvalidPayload = (req, res, message) => {
+    if (typeof sendMachineError === 'function') {
+      return sendMachineError(req, res, 400, 'invalid_payload', { message });
+    }
+    return res.status(400).json({ error: message || 'Invalid payload.' });
+  };
+  const sendServerError = (req, res, message = 'Unable to process request right now.') => {
+    if (typeof sendMachineError === 'function') {
+      return sendMachineError(req, res, 500, 'request_failed', { message });
+    }
+    return res.status(500).json({ error: message });
+  };
 
   router.get('/watchlist', authGuard, requireApiScope('read'), quotaGuard({ counter: 'read', amount: 1 }), async (req, res) => {
     let items = [];
@@ -178,6 +290,78 @@ export function buildAlertsRouter({
     if (!updatedItem) return res.status(404).json({ error: 'Subscription not found.' });
     await scanSubscriptionsOnce();
     return res.json({ item: updatedItem });
+  });
+
+  router.get('/alerts/price-alerts', authGuard, requireApiScope('read'), quotaGuard({ counter: 'read', amount: 1 }), async (req, res) => {
+    try {
+      const items = await priceAlertsStore.listPriceAlerts({ userId: req.user.sub });
+      return res.json({ items });
+    } catch (error) {
+      return sendServerError(req, res, error?.message || 'Failed to list price alerts.');
+    }
+  });
+
+  router.post('/alerts/price-alerts', authGuard, csrfGuard, requireApiScope('alerts'), quotaGuard({ counter: 'alerts', amount: 1 }), async (req, res) => {
+    const parsed = priceAlertCreateSchema.safeParse(req.body);
+    if (!parsed.success) return sendInvalidPayload(req, res, parsed.error.issues[0]?.message ?? 'Invalid price alert payload.');
+
+    try {
+      const item = await priceAlertsStore.createPriceAlert({
+        userId: req.user.sub,
+        originIata: parsed.data.originIata,
+        destinationIata: parsed.data.destinationIata,
+        dateFrom: parsed.data.dateFrom,
+        dateTo: parsed.data.dateTo,
+        maxPrice: parsed.data.maxPrice,
+        currency: parsed.data.currency || 'EUR',
+        channels: parsed.data.channels || undefined,
+        enabled: parsed.data.enabled
+      });
+      try {
+        await scanPriceAlertsOnce({ limit: 250, reason: 'alert_created' });
+      } catch {}
+      return res.status(201).json({ item });
+    } catch (error) {
+      if (error?.message?.toLowerCase().includes('invalid')) return sendInvalidPayload(req, res, error.message);
+      return sendServerError(req, res, error?.message || 'Failed to create price alert.');
+    }
+  });
+
+  router.post('/alerts/price-alerts/scan', authGuard, csrfGuard, requireApiScope('alerts'), quotaGuard({ counter: 'notifications', amount: 1 }), async (req, res) => {
+    try {
+      const result = await scanPriceAlertsOnce({ reason: 'manual' });
+      return res.json({ ok: true, result });
+    } catch (error) {
+      return sendServerError(req, res, error?.message || 'Failed to scan price alerts.');
+    }
+  });
+
+  router.patch('/alerts/price-alerts/:id', authGuard, csrfGuard, requireApiScope('alerts'), quotaGuard({ counter: 'alerts', amount: 1 }), async (req, res) => {
+    const parsed = priceAlertUpdateSchema.safeParse(req.body);
+    if (!parsed.success) return sendInvalidPayload(req, res, parsed.error.issues[0]?.message ?? 'Invalid price alert update payload.');
+
+    try {
+      const item = await priceAlertsStore.updatePriceAlert({
+        userId: req.user.sub,
+        alertId: req.params.id,
+        patch: parsed.data
+      });
+      if (!item) return res.status(404).json({ error: 'Price alert not found.' });
+      return res.json({ item });
+    } catch (error) {
+      if (error?.message?.toLowerCase().includes('invalid')) return sendInvalidPayload(req, res, error.message);
+      return sendServerError(req, res, error?.message || 'Failed to update price alert.');
+    }
+  });
+
+  router.delete('/alerts/price-alerts/:id', authGuard, csrfGuard, requireApiScope('alerts'), quotaGuard({ counter: 'alerts', amount: 1 }), async (req, res) => {
+    try {
+      const outcome = await priceAlertsStore.deletePriceAlert({ userId: req.user.sub, alertId: req.params.id });
+      if (!outcome.removed) return res.status(404).json({ error: 'Price alert not found.' });
+      return res.status(204).send();
+    } catch (error) {
+      return sendServerError(req, res, error?.message || 'Failed to delete price alert.');
+    }
   });
 
   router.get('/notifications', authGuard, requireApiScope('read'), quotaGuard({ counter: 'notifications', amount: 1 }), async (req, res) => {

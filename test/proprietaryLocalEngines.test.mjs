@@ -77,11 +77,12 @@ test('price-ingestion-worker imports local CSV without external providers', asyn
   const seed = (Date.now() + 777) % 17576;
   const origin = iataFromSeed(seed);
   const destination = iataFromSeed((seed + 91) % 17576);
+  const observedAt = new Date().toISOString();
   const tmpDir = await mkdtemp(join(tmpdir(), 'flight-price-ingest-'));
   const csvPath = join(tmpDir, 'local-prices.csv');
   const csv = [
     'origin_iata,destination_iata,departure_date,return_date,currency,total_price,provider,cabin_class,trip_type,observed_at,source',
-    `${origin},${destination},2027-10-10,2027-10-17,EUR,222.42,local_dataset,economy,round_trip,2026-04-10T09:00:00.000Z,csv_unit_test`
+    `${origin},${destination},2027-10-10,2027-10-17,EUR,222.42,local_dataset,economy,round_trip,${observedAt},csv_unit_test`
   ].join('\n');
   await writeFile(csvPath, csv, 'utf8');
 

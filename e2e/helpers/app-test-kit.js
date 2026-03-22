@@ -110,6 +110,7 @@ export function createDefaultState(overrides = {}) {
       remainingToday: null,
       upgradeMessage: 'Sblocca tutte le opportunita con PRO'
     },
+    billingProvider: 'braintree',
     radarPreferences: { ...DEFAULT_RADAR },
     opportunities: createDefaultOpportunities(6),
     clusters: [
@@ -243,6 +244,79 @@ export async function setupApiMocks(page, state) {
           lastCostCheckAt: new Date().toISOString()
         }
       });
+    }
+
+    if (path === '/api/billing/subscription' && method === 'GET') {
+      const planType = normalizePlan(state.user?.planType || 'free');
+      const provider = String(state.billingProvider || 'braintree').trim().toLowerCase();
+      const planId = planType === 'elite' ? 'creator' : planType;
+      return json({
+        planId,
+        status: 'active',
+        currentPeriodEnd: null,
+        cancelAtPeriodEnd: false,
+        extraCredits: 0,
+        billingProvider: provider
+      });
+    }
+
+    if (path === '/api/billing/client-token' && method === 'GET') {
+      const provider = String(state.billingProvider || 'braintree').trim().toLowerCase();
+      if (provider !== 'braintree') {
+        return json(
+          {
+            error: 'billing_provider_not_supported',
+            message: 'Client token endpoint is available only with Braintree.'
+          },
+          400
+        );
+      }
+      return json({
+        provider: 'braintree',
+        clientToken: 'test-client-token'
+      });
+    }
+
+    if (path === '/api/billing/checkout' && method === 'POST') {
+      const body = parseRequestBody(request);
+      const provider = String(state.billingProvider || 'braintree').trim().toLowerCase();
+      if (provider !== 'braintree') {
+        return json(
+          {
+            error: 'billing_provider_not_supported',
+            message: 'Checkout endpoint requires Braintree provider.'
+          },
+          400
+        );
+      }
+
+      const planType = normalizePlan(body?.planType || 'free');
+      const paymentMethodNonce = String(body?.paymentMethodNonce || '').trim();
+      if (!paymentMethodNonce) {
+        return json(
+          {
+            error: 'payment_method_failed',
+            message: 'Payment method could not be verified.'
+          },
+          402
+        );
+      }
+
+      updatePlan(state, planType === 'elite' ? 'elite' : 'pro');
+      return json(
+        {
+          ok: true,
+          provider: 'braintree',
+          planType: planType === 'elite' ? 'elite' : 'pro',
+          subscription: {
+            id: `sub_${Date.now()}`,
+            status: 'active',
+            currentPeriodStart: new Date().toISOString(),
+            currentPeriodEnd: null
+          }
+        },
+        201
+      );
     }
 
     if (path === '/api/auth/login' && method === 'POST') {
@@ -447,12 +521,13 @@ export async function setupApiMocks(page, state) {
   });
 }
 
-export async function bootLanding(page, state) {
+export async function bootLanding(page, state, { language = 'it' } = {}) {
   await setupApiMocks(page, state);
-  await page.addInitScript(() => {
+  await page.addInitScript(({ initialLanguage }) => {
     window.localStorage.clear();
     window.sessionStorage.clear();
-  });
+    if (initialLanguage) window.localStorage.setItem('flight_language', String(initialLanguage));
+  }, { initialLanguage: language });
   await page.goto('/');
   await expect(page.locator('main.landing-shell')).toBeVisible();
 }

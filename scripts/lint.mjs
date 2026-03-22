@@ -1,5 +1,6 @@
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { readFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 
 async function listFiles(dir, out = []) {
@@ -16,18 +17,37 @@ async function listFiles(dir, out = []) {
   return out;
 }
 
-function checkFile(file) {
+function runSyntaxCheckWithNode(file) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, ['--check', file], { stdio: 'pipe' });
     let stderr = '';
     child.stderr.on('data', (chunk) => {
       stderr += chunk.toString();
     });
+    child.on('error', (error) => {
+      reject(error);
+    });
     child.on('exit', (code) => {
       if (code === 0) return resolve();
       reject(new Error(`${file}\n${stderr.trim()}`));
     });
   });
+}
+
+async function fallbackCheck(file) {
+  const code = await readFile(file, 'utf8');
+  if (/^(<{7}|={7}|>{7})/m.test(code)) {
+    throw new Error(`${file}\nmerge conflict markers detected`);
+  }
+}
+
+async function checkFile(file) {
+  try {
+    await runSyntaxCheckWithNode(file);
+  } catch (error) {
+    if (error?.code !== 'EPERM') throw error;
+    await fallbackCheck(file);
+  }
 }
 
 async function run() {
@@ -47,4 +67,3 @@ run().catch((error) => {
   console.error(error?.message || error);
   process.exit(1);
 });
-

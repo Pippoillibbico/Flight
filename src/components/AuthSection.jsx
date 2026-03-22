@@ -87,13 +87,13 @@ function AuthSection(props) {
             aria-label={t('account')}
             onClick={(e) => e.stopPropagation()}
           >
-            <section className={`panel account-panel ${!isAuthenticated ? 'auth-panel-surface' : ''}`}>
+            <section className={`panel account-panel ${isAuthenticated ? 'auth-account-panel' : ''} ${!isAuthenticated ? 'auth-panel-surface' : ''}`}>
               {isAuthenticated ? (
                 <div className="panel-head">
                   <h2>{t('account')}</h2>
                   <div className="item-actions">
-                    <button className="ghost" type="button" onClick={() => setShowAccountPanel(false)}>
-                      x
+                    <button className="ghost account-close-btn" type="button" onClick={() => setShowAccountPanel(false)} aria-label={t('close')}>
+                      {'\u00D7'}
                     </button>
                     <button className="ghost" type="button" onClick={logout}>
                       {t('logout')}
@@ -103,12 +103,12 @@ function AuthSection(props) {
               ) : null}
 
               {isAuthenticated ? (
-                <div className="user-box">
+                <div className="user-box account-user-box">
                   <strong>{user.name}</strong>
-                  <span>{user.email}</span>
-                  <span>{t('activePlanLabel')}: {String(planType || 'free').toUpperCase()}</span>
-                  <span>{user.mfaEnabled ? t('mfaEnabledOn') : t('mfaDisabledOn')}</span>
-                  <div className="watch-item">
+                  <span className="account-user-email">{user.email}</span>
+                  <span className="account-user-meta">{t('activePlanLabel')}: {String(planType || 'free').toUpperCase()}</span>
+                  <span className="account-user-meta">{user.mfaEnabled ? t('mfaEnabledOn') : t('mfaDisabledOn')}</span>
+                  <div className="watch-item account-pricing-card">
                     <div>
                       <strong>{t('pricingLive')}</strong>
                       <p>Free EUR {formatEur(billingPricing.free?.monthlyEur)} | Pro EUR {formatEur(billingPricing.pro?.monthlyEur)} | Elite EUR {formatEur(billingPricing.creator?.monthlyEur)}</p>
@@ -123,7 +123,7 @@ function AuthSection(props) {
                     </div>
                   </div>
                   {billingPricingError ? <p className="error">{billingPricingError}</p> : null}
-                  <div className="item-actions">
+                  <div className="item-actions account-actions">
                     {planType === 'free' ? (
                       <button className="ghost" type="button" onClick={upgradeToPremium}>
                         {t('pricingProCta')}
@@ -149,7 +149,7 @@ function AuthSection(props) {
                   </div>
                   {mfaSetupData?.qrDataUrl ? <img src={mfaSetupData.qrDataUrl} alt="MFA QR" style={{ maxWidth: 180, borderRadius: 10 }} /> : null}
                   {mfaSetupData?.manualKey ? <p className="muted">{t('mfaManualKeyLabel')}: {mfaSetupData.manualKey}</p> : null}
-                  <label>
+                  <label className="account-mfa-input">
                     {t('mfaCode')}
                     <input value={mfaActionCode} onChange={(e) => setMfaActionCode(e.target.value.trim())} placeholder="123456" />
                   </label>
