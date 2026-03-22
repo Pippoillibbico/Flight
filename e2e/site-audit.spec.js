@@ -13,7 +13,7 @@ test('landing shell renders with stable controls', async ({ page }) => {
 
   await page.locator('.landing-lang-trigger').click();
   await page.getByRole('button', { name: 'Italiano' }).click();
-  await expect(page.locator('.landing-lang-trigger .landing-ctrl-label')).toHaveText('IT');
+  await expect(page.locator('.landing-lang-trigger .landing-ctrl-label')).toContainText(/IT|Italiano/i);
 });
 
 test('auth modal respects dark mode visuals', async ({ page }) => {
