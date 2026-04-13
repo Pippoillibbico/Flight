@@ -1,20 +1,14 @@
 import { Router } from 'express';
 import { getSaasPool } from '../lib/saas-db.js';
 import { resolveUserPlan, setUserPlan } from '../lib/plan-access.js';
-
-function parseFlag(value, fallback = false) {
-  const text = String(value ?? '')
-    .trim()
-    .toLowerCase();
-  if (!text) return fallback;
-  return ['1', 'true', 'yes', 'on'].includes(text);
-}
+import { redactUrlForLogs } from '../lib/log-redaction.js';
+import { parseFlag } from '../lib/env-flags.js';
 
 export function buildAuthSessionRouter({
   authGuard,
+  requireSessionAuth = (_req, _res, next) => next(),
   csrfGuard,
   withDb,
-  readDb,
   logAuthEvent,
   userIsLocked,
   onboardingCompleteSchema,
@@ -36,10 +30,13 @@ export function buildAuthSessionRouter({
   signAccessToken,
   speakeasy,
   QRCode,
-  mfaCodeSchema
+  mfaCodeSchema,
+  includeAccessTokenInResponse = true
 }) {
   const router = Router();
   const mockBillingUpgradesEnabled = parseFlag(process.env.ALLOW_MOCK_BILLING_UPGRADES, String(process.env.NODE_ENV || '').trim().toLowerCase() !== 'production');
+  const buildSessionResponsePayload = (accessToken, payload) =>
+    includeAccessTokenInResponse ? { token: accessToken, ...payload } : payload;
 
   async function rejectMockBillingUpgrade(req, res, route) {
     const userId = req.user?.sub || req.user?.id || null;
@@ -77,7 +74,8 @@ export function buildAuthSessionRouter({
         planType: plan.planType,
         planStatus: plan.planStatus,
         onboardingDone: Boolean(user.onboardingDone),
-        authChannel: String(user.authChannel || 'direct')
+        authChannel: String(user.authChannel || 'direct'),
+        emailVerified: Boolean(user.emailVerified)
       },
       session: {
         cookie: req.authSource === 'cookie',
@@ -91,7 +89,7 @@ export function buildAuthSessionRouter({
     });
   });
 
-  router.post('/user/onboarding/complete', authGuard, csrfGuard, async (req, res) => {
+  router.post('/user/onboarding/complete', authGuard, requireSessionAuth, csrfGuard, async (req, res) => {
     const parsed = onboardingCompleteSchema.safeParse(req.body || {});
     if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid onboarding payload.' });
 
@@ -112,7 +110,7 @@ export function buildAuthSessionRouter({
     return res.json({ ok: true, user: { onboardingDone: true, onboardingProfile: updated.onboardingProfile } });
   });
 
-  router.post('/billing/upgrade-demo', authGuard, csrfGuard, async (req, res) => {
+  router.post('/billing/upgrade-demo', authGuard, requireSessionAuth, csrfGuard, async (req, res) => {
     if (!mockBillingUpgradesEnabled) return rejectMockBillingUpgrade(req, res, '/billing/upgrade-demo');
     let user = null;
     await withDb(async (db) => {
@@ -127,7 +125,7 @@ export function buildAuthSessionRouter({
     return res.json({ ok: true, isPremium: true, planType: plan.planType, planStatus: plan.planStatus });
   });
 
-  router.post('/upgrade/pro', authGuard, csrfGuard, async (req, res) => {
+  router.post('/upgrade/pro', authGuard, requireSessionAuth, csrfGuard, async (req, res) => {
     if (!mockBillingUpgradesEnabled) return rejectMockBillingUpgrade(req, res, '/upgrade/pro');
     let user = null;
     await withDb(async (db) => {
@@ -142,7 +140,7 @@ export function buildAuthSessionRouter({
     return res.json({ ok: true, planType: plan.planType, planStatus: plan.planStatus, isPremium: true });
   });
 
-  router.post('/upgrade/elite', authGuard, csrfGuard, async (req, res) => {
+  router.post('/upgrade/elite', authGuard, requireSessionAuth, csrfGuard, async (req, res) => {
     if (!mockBillingUpgradesEnabled) return rejectMockBillingUpgrade(req, res, '/upgrade/elite');
     let user = null;
     await withDb(async (db) => {
@@ -157,7 +155,7 @@ export function buildAuthSessionRouter({
     return res.json({ ok: true, planType: plan.planType, planStatus: plan.planStatus, isPremium: true });
   });
 
-  router.post('/auth/logout', authGuard, csrfGuard, async (req, res) => {
+  router.post('/auth/logout', authGuard, requireSessionAuth, csrfGuard, async (req, res) => {
     await revokeJwt(req.user);
     const refreshCookie = getRefreshTokenFromCookie(req);
     if (refreshCookie) {
@@ -183,7 +181,7 @@ export function buildAuthSessionRouter({
     return res.status(204).send();
   });
 
-  router.delete('/auth/account', authGuard, csrfGuard, async (req, res) => {
+  router.delete('/auth/account', authGuard, requireSessionAuth, csrfGuard, async (req, res) => {
     const userId = req.user?.sub;
     if (!userId) return res.status(401).json({ error: 'Authentication required.' });
 
@@ -201,6 +199,7 @@ export function buildAuthSessionRouter({
       db.alertSubscriptions = cleanByUser(db.alertSubscriptions);
       db.notifications = cleanByUser(db.notifications);
       db.authEvents = cleanByUser(db.authEvents);
+      db.clientTelemetryEvents = cleanByUser(db.clientTelemetryEvents);
       db.outboundClicks = cleanByUser(db.outboundClicks);
       db.outboundRedirects = cleanByUser(db.outboundRedirects);
       db.refreshSessions = cleanByUser(db.refreshSessions);
@@ -304,34 +303,6 @@ export function buildAuthSessionRouter({
     const csrfCheck = refreshCsrfGuard(req, payload);
     if (!csrfCheck.ok) return sendMachineError(req, res, 403, csrfCheck.code || 'csrf_failed');
 
-    const nowSec = Math.floor(Date.now() / 1000);
-    const db = await readDb();
-    const session = (db.refreshSessions || []).find((item) => item.jti === payload.jti && item.userId === payload.sub);
-
-    if (!session || session.revokedAt || (Number.isFinite(session.exp) && session.exp <= nowSec)) {
-      if (payload.family) await revokeRefreshFamily(payload.family, 'reuse_or_invalid');
-      logger.warn(
-        {
-          request_id: req.id || null,
-          method: req.method,
-          path: req.originalUrl || req.url,
-          status: 401,
-          user_id: payload.sub || null,
-          family: payload.family || null
-        },
-        'security_refresh_reuse_or_invalid'
-      );
-      await logAuthEvent({
-        userId: payload.sub || null,
-        email: '',
-        type: 'refresh_rejected',
-        success: false,
-        req,
-        detail: 'missing/revoked/expired refresh session'
-      });
-      return res.status(401).json({ error: 'Refresh session invalidated.' });
-    }
-
     let user = null;
     await withDb(async (state) => {
       user = state.users.find((item) => item.id === payload.sub) || null;
@@ -341,27 +312,36 @@ export function buildAuthSessionRouter({
 
     const nextRefreshToken = signRefreshToken({ sub: user.id, family: payload.family, csrf: payload.csrf });
     const nextPayload = verifyRefreshToken(nextRefreshToken);
-    const rotated = await rotateRefreshSession({
+    const rotation = await rotateRefreshSession({
       oldJti: payload.jti,
       newJti: nextPayload.jti,
       userId: user.id,
       family: payload.family,
       exp: Number(nextPayload.exp || 0)
     });
-    if (!rotated) {
-      await revokeRefreshFamily(payload.family, 'reuse_detected');
+    if (!rotation.ok) {
+      await revokeRefreshFamily(payload.family, rotation.reason === 'reused' ? 'reuse_detected' : rotation.reason);
       logger.warn(
         {
           request_id: req.id || null,
           method: req.method,
-          path: req.originalUrl || req.url,
+          path: redactUrlForLogs(req.originalUrl || req.url, { maxLength: 220 }),
           status: 401,
           user_id: payload.sub || null,
-          family: payload.family || null
+          family: payload.family || null,
+          reason: rotation.reason
         },
-        'security_refresh_reuse_detected'
+        'security_refresh_rejected'
       );
-      return res.status(401).json({ error: 'Refresh token reuse detected. Session family revoked.' });
+      await logAuthEvent({
+        userId: payload.sub || null,
+        email: '',
+        type: 'refresh_rejected',
+        success: false,
+        req,
+        detail: rotation.reason
+      });
+      return res.status(401).json({ error: 'Refresh session invalidated.' });
     }
 
     const authChannel = String(payload.authChannel || user.authChannel || 'direct');
@@ -383,8 +363,7 @@ export function buildAuthSessionRouter({
       success: true,
       req
     });
-    return res.json({
-      token: accessToken,
+    return res.json(buildSessionResponsePayload(accessToken, {
       session: { cookie: true, csrfToken: payload.csrf },
       user: {
         id: user.id,
@@ -397,10 +376,10 @@ export function buildAuthSessionRouter({
         onboardingDone: Boolean(user.onboardingDone),
         authChannel
       }
-    });
+    }));
   });
 
-  router.post('/auth/mfa/setup', authGuard, csrfGuard, async (req, res) => {
+  router.post('/auth/mfa/setup', authGuard, requireSessionAuth, csrfGuard, async (req, res) => {
     let user = null;
     const issuer = process.env.MFA_ISSUER || 'FlightSuite';
     const generated = speakeasy.generateSecret({
@@ -429,7 +408,7 @@ export function buildAuthSessionRouter({
     return res.json({ qrDataUrl, manualKey: tempSecret });
   });
 
-  router.post('/auth/mfa/enable', authGuard, csrfGuard, async (req, res) => {
+  router.post('/auth/mfa/enable', authGuard, requireSessionAuth, csrfGuard, async (req, res) => {
     const parsed = mfaCodeSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid MFA code payload.' });
 
@@ -463,7 +442,7 @@ export function buildAuthSessionRouter({
     return res.json({ ok: true, mfaEnabled: true });
   });
 
-  router.post('/auth/mfa/disable', authGuard, csrfGuard, async (req, res) => {
+  router.post('/auth/mfa/disable', authGuard, requireSessionAuth, csrfGuard, async (req, res) => {
     const parsed = mfaCodeSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid MFA code payload.' });
 

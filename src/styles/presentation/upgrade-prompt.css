@@ -1,0 +1,181 @@
+.upgrade-prompt {
+  gap: 14px;
+  padding: 20px;
+  display: grid;
+}
+
+.upgrade-prompt-plan-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.upgrade-prompt-plan {
+  margin: 0;
+  border-radius: 12px;
+  border: 1px solid rgba(79, 124, 196, 0.24);
+  background: rgba(255, 255, 255, 0.62);
+  padding: 10px 12px;
+  display: grid;
+  gap: 6px;
+}
+
+.upgrade-prompt-plan-pro {
+  border-color: rgba(33, 114, 224, 0.34);
+  box-shadow: 0 6px 14px rgba(20, 79, 162, 0.08);
+}
+
+.upgrade-prompt-plan-elite {
+  border-color: rgba(226, 166, 24, 0.46);
+  background: rgba(255, 251, 236, 0.78);
+}
+
+.upgrade-prompt-plan-tag {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #2a4e84;
+}
+
+.upgrade-prompt-plan-copy {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #3d5f8d;
+}
+
+.upgrade-prompt-trust {
+  margin: 0;
+  color: #4e6f9d;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.upgrade-flow-plan-compare {
+  border: 1px solid rgba(78, 125, 199, 0.26);
+  border-radius: 12px;
+  background: rgba(241, 248, 255, 0.76);
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.upgrade-flow-compare-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #345b91;
+}
+
+.upgrade-flow-compare-grid {
+  display: grid;
+  gap: 4px;
+}
+
+.upgrade-flow-compare-head,
+.upgrade-flow-compare-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 1.2fr) repeat(3, minmax(70px, 1fr));
+  gap: 8px;
+  align-items: center;
+}
+
+.upgrade-flow-compare-head {
+  font-size: 11px;
+  font-weight: 800;
+  color: #2c4f82;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.upgrade-flow-compare-row {
+  font-size: 12px;
+  color: #3c5f8d;
+}
+
+.upgrade-flow-current-plan {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: #2c548a;
+}
+
+.upgrade-flow-trust-line {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #4a6b99;
+}
+
+.app-shell.app-dark .upgrade-prompt-plan {
+  border-color: rgba(112, 149, 204, 0.42);
+  background: rgba(24, 37, 56, 0.84);
+}
+
+.app-shell.app-dark .upgrade-prompt-plan-pro {
+  border-color: rgba(104, 166, 255, 0.52);
+  box-shadow: 0 8px 18px rgba(10, 25, 46, 0.35);
+}
+
+.app-shell.app-dark .upgrade-prompt-plan-elite {
+  border-color: rgba(240, 188, 58, 0.55);
+  background: rgba(46, 40, 24, 0.56);
+}
+
+.app-shell.app-dark .upgrade-prompt-plan-tag {
+  color: #bdd9ff;
+}
+
+.app-shell.app-dark .upgrade-prompt-plan-copy {
+  color: #c7dbf7;
+}
+
+.app-shell.app-dark .upgrade-prompt-trust {
+  color: #a7bfdf;
+}
+
+.app-shell.app-dark .upgrade-flow-plan-compare {
+  border-color: rgba(110, 148, 203, 0.4);
+  background: rgba(22, 36, 56, 0.8);
+}
+
+.app-shell.app-dark .upgrade-flow-compare-title {
+  color: #bdd7ff;
+}
+
+.app-shell.app-dark .upgrade-flow-compare-head {
+  color: #a9c8f1;
+}
+
+.app-shell.app-dark .upgrade-flow-compare-row {
+  color: #c2d8f7;
+}
+
+.app-shell.app-dark .upgrade-flow-current-plan {
+  color: #d0e3ff;
+}
+
+.app-shell.app-dark .upgrade-flow-trust-line {
+  color: #a7bfdf;
+}
+
+@media (max-width: 780px) {
+  .upgrade-prompt {
+    padding: 14px;
+  }
+
+  .upgrade-prompt-plan-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .upgrade-flow-compare-head,
+  .upgrade-flow-compare-row {
+    grid-template-columns: minmax(90px, 1.1fr) repeat(3, minmax(60px, 1fr));
+    gap: 6px;
+    font-size: 11px;
+  }
+}

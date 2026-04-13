@@ -13,6 +13,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { getOrCreateSubscription, getUserApiKeys, issueApiKey, PLANS, revokeApiKey, rotateApiKey } from '../lib/saas-db.js';
 import { appendImmutableAudit } from '../lib/audit-log.js';
+import { anonymizeIpForLogs } from '../lib/log-redaction.js';
 
 export function buildApiKeysRouter({ authGuard, csrfGuard }) {
   const router = Router();
@@ -26,7 +27,7 @@ export function buildApiKeysRouter({ authGuard, csrfGuard }) {
   const issueSchema = z.object({
     name: z.string().min(1).max(80).default('Default key'),
     scopes: z.array(z.enum(['read', 'search', 'alerts', 'export'])).min(1).default(['read', 'search'])
-  });
+  }).strict();
 
   // POST /api/keys — issue a new key
   router.post('/', authGuard, requireSessionAuth, csrfGuard, async (req, res, next) => {
@@ -39,21 +40,22 @@ export function buildApiKeysRouter({ authGuard, csrfGuard }) {
         return res.status(403).json({ error: 'upgrade_required', message: 'API keys are available only on Creator/Pro plans.' });
       }
 
-      // Enforce plan max active keys
-      const existing = await getUserApiKeys(userId);
-      const activeCount = existing.filter((k) => !k.revokedAt && !k.revoked_at).length;
-      if (activeCount >= plan.apiKeysMax) {
-        return res.status(422).json({ error: `Maximum of ${plan.apiKeysMax} active API keys for current plan.` });
+      let result;
+      try {
+        result = await issueApiKey(userId, { name, scopes, maxKeys: plan.apiKeysMax });
+      } catch (issueErr) {
+        if (issueErr.code === 'key_limit_reached') {
+          return res.status(422).json({ error: `Maximum of ${plan.apiKeysMax} active API keys for current plan.` });
+        }
+        throw issueErr;
       }
-
-      const result = await issueApiKey(userId, { name, scopes });
 
       await appendImmutableAudit({
         actor: userId,
         action: 'api_key.issued',
         target: result.id,
         metadata: { name, scopes },
-        ip: req.ip
+        ipHash: anonymizeIpForLogs(req.ip)
       }).catch(() => {});
 
       // rawKey is only returned once — never stored
@@ -93,7 +95,7 @@ export function buildApiKeysRouter({ authGuard, csrfGuard }) {
         actor: req.user.id || req.user.sub,
         action: 'api_key.revoked',
         target: id,
-        ip: req.ip
+        ipHash: anonymizeIpForLogs(req.ip)
       }).catch(() => {});
 
       return res.json({ success: true });
@@ -113,7 +115,7 @@ export function buildApiKeysRouter({ authGuard, csrfGuard }) {
         actor: req.user.id || req.user.sub,
         action: 'api_key.rotated',
         target: id,
-        ip: req.ip
+        ipHash: anonymizeIpForLogs(req.ip)
       }).catch(() => {});
 
       return res.status(201).json({

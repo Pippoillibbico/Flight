@@ -28,7 +28,7 @@ const checkoutPayloadSchema = z.object({
   planType: z.enum(['pro', 'elite']),
   paymentMethodNonce: z.string().trim().min(8),
   deviceData: z.string().trim().optional()
-});
+}).strict();
 
 function planFromStripePrice(priceId) {
   const map = {
@@ -353,7 +353,7 @@ async function handleBraintreeNotification(notification) {
   }).catch(() => {});
 }
 
-export function buildBillingRouter({ authGuard, csrfGuard }, deps = {}) {
+export function buildBillingRouter({ authGuard, requireSessionAuth = (_req, _res, next) => next(), csrfGuard }, deps = {}) {
   const router = express.Router();
   const billingProvider = resolveBillingProvider(deps.billingProvider || BILLING_PROVIDER, {
     nodeEnv: process.env.NODE_ENV
@@ -477,7 +477,7 @@ export function buildBillingRouter({ authGuard, csrfGuard }, deps = {}) {
     return res.json({ received: true });
   });
 
-  router.get('/subscription', authGuard, async (req, res, next) => {
+  router.get('/subscription', authGuard, requireSessionAuth, async (req, res, next) => {
     try {
       const sub = await getOrCreateSubscriptionSafe(req.user.id || req.user.sub);
       return res.json({
@@ -493,7 +493,7 @@ export function buildBillingRouter({ authGuard, csrfGuard }, deps = {}) {
     }
   });
 
-  router.get('/client-token', authGuard, async (req, res, next) => {
+  router.get('/client-token', authGuard, requireSessionAuth, async (req, res, next) => {
     try {
       if (billingProvider !== 'braintree') {
         return res.status(400).json({ error: 'billing_provider_not_supported', message: 'Client token endpoint is available only with Braintree.' });
@@ -517,7 +517,7 @@ export function buildBillingRouter({ authGuard, csrfGuard }, deps = {}) {
     }
   });
 
-  router.post('/checkout', authGuard, csrfGuard, async (req, res, next) => {
+  router.post('/checkout', authGuard, requireSessionAuth, csrfGuard, async (req, res, next) => {
     try {
       if (billingProvider !== 'braintree') {
         return res.status(400).json({ error: 'billing_provider_not_supported', message: 'Checkout endpoint requires Braintree provider.' });
@@ -616,7 +616,7 @@ export function buildBillingRouter({ authGuard, csrfGuard }, deps = {}) {
     }
   });
 
-  router.post('/portal', authGuard, async (_req, res) => {
+  router.post('/portal', authGuard, requireSessionAuth, csrfGuard, async (_req, res) => {
     if (billingProvider === 'braintree') {
       return res.status(501).json({
         error: 'not_implemented',

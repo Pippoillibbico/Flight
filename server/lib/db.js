@@ -11,6 +11,31 @@ const DB_DIRNAME = dirname(DB_FILE);
 const DB_CORRUPT_KEEP_MAX = Math.max(1, Number(process.env.FLIGHT_DB_CORRUPT_KEEP || 5));
 const DB_TMP_RETENTION_HOURS = Math.max(0, Number(process.env.FLIGHT_DB_TMP_RETENTION_HOURS || 24));
 const DB_TMP_RETENTION_MS = DB_TMP_RETENTION_HOURS * 60 * 60 * 1000;
+const DB_ATOMIC_RENAME_RETRIES = Math.max(0, Number(process.env.FLIGHT_DB_RENAME_RETRIES || 4));
+const DB_ATOMIC_RENAME_RETRY_DELAY_MS = Math.max(5, Number(process.env.FLIGHT_DB_RENAME_RETRY_DELAY_MS || 35));
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function waitMs(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isTransientRenameError(error) {
+  const code = String(error?.code || '').trim().toUpperCase();
+  return code === 'EPERM' || code === 'EBUSY' || code === 'EACCES' || code === 'EMFILE' || code === 'ENFILE';
+}
+
+function safePositiveInt(rawValue, fallback, { min = 1, max = Number.MAX_SAFE_INTEGER } = {}) {
+  const parsed = Number(rawValue);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min, Math.min(max, Math.trunc(parsed)));
+}
+
+const AUTH_EVENTS_RETENTION_DAYS = safePositiveInt(process.env.DATA_RETENTION_AUTH_EVENTS_DAYS, 180, { min: 7, max: 3650 });
+const CLIENT_TELEMETRY_RETENTION_DAYS = safePositiveInt(process.env.DATA_RETENTION_CLIENT_TELEMETRY_DAYS, 120, { min: 7, max: 3650 });
+const OUTBOUND_EVENTS_RETENTION_DAYS = safePositiveInt(process.env.DATA_RETENTION_OUTBOUND_EVENTS_DAYS, 180, { min: 7, max: 3650 });
+const AUTH_EVENTS_MAX_ITEMS = safePositiveInt(process.env.DATA_RETENTION_AUTH_EVENTS_MAX, 3000, { min: 100, max: 50000 });
+const CLIENT_TELEMETRY_MAX_ITEMS = safePositiveInt(process.env.DATA_RETENTION_CLIENT_TELEMETRY_MAX, 12000, { min: 100, max: 100000 });
+const OUTBOUND_EVENTS_MAX_ITEMS = safePositiveInt(process.env.DATA_RETENTION_OUTBOUND_EVENTS_MAX, 5000, { min: 100, max: 50000 });
 
 const initialData = {
   users: [],
@@ -19,6 +44,7 @@ const initialData = {
   alertSubscriptions: [],
   notifications: [],
   authEvents: [],
+  clientTelemetryEvents: [],
   outboundClicks: [],
   outboundRedirects: [],
   revokedTokens: [],
@@ -48,11 +74,35 @@ const initialData = {
   stripeWebhookEvents: [],
   radarPreferences: [],
   radarMatchSnapshots: [],
-  pushDeadLetters: []
+  pushDeadLetters: [],
+  pushSubscriptions: []
 };
 
 let queue = Promise.resolve();
 let maintenancePromise = null;
+
+function eventTimestampMs(record, dateKeys = ['at']) {
+  if (!record || typeof record !== 'object') return Number.NaN;
+  for (const key of dateKeys) {
+    const value = record?.[key];
+    if (!value) continue;
+    const parsed = new Date(value).getTime();
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return Number.NaN;
+}
+
+function pruneTimedCollection(collection, { retentionDays, maxItems, dateKeys }) {
+  const source = Array.isArray(collection) ? collection : [];
+  const cutoffMs = Date.now() - retentionDays * DAY_MS;
+  const normalized = source.filter((item) => {
+    const atMs = eventTimestampMs(item, dateKeys);
+    if (!Number.isFinite(atMs)) return false;
+    return atMs >= cutoffMs;
+  });
+  if (normalized.length <= maxItems) return normalized;
+  return normalized.slice(-maxItems);
+}
 
 function normalizeDb(parsed) {
   return {
@@ -61,9 +111,26 @@ function normalizeDb(parsed) {
     searches: parsed.searches ?? [],
     alertSubscriptions: parsed.alertSubscriptions ?? [],
     notifications: parsed.notifications ?? [],
-    authEvents: parsed.authEvents ?? [],
-    outboundClicks: parsed.outboundClicks ?? [],
-    outboundRedirects: parsed.outboundRedirects ?? [],
+    authEvents: pruneTimedCollection(parsed.authEvents, {
+      retentionDays: AUTH_EVENTS_RETENTION_DAYS,
+      maxItems: AUTH_EVENTS_MAX_ITEMS,
+      dateKeys: ['at']
+    }),
+    clientTelemetryEvents: pruneTimedCollection(parsed.clientTelemetryEvents, {
+      retentionDays: CLIENT_TELEMETRY_RETENTION_DAYS,
+      maxItems: CLIENT_TELEMETRY_MAX_ITEMS,
+      dateKeys: ['at']
+    }),
+    outboundClicks: pruneTimedCollection(parsed.outboundClicks, {
+      retentionDays: OUTBOUND_EVENTS_RETENTION_DAYS,
+      maxItems: OUTBOUND_EVENTS_MAX_ITEMS,
+      dateKeys: ['at', 'clickedAt', 'createdAt']
+    }),
+    outboundRedirects: pruneTimedCollection(parsed.outboundRedirects, {
+      retentionDays: OUTBOUND_EVENTS_RETENTION_DAYS,
+      maxItems: OUTBOUND_EVENTS_MAX_ITEMS,
+      dateKeys: ['at', 'createdAt']
+    }),
     revokedTokens: parsed.revokedTokens ?? [],
     refreshSessions: parsed.refreshSessions ?? [],
     mfaChallenges: parsed.mfaChallenges ?? [],
@@ -179,7 +246,16 @@ export async function writeDb(nextData) {
   await writeFile(tmpFile, payload);
   try {
     if (existsSync(DB_FILE)) await copyFile(DB_FILE, DB_BAK_FILE);
-    await rename(tmpFile, DB_FILE);
+    for (let attempt = 0; attempt <= DB_ATOMIC_RENAME_RETRIES; attempt += 1) {
+      try {
+        await rename(tmpFile, DB_FILE);
+        break;
+      } catch (error) {
+        const shouldRetry = isTransientRenameError(error) && attempt < DB_ATOMIC_RENAME_RETRIES;
+        if (!shouldRetry) throw error;
+        await waitMs(DB_ATOMIC_RENAME_RETRY_DELAY_MS * (attempt + 1));
+      }
+    }
   } finally {
     try {
       if (existsSync(tmpFile)) await unlink(tmpFile);

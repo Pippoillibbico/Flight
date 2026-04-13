@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createQuotaGuard } from '../server/middleware/quotaGuard.js';
+import { createQuotaGuard, requireApiScope } from '../server/middleware/quotaGuard.js';
 
 function mockRes() {
   return {
@@ -64,7 +64,7 @@ test('quotaGuard blocks when limit exceeded', async () => {
   });
   assert.equal(nextCalled, false);
   assert.equal(res.statusCode, 429);
-  assert.equal(res.body?.error, 'limit_exceeded');
+  assert.equal(res.body?.error, 'rate_limited');
 });
 
 test('quotaGuard is non-fatal in non-production on checker error', async () => {
@@ -86,3 +86,40 @@ test('quotaGuard is non-fatal in non-production on checker error', async () => {
   process.env.NODE_ENV = previous;
 });
 
+test('requireApiScope allows session-authenticated requests by default', () => {
+  const middleware = requireApiScope('read');
+  const req = { id: 'r-session-default' };
+  const res = mockRes();
+  let nextCalled = false;
+  middleware(req, res, () => {
+    nextCalled = true;
+  });
+  assert.equal(nextCalled, true);
+  assert.equal(res.statusCode, 200);
+});
+
+test('requireApiScope can block session-authenticated requests when allowSession=false', () => {
+  const middleware = requireApiScope('read', { allowSession: false });
+  const req = { id: 'r-session-blocked' };
+  const res = mockRes();
+  let nextCalled = false;
+  middleware(req, res, () => {
+    nextCalled = true;
+  });
+  assert.equal(nextCalled, false);
+  assert.equal(res.statusCode, 403);
+  assert.equal(res.body?.error, 'forbidden');
+});
+
+test('requireApiScope blocks API keys missing required scope', () => {
+  const middleware = requireApiScope('export');
+  const req = { id: 'r-api-scope', apiKeyId: 'key_1', apiScopes: ['read'] };
+  const res = mockRes();
+  let nextCalled = false;
+  middleware(req, res, () => {
+    nextCalled = true;
+  });
+  assert.equal(nextCalled, false);
+  assert.equal(res.statusCode, 403);
+  assert.equal(res.body?.error, 'forbidden');
+});

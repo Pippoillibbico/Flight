@@ -7,16 +7,11 @@ import {
   updateIngestionJob,
   upsertProviderRunState
 } from '../lib/deal-engine-store.js';
+import { parseFlag } from '../lib/env-flags.js';
 import { createProviderRegistry } from '../lib/providers/provider-registry.js';
 import { loadSeedRoutes } from '../lib/seed-routes.js';
 import { mapLimit } from '../lib/discovery-score.js';
 import { logger } from '../lib/logger.js';
-
-function parseFlag(value, fallback = false) {
-  const text = String(value ?? '').trim().toLowerCase();
-  if (!text) return fallback;
-  return ['1', 'true', 'yes', 'on'].includes(text);
-}
 
 function buildRouteSet(seedRoutes, popularRoutes, subscriptions, limit) {
   const map = new Map();

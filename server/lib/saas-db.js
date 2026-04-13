@@ -201,25 +201,27 @@ export async function getOrCreateSubscription(userId) {
     return mapPlanRowToModel(refetch.rows[0]?.plan_id || 'free', refetch.rows[0] || { user_id: userId, plan_id: 'free' });
   }
 
-  const db = await readDb();
-  const found = (db.userSubscriptions || []).find((s) => s.userId === userId);
-  if (found) return mapPlanRowToModel(found.planId, found);
-
-  const created = {
-    id: randomId(),
-    userId,
-    planId: 'free',
-    status: 'active',
-    extraCredits: 0,
-    currentPeriodStart: nowIso(),
-    currentPeriodEnd: new Date(Date.now() + 31 * 24 * 60 * 60 * 1000).toISOString(),
-    createdAt: nowIso()
-  };
-  await withDb((state) => ({
-    ...state,
-    userSubscriptions: [...(state.userSubscriptions || []), created]
-  }));
-  return mapPlanRowToModel('free', created);
+  let result = null;
+  await withDb((state) => {
+    const found = (state.userSubscriptions || []).find((s) => s.userId === userId);
+    if (found) {
+      result = mapPlanRowToModel(found.planId, found);
+      return state;
+    }
+    const created = {
+      id: randomId(),
+      userId,
+      planId: 'free',
+      status: 'active',
+      extraCredits: 0,
+      currentPeriodStart: nowIso(),
+      currentPeriodEnd: new Date(Date.now() + 31 * 24 * 60 * 60 * 1000).toISOString(),
+      createdAt: nowIso()
+    };
+    result = mapPlanRowToModel('free', created);
+    return { ...state, userSubscriptions: [...(state.userSubscriptions || []), created] };
+  });
+  return result;
 }
 
 export async function upsertSubscriptionFromStripe({
@@ -452,7 +454,7 @@ export async function checkAndIncrementQuota(userId, cost, { endpoint = 'unknown
   return result;
 }
 
-export async function issueApiKey(userId, { name = 'Default key', scopes = ['read'], quotaLimits = null } = {}) {
+export async function issueApiKey(userId, { name = 'Default key', scopes = ['read'], quotaLimits = null, maxKeys = null } = {}) {
   const sub = await getOrCreateSubscription(userId);
   const plan = PLANS[normalizePlanId(sub.planId)];
   if (plan.apiKeysMax <= 0) {
@@ -469,32 +471,75 @@ export async function issueApiKey(userId, { name = 'Default key', scopes = ['rea
   const limits = quotaLimits && typeof quotaLimits === 'object' ? quotaLimits : buildDefaultApiKeyQuota(plan.id);
 
   if (pg()) {
-    const res = await pg().query(
-      `INSERT INTO api_keys (user_id, name, key_prefix, key_hash, scopes, quota_limits, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, NOW())
-       RETURNING id, user_id, name, key_prefix, scopes, quota_limits, last_used_at, revoked_at, expires_at, created_at`,
-      [userId, name, prefix, hash, sanitizedScopes, JSON.stringify(limits)]
-    );
-    return { ...res.rows[0], rawKey: raw };
+    const client = await pg().connect();
+    try {
+      await client.query('BEGIN');
+      if (maxKeys !== null) {
+        // Advisory lock serializes all issueApiKey calls for the same user.
+        // FOR UPDATE on existing rows cannot prevent phantom inserts when the
+        // table is empty, so we use pg_advisory_xact_lock instead.
+        await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [userId]);
+        const countRes = await client.query(
+          `SELECT COUNT(*) AS cnt FROM api_keys WHERE user_id = $1 AND revoked_at IS NULL`,
+          [userId]
+        );
+        if (Number(countRes.rows[0].cnt) >= maxKeys) {
+          await client.query('ROLLBACK');
+          const err = new Error(`Maximum of ${maxKeys} active API keys for current plan.`);
+          err.status = 422;
+          err.code = 'key_limit_reached';
+          throw err;
+        }
+      }
+      const res = await client.query(
+        `INSERT INTO api_keys (user_id, name, key_prefix, key_hash, scopes, quota_limits, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())
+         RETURNING id, user_id, name, key_prefix, scopes, quota_limits, last_used_at, revoked_at, expires_at, created_at`,
+        [userId, name, prefix, hash, sanitizedScopes, JSON.stringify(limits)]
+      );
+      await client.query('COMMIT');
+      return { ...res.rows[0], rawKey: raw };
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 
-  const record = {
-    id: randomId(),
-    userId,
-    name,
-    keyPrefix: prefix,
-    keyHash: hash,
-    scopes: sanitizedScopes,
-    quotaLimits: limits,
-    lastUsedAt: null,
-    revokedAt: null,
-    expiresAt: null,
-    createdAt: nowIso()
-  };
-  await withDb((state) => ({
-    ...state,
-    apiKeys: [...(state.apiKeys || []), record]
-  }));
+  let record = null;
+  let limitError = null;
+  await withDb((state) => {
+    if (maxKeys !== null) {
+      const activeCount = (state.apiKeys || []).filter((k) => k.userId === userId && !k.revokedAt).length;
+      if (activeCount >= maxKeys) {
+        limitError = true;
+        return state;
+      }
+    }
+    record = {
+      id: randomId(),
+      userId,
+      name,
+      keyPrefix: prefix,
+      keyHash: hash,
+      scopes: sanitizedScopes,
+      quotaLimits: limits,
+      lastUsedAt: null,
+      revokedAt: null,
+      expiresAt: null,
+      createdAt: nowIso()
+    };
+    return { ...state, apiKeys: [...(state.apiKeys || []), record] };
+  });
+
+  if (limitError) {
+    const err = new Error(`Maximum of ${maxKeys} active API keys for current plan.`);
+    err.status = 422;
+    err.code = 'key_limit_reached';
+    throw err;
+  }
+
   return {
     id: record.id,
     user_id: userId,
@@ -586,15 +631,88 @@ export async function revokeApiKey(userId, keyId) {
 }
 
 export async function rotateApiKey(userId, keyId) {
-  const current = await loadApiKeyById(userId, keyId);
-  if (!current || current.revoked_at || current.revokedAt) return null;
-  const revoked = await revokeApiKey(userId, keyId);
-  if (!revoked) return null;
-  return issueApiKey(userId, {
-    name: current.name,
-    scopes: current.scopes || ['read'],
-    quotaLimits: current.quota_limits ?? current.quotaLimits ?? null
+  if (pg()) {
+    // PG path: load, revoke, issue in a transaction so no concurrent rotation
+    // can use the same keyId.
+    const client = await pg().connect();
+    try {
+      await client.query('BEGIN');
+      const existing = await client.query(
+        `SELECT id, name, scopes, quota_limits, revoked_at
+         FROM api_keys WHERE id = $1 AND user_id = $2 FOR UPDATE`,
+        [keyId, userId]
+      );
+      const current = existing.rows[0] || null;
+      if (!current || current.revoked_at) {
+        await client.query('ROLLBACK');
+        return null;
+      }
+      await client.query(
+        `UPDATE api_keys SET revoked_at = NOW() WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL`,
+        [keyId, userId]
+      );
+      const raw = `fsk_live_${randomBytes(24).toString('hex')}`;
+      const hash = hashKey(raw);
+      const prefix = `${raw.slice(0, 14)}...`;
+      const sanitizedScopes = sanitizeScopes(current.scopes || ['read']);
+      const limits = current.quota_limits ?? buildDefaultApiKeyQuota(normalizePlanId('free'));
+      const inserted = await client.query(
+        `INSERT INTO api_keys (user_id, name, key_prefix, key_hash, scopes, quota_limits, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())
+         RETURNING id, user_id, name, key_prefix, scopes, quota_limits, last_used_at, revoked_at, expires_at, created_at`,
+        [userId, current.name, prefix, hash, sanitizedScopes, JSON.stringify(limits)]
+      );
+      await client.query('COMMIT');
+      return { ...inserted.rows[0], rawKey: raw };
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  // JSON path: revoke + insert atomically inside a single withDb call.
+  let result = null;
+  await withDb((state) => {
+    const current = (state.apiKeys || []).find((k) => k.id === keyId && k.userId === userId) || null;
+    if (!current || current.revokedAt) return state;
+
+    const raw = `fsk_live_${randomBytes(24).toString('hex')}`;
+    const hash = hashKey(raw);
+    const prefix = `${raw.slice(0, 14)}...`;
+    const sanitizedScopes = sanitizeScopes(current.scopes || ['read']);
+    const limits = current.quotaLimits ?? null;
+    const newRecord = {
+      id: randomId(),
+      userId,
+      name: current.name,
+      keyPrefix: prefix,
+      keyHash: hash,
+      scopes: sanitizedScopes,
+      quotaLimits: limits,
+      lastUsedAt: null,
+      revokedAt: null,
+      expiresAt: null,
+      createdAt: nowIso()
+    };
+    result = {
+      id: newRecord.id,
+      user_id: userId,
+      name: newRecord.name,
+      key_prefix: prefix,
+      scopes: newRecord.scopes,
+      quota_limits: newRecord.quotaLimits,
+      created_at: newRecord.createdAt,
+      rawKey: raw
+    };
+    const nextKeys = (state.apiKeys || []).map((k) =>
+      k.id === keyId && k.userId === userId && !k.revokedAt ? { ...k, revokedAt: nowIso() } : k
+    );
+    nextKeys.push(newRecord);
+    return { ...state, apiKeys: nextKeys };
   });
+  return result;
 }
 
 export async function getUserUsageHistory(userId, limit = 100) {

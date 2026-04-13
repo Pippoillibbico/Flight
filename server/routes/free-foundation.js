@@ -15,17 +15,25 @@ import {
   deleteAlert
 } from '../lib/free-foundation-store.js';
 import { appendImmutableAudit } from '../lib/audit-log.js';
+import { parseCookieHeader } from '../lib/http-cookies.js';
 
 const registerSchema = z.object({
   name: z.string().trim().min(2).max(100),
   email: z.string().email(),
-  password: z.string().min(8).max(72)
-});
+  password: z
+    .string()
+    .min(10)
+    .max(64)
+    .regex(/[a-z]/, 'Password must include a lowercase letter.')
+    .regex(/[A-Z]/, 'Password must include an uppercase letter.')
+    .regex(/[0-9]/, 'Password must include a number.')
+    .regex(/[^A-Za-z0-9]/, 'Password must include a special character.')
+}).strict();
 
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8).max(72)
-});
+}).strict();
 
 const justGoSchema = z.object({
   origin: z.string().trim().length(3),
@@ -33,13 +41,13 @@ const justGoSchema = z.object({
   days: z.number().int().min(2).max(30),
   season: z.enum(['winter', 'spring', 'summer', 'autumn']),
   mood: z.enum(['relax', 'adventure', 'culture', 'nature', 'nightlife'])
-});
+}).strict();
 
 const createAlertSchema = z.object({
   origin: z.string().trim().length(3),
   destination: z.string().trim().length(3),
   target_price: z.number().positive()
-});
+}).strict();
 
 function nextUtcMidnightIso() {
   const now = new Date();
@@ -61,13 +69,7 @@ function getClientIp(req) {
 }
 
 function getDeviceId(req, res) {
-  const rawCookie = String(req.headers.cookie || '');
-  const cookies = rawCookie.split(';').reduce((acc, part) => {
-    const [k, ...rest] = part.trim().split('=');
-    if (!k) return acc;
-    acc[k] = decodeURIComponent(rest.join('=') || '');
-    return acc;
-  }, {});
+  const cookies = parseCookieHeader(req?.headers?.cookie);
   let id = String(cookies.free_device_id || '').trim();
   if (!id) {
     id = randomUUID();
@@ -127,7 +129,7 @@ function authRequired() {
 
 function limitExceeded(res, resetAt) {
   return res.status(429).json({
-    error: 'limit_exceeded',
+    error: 'rate_limited',
     reset_at: new Date(resetAt).toISOString(),
     request_id: res.req?.id || null
   });
@@ -153,11 +155,21 @@ async function getDailyCount(cache, key) {
   return Number(raw || 0);
 }
 
-export function buildFreeFoundationRouter({ corsAllowlist }) {
+export function buildFreeFoundationRouter({ corsAllowlist, legacyAuthEnabled = false, registrationEnabled = true }) {
   const router = express.Router();
   const cache = getCacheClient();
   const limits = getDefaultFreeLimits();
   const allowlist = new Set(corsAllowlist || []);
+  const legacyAuthRateLimitPerMinute = Math.max(3, Number(process.env.LEGACY_AUTH_RL_PER_MINUTE || 12));
+
+  async function consumeLegacyAuthRateLimit(req, res) {
+    const ipHash = hashIp(getClientIp(req));
+    const minuteSlot = Math.floor(Date.now() / 60000);
+    const allowed = await consumeMinuteLimit(cache, `free:rl:legacy-auth:${ipHash}:${minuteSlot}`, legacyAuthRateLimitPerMinute);
+    if (allowed) return true;
+    limitExceeded(res, nextMinuteIso());
+    return false;
+  }
 
   router.use((req, res, next) => {
     if (!ensureOriginAllowed(req, res, allowlist)) return;
@@ -166,6 +178,10 @@ export function buildFreeFoundationRouter({ corsAllowlist }) {
   });
 
   router.post('/auth/register', async (req, res) => {
+    if (!legacyAuthEnabled) return res.status(404).json({ error: 'not_found', request_id: req.id || null });
+    if (!registrationEnabled) return res.status(403).json({ error: 'registration_disabled', request_id: req.id || null });
+    if (!(await consumeLegacyAuthRateLimit(req, res))) return;
+
     const parsed = registerSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid payload.' });
 
@@ -177,7 +193,7 @@ export function buildFreeFoundationRouter({ corsAllowlist }) {
       passwordHash
     });
 
-    if (existing) return res.status(409).json({ error: 'Email already registered.' });
+    if (existing) return res.status(409).json({ error: 'email_already_exists', request_id: req.id || null });
     const token = signAccessToken({
       sub: created.id,
       email: created.email,
@@ -191,7 +207,7 @@ export function buildFreeFoundationRouter({ corsAllowlist }) {
       type: 'register',
       success: true,
       userId: created.id,
-      ip: getClientIp(req)
+      ipHash: hashIp(getClientIp(req))
     }).catch(() => {});
 
     return res.status(201).json({
@@ -202,6 +218,9 @@ export function buildFreeFoundationRouter({ corsAllowlist }) {
   });
 
   router.post('/auth/login', async (req, res) => {
+    if (!legacyAuthEnabled) return res.status(404).json({ error: 'not_found', request_id: req.id || null });
+    if (!(await consumeLegacyAuthRateLimit(req, res))) return;
+
     const parsed = loginSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid payload.' });
 
@@ -224,7 +243,7 @@ export function buildFreeFoundationRouter({ corsAllowlist }) {
       type: 'login',
       success: true,
       userId: user.id,
-      ip: getClientIp(req)
+      ipHash: hashIp(getClientIp(req))
     }).catch(() => {});
 
     return res.json({
@@ -310,15 +329,19 @@ export function buildFreeFoundationRouter({ corsAllowlist }) {
     if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid payload.' });
 
     const userId = req.freeUser.id;
-    const active = await countActiveAlerts(userId);
-    if (active >= limits.active_alert_limit) return limitExceeded(res, nextUtcMidnightIso());
-
-    const alert = await createAlert({
-      userId,
-      originIata: parsed.data.origin.toUpperCase(),
-      destinationIata: parsed.data.destination.toUpperCase(),
-      targetPrice: parsed.data.target_price
-    });
+    let alert;
+    try {
+      alert = await createAlert({
+        userId,
+        originIata: parsed.data.origin.toUpperCase(),
+        destinationIata: parsed.data.destination.toUpperCase(),
+        targetPrice: parsed.data.target_price,
+        maxAlerts: limits.active_alert_limit
+      });
+    } catch (err) {
+      if (err.code === 'alert_limit_reached') return limitExceeded(res, nextUtcMidnightIso());
+      throw err;
+    }
     await cache.lpush('free:queue:alerts:evaluate', JSON.stringify({ alertId: alert.id, userId, at: new Date().toISOString() }));
 
     appendImmutableAudit({
@@ -326,7 +349,7 @@ export function buildFreeFoundationRouter({ corsAllowlist }) {
       type: 'create',
       success: true,
       userId,
-      ip: getClientIp(req),
+      ipHash: hashIp(getClientIp(req)),
       alertId: alert.id
     }).catch(() => {});
 

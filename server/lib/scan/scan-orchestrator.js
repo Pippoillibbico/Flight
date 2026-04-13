@@ -1,13 +1,8 @@
+import { parseFlag } from '../env-flags.js';
 import { logger } from '../logger.js';
 import { runRouteSchedulerOnce } from './route-scheduler.js';
 import { createScanQueue } from './scan-queue.js';
 import { runScanWorkerOnce } from './scan-worker.js';
-
-function parseFlag(value, fallback = false) {
-  const text = String(value ?? '').trim().toLowerCase();
-  if (!text) return fallback;
-  return ['1', 'true', 'yes', 'on'].includes(text);
-}
 
 function safeInt(value, fallback, min, max) {
   const out = Number(value);

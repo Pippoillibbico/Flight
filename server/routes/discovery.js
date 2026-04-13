@@ -18,6 +18,7 @@ import { getHistoricalPrices, getRouteStats } from '../lib/price-history-store.j
 import { getPriceAlertsStore } from '../lib/price-alerts-store.js';
 import { runPriceAlertsScanOnce } from '../lib/price-alerts-notifier.js';
 import { predictPriceDirection } from '../lib/price-predictor.js';
+import { logger } from '../lib/logger.js';
 
 const MOODS = ['relax', 'adventure', 'culture', 'nature', 'nightlife'];
 const REGIONS = ['all', 'eu', 'asia', 'america', 'oceania'];
@@ -65,7 +66,7 @@ const discoverySchema = z.object({
   region: z.enum(REGIONS).default('all'),
   dateFrom: isoDateSchema,
   dateTo: isoDateSchema
-});
+}).strict();
 
 const discoverySubSchema = z.object({
   origin: iataSchema,
@@ -75,25 +76,25 @@ const discoverySubSchema = z.object({
   dateFrom: isoDateSchema,
   dateTo: isoDateSchema,
   enabled: z.boolean().optional().default(true)
-});
+}).strict();
 
 const smartOriginSchema = z.object({
   origin: iataSchema,
   limit: z.coerce.number().int().min(1).max(50).optional().default(12)
-});
+}).strict();
 
 const smartCheapestSchema = z.object({
   origin: iataSchema,
   month: z.string().trim().regex(/^\d{4}-\d{2}$/),
   limit: z.coerce.number().int().min(1).max(50).optional().default(12)
-});
+}).strict();
 
 const discoveryFeedQuerySchema = z.object({
   origin: iataSchema.optional(),
   max_price: z.coerce.number().positive().optional(),
   budget_max: z.coerce.number().positive().optional(),
   limit: z.coerce.number().int().min(1).max(60).optional().default(16)
-});
+}).strict();
 
 const whereCanIGoQuerySchema = z
   .object({
@@ -106,6 +107,7 @@ const whereCanIGoQuerySchema = z
     dateTo: isoDateSchema.optional(),
     limit: z.coerce.number().int().min(1).max(120).optional().default(24)
   })
+  .strict()
   .superRefine((value, ctx) => {
     const budget = Number(value.budget ?? value.budget_max);
     if (!Number.isFinite(budget) || budget <= 0) {
@@ -121,7 +123,7 @@ const whereCanIGoQuerySchema = z
 const trendingQuerySchema = z.object({
   origin: iataSchema.optional(),
   limit: z.coerce.number().int().min(1).max(100).optional().default(20)
-});
+}).strict();
 
 const worldMapQuerySchema = z
   .object({
@@ -132,6 +134,7 @@ const worldMapQuerySchema = z
     period_to: isoDateSchema.optional(),
     limit: z.coerce.number().int().min(1).max(120).optional().default(40)
   })
+  .strict()
   .superRefine((value, ctx) => {
     if (value.period_from && value.period_to && value.period_to < value.period_from) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['period_to'], message: 'period_to must be >= period_from.' });
@@ -146,6 +149,7 @@ const smartCalendarQuerySchema = z
     date_to: isoDateSchema.optional(),
     limit: z.coerce.number().int().min(5).max(120).optional().default(45)
   })
+  .strict()
   .superRefine((value, ctx) => {
     if (value.date_from && value.date_to && value.date_to < value.date_from) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['date_to'], message: 'date_to must be >= date_from.' });
@@ -157,17 +161,17 @@ const predictionQuerySchema = z.object({
   destination: iataSchema,
   departure_date: isoDateSchema,
   current_price: z.coerce.number().positive().optional()
-});
+}).strict();
 
 const errorFareQuerySchema = z.object({
   origin: iataSchema.optional(),
   limit: z.coerce.number().int().min(1).max(80).optional().default(20)
-});
+}).strict();
 
 const viralDealsQuerySchema = z.object({
   origin: iataSchema.optional(),
   limit: z.coerce.number().int().min(1).max(40).optional().default(12)
-});
+}).strict();
 
 const travelInspirationSchema = z.object({
   budget: z.coerce.number().positive(),
@@ -178,7 +182,7 @@ const travelInspirationSchema = z.object({
   travellers: z.coerce.number().int().min(1).max(6).optional().default(1),
   cabin_class: z.enum(CABIN_CLASSES).optional().default('economy'),
   region: z.enum(REGIONS).optional().default('all')
-});
+}).strict();
 
 const autoTripSchema = z
   .object({
@@ -191,6 +195,7 @@ const autoTripSchema = z
     cabin_class: z.enum(CABIN_CLASSES).optional().default('economy'),
     climate: z.enum(CLIMATE_PREFS).optional().default('indifferent')
   })
+  .strict()
   .superRefine((value, ctx) => {
     if (value.period_to && value.period_to < value.period_from) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['period_to'], message: 'period_to must be >= period_from.' });
@@ -218,6 +223,7 @@ const priceDropAlertCreateSchema = z
     enabled: z.boolean().optional(),
     channels: channelsSchema.optional()
   })
+  .strict()
   .superRefine((value, ctx) => {
     if (value.dateTo < value.dateFrom) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['dateTo'], message: 'dateTo must be >= dateFrom.' });
@@ -1065,7 +1071,8 @@ export function buildDiscoveryRouter({ authGuard, csrfGuard, quotaGuard, require
       const items = await priceAlertsStore.listPriceAlerts({ userId: req.user.sub });
       return res.json({ items });
     } catch (error) {
-      return res.status(500).json({ error: error?.message || 'Failed to list price drop alerts.' });
+      logger.error({ err: error, endpoint: '/api/discovery/price-drop-alerts' }, 'discovery_price_drop_alerts_list_failed');
+      return res.status(500).json({ error: 'Failed to list price drop alerts.' });
     }
   });
 
@@ -1111,7 +1118,8 @@ export function buildDiscoveryRouter({ authGuard, csrfGuard, quotaGuard, require
         }
       });
     } catch (error) {
-      return res.status(500).json({ error: error?.message || 'Failed to create price drop alert.' });
+      logger.error({ err: error, endpoint: '/api/discovery/price-drop-alerts' }, 'discovery_price_drop_alert_create_failed');
+      return res.status(500).json({ error: 'Failed to create price drop alert.' });
     }
   });
 
@@ -1127,7 +1135,8 @@ export function buildDiscoveryRouter({ authGuard, csrfGuard, quotaGuard, require
       if (!item) return res.status(404).json({ error: 'Price drop alert not found.' });
       return res.json({ item });
     } catch (error) {
-      return res.status(500).json({ error: error?.message || 'Failed to update price drop alert.' });
+      logger.error({ err: error, endpoint: '/api/discovery/price-drop-alerts/:id' }, 'discovery_price_drop_alert_update_failed');
+      return res.status(500).json({ error: 'Failed to update price drop alert.' });
     }
   });
 
@@ -1140,7 +1149,8 @@ export function buildDiscoveryRouter({ authGuard, csrfGuard, quotaGuard, require
       if (!outcome.removed) return res.status(404).json({ error: 'Price drop alert not found.' });
       return res.status(204).send();
     } catch (error) {
-      return res.status(500).json({ error: error?.message || 'Failed to delete price drop alert.' });
+      logger.error({ err: error, endpoint: '/api/discovery/price-drop-alerts/:id' }, 'discovery_price_drop_alert_delete_failed');
+      return res.status(500).json({ error: 'Failed to delete price drop alert.' });
     }
   });
 
@@ -1149,7 +1159,8 @@ export function buildDiscoveryRouter({ authGuard, csrfGuard, quotaGuard, require
       const result = await runPriceAlertsScanOnce({ limit: 500 });
       return res.json({ ok: true, result });
     } catch (error) {
-      return res.status(500).json({ error: error?.message || 'Failed to scan price drop alerts.' });
+      logger.error({ err: error, endpoint: '/api/discovery/price-drop-alerts/scan' }, 'discovery_price_drop_alert_scan_failed');
+      return res.status(500).json({ error: 'Failed to scan price drop alerts.' });
     }
   });
 

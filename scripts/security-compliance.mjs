@@ -14,6 +14,7 @@ const PORT = Number(process.env.SECURITY_COMPLIANCE_PORT || 3102);
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 const ALLOWED_ORIGIN = process.env.SECURITY_TEST_ORIGIN || 'https://app.flightsuite.test';
 const BLOCKED_ORIGIN = 'http://evil.example';
+const ADMIN_TEST_EMAIL = process.env.SECURITY_COMPLIANCE_ADMIN_EMAIL || 'compliance-admin@example.com';
 const DB_FILE = process.env.SECURITY_COMPLIANCE_DB_FILE || `data/db-security-compliance-${PORT}.json`;
 const AUDIT_LOG_FILE = process.env.SECURITY_COMPLIANCE_AUDIT_LOG_FILE || `data/audit-log-security-compliance-${PORT}.ndjson`;
 const CLEAN_DB_ARTIFACTS = String(process.env.SECURITY_COMPLIANCE_CLEAN_DB || 'true')
@@ -62,12 +63,20 @@ function requiredStrictRuntimeEnv() {
 async function waitForHealth() {
   for (let i = 0; i < 40; i += 1) {
     try {
-      const res = await fetch(`${BASE_URL}/api/health`);
+      const res = await complianceFetch(`${BASE_URL}/api/health`);
       if (res.ok) return;
     } catch {}
     await delay(300);
   }
   throw new Error('Server did not start in time for compliance checks.');
+}
+
+async function complianceFetch(url, init = {}) {
+  const headers = {
+    'x-forwarded-proto': 'https',
+    ...(init.headers || {})
+  };
+  return fetch(url, { ...init, headers });
 }
 
 function assertSafeErrorBody(payloadText) {
@@ -134,6 +143,7 @@ const child = spawn(process.execPath, ['server/index.js'], {
     FRONTEND_ORIGIN: ALLOWED_ORIGIN,
     CORS_ORIGIN: ALLOWED_ORIGIN,
     CORS_ALLOWLIST: ALLOWED_ORIGIN,
+    ADMIN_ALLOWLIST_EMAILS: ADMIN_TEST_EMAIL,
     TRUST_PROXY: process.env.TRUST_PROXY || '1',
     FLIGHT_DB_FILE: DB_FILE,
     RUN_STARTUP_TASKS: 'false',
@@ -156,10 +166,10 @@ const checks = [];
 try {
   await waitForHealth();
 
-  const healthRes = await fetch(`${BASE_URL}/api/health`);
+  const healthRes = await complianceFetch(`${BASE_URL}/api/health`);
   checks.push(createCheck('health_ok', healthRes.ok, `status=${healthRes.status}`));
 
-  const helmetRes = await fetch(`${BASE_URL}/api/health`, {
+  const helmetRes = await complianceFetch(`${BASE_URL}/api/health`, {
     headers: { Origin: ALLOWED_ORIGIN }
   });
   const cspHeader = helmetRes.headers.get('content-security-policy');
@@ -169,7 +179,7 @@ try {
   checks.push(createCheck('helmet_headers_xfo', typeof xfo === 'string' && xfo.length > 0, `x-frame-options=${xfo || 'missing'}`));
   checks.push(createCheck('helmet_csp_present_prod', Boolean(cspHeader), cspHeader ? 'present' : 'missing'));
 
-  const preflightAllowed = await fetch(`${BASE_URL}/api/health`, {
+  const preflightAllowed = await complianceFetch(`${BASE_URL}/api/health`, {
     method: 'OPTIONS',
     headers: {
       Origin: ALLOWED_ORIGIN,
@@ -193,7 +203,7 @@ try {
     )
   );
 
-  const preflightBlocked = await fetch(`${BASE_URL}/api/health`, {
+  const preflightBlocked = await complianceFetch(`${BASE_URL}/api/health`, {
     method: 'OPTIONS',
     headers: {
       Origin: BLOCKED_ORIGIN,
@@ -203,10 +213,10 @@ try {
   checks.push(createCheck('cors_preflight_blocked_origin', preflightBlocked.status === 403, `status=${preflightBlocked.status}`));
 
   let cookie = '';
-  const email = `compliance-${Date.now()}@example.com`;
-  const registerRes = await fetch(`${BASE_URL}/api/auth/register`, {
+  const email = ADMIN_TEST_EMAIL;
+  const registerRes = await complianceFetch(`${BASE_URL}/api/auth/register`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', Origin: ALLOWED_ORIGIN },
     body: JSON.stringify({ name: 'Compliance User', email, password: 'Aa!23456789' })
   });
   const registerBody = await registerRes.json();
@@ -214,53 +224,55 @@ try {
   cookie = mergeSetCookie(cookie, registerRes.headers.getSetCookie?.() || []);
   checks.push(createCheck('csrf_register_session', registerRes.status === 201 && Boolean(csrf), `status=${registerRes.status}, csrf=${csrf ? 'present' : 'missing'}`));
 
-  const csrfMissing = await fetch(`${BASE_URL}/api/notifications/read-all`, {
+  const csrfMissing = await complianceFetch(`${BASE_URL}/api/notifications/read-all`, {
     method: 'POST',
     headers: { Cookie: cookie, Origin: ALLOWED_ORIGIN }
   });
   checks.push(createCheck('csrf_enforced_missing_token', csrfMissing.status === 403, `status=${csrfMissing.status}`));
 
-  const csrfWrongOrigin = await fetch(`${BASE_URL}/api/notifications/read-all`, {
+  const csrfWrongOrigin = await complianceFetch(`${BASE_URL}/api/notifications/read-all`, {
     method: 'POST',
     headers: { Cookie: cookie, Origin: BLOCKED_ORIGIN, 'X-CSRF-Token': csrf }
   });
   checks.push(createCheck('csrf_enforced_wrong_origin', csrfWrongOrigin.status === 403, `status=${csrfWrongOrigin.status}`));
 
-  const csrfOk = await fetch(`${BASE_URL}/api/notifications/read-all`, {
+  const csrfOk = await complianceFetch(`${BASE_URL}/api/notifications/read-all`, {
     method: 'POST',
     headers: { Cookie: cookie, Origin: ALLOWED_ORIGIN, 'X-CSRF-Token': csrf }
   });
   checks.push(createCheck('csrf_enforced_valid_token', csrfOk.status === 204, `status=${csrfOk.status}`));
 
-  const refreshMissing = await fetch(`${BASE_URL}/api/auth/refresh`, {
+  const refreshMissing = await complianceFetch(`${BASE_URL}/api/auth/refresh`, {
     method: 'POST',
     headers: { Cookie: cookie }
   });
   checks.push(createCheck('refresh_requires_origin_csrf', refreshMissing.status === 403, `status=${refreshMissing.status}`));
 
-  const refreshOk = await fetch(`${BASE_URL}/api/auth/refresh`, {
+  const refreshOk = await complianceFetch(`${BASE_URL}/api/auth/refresh`, {
     method: 'POST',
     headers: { Cookie: cookie, Origin: ALLOWED_ORIGIN, 'X-CSRF-Token': csrf }
   });
   checks.push(createCheck('refresh_accepts_origin_csrf', refreshOk.status === 200, `status=${refreshOk.status}`));
 
-  const sqliAttempt = await fetch(`${BASE_URL}/api/auth/login`, {
+  const sqliAttempt = await complianceFetch(`${BASE_URL}/api/auth/login`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', Origin: ALLOWED_ORIGIN },
     body: JSON.stringify({ email: "' OR 1=1 --@example.com", password: 'anything123' })
   });
   checks.push(createCheck('pentest_sqli_login_no_500', sqliAttempt.status !== 500, `status=${sqliAttempt.status}`));
 
-  const malformedJson = await fetch(`${BASE_URL}/api/auth/login`, {
+  const malformedJson = await complianceFetch(`${BASE_URL}/api/auth/login`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', Origin: ALLOWED_ORIGIN },
     body: '{"email":"bad@example.com", "password": "Aa!23456789"'
   });
   const malformedBody = await malformedJson.text();
   checks.push(createCheck('pentest_malformed_json_no_500', malformedJson.status >= 400 && malformedJson.status < 500, `status=${malformedJson.status}`));
   checks.push(createCheck('pentest_no_stack_leak', assertSafeErrorBody(malformedBody), 'response body sanitized'));
 
-  const securityHealth = await fetch(`${BASE_URL}/api/health/security`);
+  const securityHealth = await complianceFetch(`${BASE_URL}/api/health/security`, {
+    headers: { Cookie: cookie, Origin: ALLOWED_ORIGIN }
+  });
   const securityPayload = await securityHealth.json();
   const securityChecks = Array.isArray(securityPayload?.checks) ? securityPayload.checks : [];
   const ignoredWhenBypass = STRICT_MODE ? new Set() : new Set(['runtime_config_blocking']);

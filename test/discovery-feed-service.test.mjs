@@ -899,3 +899,95 @@ test('discovery feed service can fallback to candidate deals when published feed
   assert.equal(payloadWithoutFallback.meta.candidate_fallback_used, false);
   assert.equal(payloadWithoutFallback.queries.top_offers.length, 0);
 });
+
+// ---------------------------------------------------------------------------
+// data_source transparency tests
+// ---------------------------------------------------------------------------
+
+async function createMinimalDb() {
+  const sqlite = await import('node:sqlite');
+  const db = new sqlite.DatabaseSync(':memory:');
+  db.exec(`
+    CREATE TABLE routes (id INTEGER PRIMARY KEY, origin_iata TEXT NOT NULL, destination_iata TEXT NOT NULL, distance_km INTEGER NULL);
+    CREATE TABLE flight_quotes (id INTEGER PRIMARY KEY, route_id INTEGER NOT NULL, departure_date TEXT NOT NULL, return_date TEXT NULL, trip_type TEXT NOT NULL, cabin_class TEXT NOT NULL, currency TEXT NOT NULL, stops INTEGER NULL, duration_minutes INTEGER NULL, provider TEXT NULL, origin_airport_id INTEGER NULL, destination_airport_id INTEGER NULL);
+    CREATE TABLE airports (id INTEGER PRIMARY KEY, iata_code TEXT NOT NULL, city_name TEXT NOT NULL);
+    CREATE TABLE detected_deals (id INTEGER PRIMARY KEY, deal_key TEXT NOT NULL UNIQUE, flight_quote_id INTEGER NOT NULL, route_id INTEGER NOT NULL, deal_type TEXT NOT NULL, raw_score REAL NOT NULL, final_score REAL NOT NULL, deal_score REAL NULL, opportunity_level TEXT NOT NULL, price REAL NOT NULL, baseline_price REAL NULL, savings_amount REAL NULL, savings_pct REAL NULL, status TEXT NOT NULL, score_breakdown TEXT NOT NULL, published_at TEXT NULL, expires_at TEXT NULL, source_observed_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+  `);
+  return db;
+}
+
+function withProviderEnv({ scan = '', duffel = '', amadeus = '' }, fn) {
+  const prev = { scan: process.env.FLIGHT_SCAN_ENABLED, duffel: process.env.ENABLE_PROVIDER_DUFFEL, amadeus: process.env.ENABLE_PROVIDER_AMADEUS };
+  if (scan) process.env.FLIGHT_SCAN_ENABLED = scan; else delete process.env.FLIGHT_SCAN_ENABLED;
+  if (duffel) process.env.ENABLE_PROVIDER_DUFFEL = duffel; else delete process.env.ENABLE_PROVIDER_DUFFEL;
+  if (amadeus) process.env.ENABLE_PROVIDER_AMADEUS = amadeus; else delete process.env.ENABLE_PROVIDER_AMADEUS;
+  return Promise.resolve().then(fn).finally(() => {
+    if (prev.scan === undefined) delete process.env.FLIGHT_SCAN_ENABLED; else process.env.FLIGHT_SCAN_ENABLED = prev.scan;
+    if (prev.duffel === undefined) delete process.env.ENABLE_PROVIDER_DUFFEL; else process.env.ENABLE_PROVIDER_DUFFEL = prev.duffel;
+    if (prev.amadeus === undefined) delete process.env.ENABLE_PROVIDER_AMADEUS; else process.env.ENABLE_PROVIDER_AMADEUS = prev.amadeus;
+  });
+}
+
+test('discovery feed meta.data_source is "internal" when no live providers configured', async () => {
+  const db = await createMinimalDb();
+  const service = createDiscoveryFeedService({
+    mode: 'sqlite',
+    sqliteDb: db,
+    logger: { info: () => {}, warn: () => {}, error: () => {} }
+  });
+
+  await withProviderEnv({ scan: '', duffel: '', amadeus: '' }, async () => {
+    const payload = await service.buildDiscoveryFeed({ origin: 'FCO', limit: 5 });
+    assert.equal(payload.skipped, false);
+    assert.equal(payload.meta.data_source, 'internal',
+      'data_source must be "internal" when FLIGHT_SCAN_ENABLED and provider flags are unset');
+  });
+});
+
+test('discovery feed meta.data_source is "live" when scan enabled with Duffel provider', async () => {
+  const db = await createMinimalDb();
+  const service = createDiscoveryFeedService({
+    mode: 'sqlite',
+    sqliteDb: db,
+    logger: { info: () => {}, warn: () => {}, error: () => {} }
+  });
+
+  await withProviderEnv({ scan: 'true', duffel: 'true', amadeus: '' }, async () => {
+    const payload = await service.buildDiscoveryFeed({ origin: 'FCO', limit: 5 });
+    assert.equal(payload.skipped, false);
+    assert.equal(payload.meta.data_source, 'live',
+      'data_source must be "live" when FLIGHT_SCAN_ENABLED=true and ENABLE_PROVIDER_DUFFEL=true');
+  });
+});
+
+test('discovery feed meta.data_source is "live" when scan enabled with Amadeus provider', async () => {
+  const db = await createMinimalDb();
+  const service = createDiscoveryFeedService({
+    mode: 'sqlite',
+    sqliteDb: db,
+    logger: { info: () => {}, warn: () => {}, error: () => {} }
+  });
+
+  await withProviderEnv({ scan: 'true', duffel: '', amadeus: 'true' }, async () => {
+    const payload = await service.buildDiscoveryFeed({ origin: 'FCO', limit: 5 });
+    assert.equal(payload.skipped, false);
+    assert.equal(payload.meta.data_source, 'live',
+      'data_source must be "live" when FLIGHT_SCAN_ENABLED=true and ENABLE_PROVIDER_AMADEUS=true');
+  });
+});
+
+test('discovery feed meta.data_source is "internal" when scan enabled but no provider', async () => {
+  const db = await createMinimalDb();
+  const service = createDiscoveryFeedService({
+    mode: 'sqlite',
+    sqliteDb: db,
+    logger: { info: () => {}, warn: () => {}, error: () => {} }
+  });
+
+  await withProviderEnv({ scan: 'true', duffel: '', amadeus: '' }, async () => {
+    const payload = await service.buildDiscoveryFeed({ origin: 'FCO', limit: 5 });
+    assert.equal(payload.skipped, false);
+    assert.equal(payload.meta.data_source, 'internal',
+      'data_source must be "internal" when scan is enabled but no provider flag is set');
+  });
+});

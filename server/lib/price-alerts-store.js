@@ -3,6 +3,7 @@ import pg from 'pg';
 import { mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseBoolean } from './env-flags.js';
 
 const SQLITE_DB_PATH = fileURLToPath(new URL('../../data/app.db', import.meta.url));
 
@@ -61,15 +62,6 @@ function parseChannels(raw) {
   }
 }
 
-function normalizeBoolean(value, fallback = true) {
-  if (value == null) return fallback;
-  if (typeof value === 'boolean') return value;
-  const text = String(value).trim().toLowerCase();
-  if (['1', 'true', 'yes', 'on'].includes(text)) return true;
-  if (['0', 'false', 'no', 'off'].includes(text)) return false;
-  return fallback;
-}
-
 function assertDateWindow(dateFrom, dateTo) {
   if (dateTo < dateFrom) throw new Error('Invalid date range. dateTo must be >= dateFrom.');
 }
@@ -86,7 +78,7 @@ function mapAlertRow(row) {
     max_price: Math.round(toNumber(row.max_price, 0) * 100) / 100,
     currency: normalizeCurrency(row.currency || 'EUR'),
     channels: parseChannels(row.channels_json),
-    enabled: normalizeBoolean(row.enabled, true),
+    enabled: parseBoolean(row.enabled, true),
     last_checked_at: row.last_checked_at ? new Date(row.last_checked_at).toISOString() : null,
     last_triggered_at: row.last_triggered_at ? new Date(row.last_triggered_at).toISOString() : null,
     created_at: row.created_at ? new Date(row.created_at).toISOString() : null,
@@ -317,7 +309,7 @@ export function createPriceAlertsStore(options = {}) {
     if (!Number.isFinite(safeMaxPrice) || safeMaxPrice <= 0) throw new Error('Invalid maxPrice. Expected positive number.');
     const safeCurrency = normalizeCurrency(currency);
     const safeChannels = normalizeChannels(channels);
-    const safeEnabled = normalizeBoolean(enabled, true);
+    const safeEnabled = parseBoolean(enabled, true);
 
     const id = `pa_${nanoid(12)}`;
     if (mode === 'postgres') {
@@ -371,7 +363,7 @@ export function createPriceAlertsStore(options = {}) {
       max_price: Object.hasOwn(updates, 'maxPrice') ? Math.round(toNumber(updates.maxPrice, NaN) * 100) / 100 : toNumber(existing.max_price, 0),
       currency: Object.hasOwn(updates, 'currency') ? normalizeCurrency(updates.currency) : normalizeCurrency(existing.currency || 'EUR'),
       channels_json: Object.hasOwn(updates, 'channels') ? normalizeChannels(updates.channels) : parseChannels(existing.channels_json),
-      enabled: Object.hasOwn(updates, 'enabled') ? normalizeBoolean(updates.enabled, true) : normalizeBoolean(existing.enabled, true)
+      enabled: Object.hasOwn(updates, 'enabled') ? parseBoolean(updates.enabled, true) : parseBoolean(existing.enabled, true)
     };
 
     if (!Number.isFinite(next.max_price) || next.max_price <= 0) throw new Error('Invalid maxPrice. Expected positive number.');

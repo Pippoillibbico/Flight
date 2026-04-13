@@ -91,14 +91,16 @@ function createApiError(response, payload) {
   const code = String(payload.error || '').trim();
   const friendlyMessage = String(payload.message || '').trim();
   const fallbackMessage =
-    code === 'limit_exceeded'
+    code === 'rate_limited' || code === 'limit_exceeded'
       ? 'Monthly plan limit reached. Upgrade to keep discovering opportunities.'
-      : code === 'auth_required'
+      : code === 'unauthorized' || code === 'auth_required'
       ? 'Sign in to continue.'
+      : code === 'forbidden'
+      ? 'You do not have permission to complete this action.'
       : code === 'invalid_payload'
       ? 'Check your input and try again.'
       : code === 'internal_error'
-      ? 'Si è verificato un errore interno. Riprova tra poco.'
+      ? 'An internal error occurred. Please try again in a moment.'
       : 'Request not available right now. Please try again.';
   const error = new Error(friendlyMessage || fallbackMessage);
   error.status = response.status;
@@ -154,10 +156,14 @@ async function request(path, options = {}) {
   }
 
   if (response.status === 401 && !options._retry && options.auth !== false) {
+    let refreshed = false;
     try {
       await refreshAccessToken();
-      return request(path, { ...options, _retry: true });
-    } catch {}
+      refreshed = true;
+    } catch {
+      // Refresh failed — fall through to surface the original 401 error.
+    }
+    if (refreshed) return request(path, { ...options, _retry: true });
   }
 
   if (response.status === 204) return null;
@@ -197,10 +203,10 @@ export const api = {
     return request('/health/compliance', { auth: false });
   },
   healthSecurity() {
-    return request('/health/security', { auth: false });
+    return request('/health/security');
   },
   opportunityDebug(token) {
-    return request('/system/data-status', { token, auth: false });
+    return request('/system/data-status', { token });
   },
   config() {
     return requestCached('/config', { auth: false }, 5 * 60 * 1000);
@@ -273,6 +279,12 @@ export const api = {
   funnelAnalytics(token) {
     return request('/analytics/funnel', { token });
   },
+  adminBackofficeReport(token) {
+    return request('/admin/backoffice/report', { token });
+  },
+  adminTelemetry(token, body) {
+    return request('/admin/telemetry', { method: 'POST', token, body });
+  },
   completeOnboarding(token, body) {
     return request('/user/onboarding/complete', { method: 'POST', token, body });
   },
@@ -287,6 +299,13 @@ export const api = {
     return request('/upgrade/pro', { method: 'POST', token });
   },
   upgradeElite(token) {
+    return request('/upgrade/elite', { method: 'POST', token });
+  },
+  // Aliases used by useUpgradeFlowController when billing_mock_mode is active.
+  mockUpgradePro(token) {
+    return request('/upgrade/pro', { method: 'POST', token });
+  },
+  mockUpgradeElite(token) {
     return request('/upgrade/elite', { method: 'POST', token });
   },
   async outboundReportCsv(token) {
@@ -355,6 +374,19 @@ export const api = {
   },
   runNotificationScan(token) {
     return request('/notifications/scan', { method: 'POST', token });
+  },
+  // ── Browser push (VAPID) ───────────────────────────────────
+  getVapidPublicKey() {
+    return request('/push/vapid-public-key');
+  },
+  registerPushSubscription(token, subscription) {
+    return request('/push/subscribe', { method: 'POST', token, body: subscription });
+  },
+  unregisterPushSubscription(token, endpoint) {
+    return request('/push/subscribe', { method: 'DELETE', token, body: { endpoint } });
+  },
+  listPushSubscriptions(token) {
+    return request('/push/subscriptions', { token });
   },
   // ── SaaS API keys ──────────────────────────────────────────
   listApiKeys(token) {
@@ -464,6 +496,14 @@ export const api = {
   },
   opportunityPipelineRun(token) {
     return request('/opportunities/pipeline/run', { method: 'POST', token });
+  },
+  /**
+   * Public endpoint — no auth required.
+   * Returns the runtime capability matrix so the UI can gate features correctly.
+   * Cached for 5 minutes to avoid hammering on every render.
+   */
+  systemCapabilities() {
+    return requestCached('/system/capabilities', { auth: false }, 5 * 60 * 1000);
   }
 };
 

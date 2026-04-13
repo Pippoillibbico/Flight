@@ -20,11 +20,13 @@ function SoftLoginGate(props) {
   );
 
   return (
-    <article className="opportunity-soft-gate">
+    <article className="opportunity-soft-gate soft-login-gate">
+      <p className="section-access-gate-eyebrow">Unlock full feed</p>
       <h4>{title}</h4>
       <p className="muted">{description}</p>
+      <p className="section-access-gate-note">Fast signup, no payment required for free plan.</p>
       <div className="item-actions">
-        <button type="button" onClick={onCreateAccount}>
+        <button type="button" onClick={onCreateAccount} data-testid="soft-login-gate-cta">
           {ctaLabel}
         </button>
       </div>

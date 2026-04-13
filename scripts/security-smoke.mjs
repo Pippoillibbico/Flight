@@ -5,6 +5,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 const PORT = process.env.SECURITY_TEST_PORT || '3100';
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 const ORIGIN = process.env.SECURITY_TEST_ORIGIN || 'http://localhost:5173';
+const ADMIN_TEST_EMAIL = process.env.SECURITY_TEST_ADMIN_EMAIL || 'security-admin@example.com';
 const DB_FILE = process.env.SECURITY_TEST_DB_FILE || `data/db-security-smoke-${PORT}.json`;
 const AUDIT_LOG_FILE = process.env.SECURITY_TEST_AUDIT_LOG_FILE || `data/audit-log-security-smoke-${PORT}.ndjson`;
 const CLEAN_DB_ARTIFACTS = String(process.env.SECURITY_TEST_CLEAN_DB || 'true')
@@ -59,6 +60,7 @@ const child = spawn(process.execPath, ['server/index.js'], {
     FRONTEND_ORIGIN: ORIGIN,
     CORS_ORIGIN: ORIGIN,
     CORS_ALLOWLIST: ORIGIN,
+    ADMIN_ALLOWLIST_EMAILS: ADMIN_TEST_EMAIL,
     FLIGHT_DB_FILE: DB_FILE,
     AUDIT_LOG_FILE,
     AUDIT_LOG_HMAC_KEY: process.env.AUDIT_LOG_HMAC_KEY || 'security_smoke_hmac_key_1234567890',
@@ -73,10 +75,10 @@ try {
   await waitForHealth();
   let cookie = '';
 
-  const email = `security-${Date.now()}@example.com`;
+  const email = ADMIN_TEST_EMAIL;
   const registerRes = await fetch(`${BASE_URL}/api/auth/register`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', Origin: ORIGIN },
     body: JSON.stringify({ name: 'Security Test', email, password: 'Aa!23456789' })
   });
   if (!registerRes.ok) throw new Error(`register failed: ${registerRes.status}`);
@@ -104,7 +106,9 @@ try {
   if (!refreshRes.ok) throw new Error(`refresh failed: ${refreshRes.status}`);
   cookie = mergeSetCookie(cookie, refreshRes.headers.getSetCookie?.() || []);
 
-  const securityRes = await fetch(`${BASE_URL}/api/health/security`);
+  const securityRes = await fetch(`${BASE_URL}/api/health/security`, {
+    headers: { Cookie: cookie, Origin: ORIGIN }
+  });
   if (!securityRes.ok) throw new Error(`security health failed: ${securityRes.status}`);
   const security = await securityRes.json();
   const checks = Array.isArray(security?.checks) ? security.checks : [];

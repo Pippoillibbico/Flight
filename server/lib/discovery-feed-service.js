@@ -1078,6 +1078,12 @@ export function createDiscoveryFeedService(options = {}) {
       reason: null,
       meta: {
         source: 'detected_deals',
+        // data_source tells clients whether prices come from live providers or the
+        // internal synthetic/historical dataset.  'live' requires FLIGHT_SCAN_ENABLED
+        // and at least one configured provider; otherwise 'internal'.
+        data_source: (process.env.FLIGHT_SCAN_ENABLED === 'true' &&
+          (process.env.ENABLE_PROVIDER_DUFFEL === 'true' || process.env.ENABLE_PROVIDER_AMADEUS === 'true'))
+          ? 'live' : 'internal',
         mode,
         generated_at: new Date().toISOString(),
         total_candidates: diversityPool.length,

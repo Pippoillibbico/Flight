@@ -8,13 +8,8 @@ import {
   getOpportunityPipelineStats,
   refreshOpportunityFeed
 } from '../lib/opportunity-store.js';
+import { parseFlag } from '../lib/env-flags.js';
 import { logger } from '../lib/logger.js';
-
-function parseFlag(value, fallback = false) {
-  const text = String(value ?? '').trim().toLowerCase();
-  if (!text) return fallback;
-  return ['1', 'true', 'yes', 'on'].includes(text);
-}
 
 function compactPipelineSummary(summary = {}) {
   const stats = summary?.stats && typeof summary.stats === 'object' ? summary.stats : null;

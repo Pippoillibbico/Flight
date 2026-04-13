@@ -6,6 +6,8 @@ function baseProdEnv() {
   return {
     NODE_ENV: 'production',
     JWT_SECRET: 'a'.repeat(48),
+    OUTBOUND_CLICK_SECRET: 'd'.repeat(48),
+    ALLOW_MOCK_BILLING_UPGRADES: 'false',
     AUDIT_LOG_HMAC_KEY: 'b'.repeat(32),
     INTERNAL_INGEST_TOKEN: 'c'.repeat(32),
     FRONTEND_ORIGIN: 'https://app.flightsuite.test',
@@ -16,7 +18,9 @@ function baseProdEnv() {
     BT_MERCHANT_ID: 'merchant_test',
     BT_PUBLIC_KEY: 'public_test',
     BT_PRIVATE_KEY: 'private_key_test_12345',
-    BT_ENVIRONMENT: 'sandbox'
+    BT_ENVIRONMENT: 'sandbox',
+    BT_PLAN_PRO_ID: 'plan_pro_test',
+    BT_PLAN_CREATOR_ID: 'plan_elite_test'
   };
 }
 

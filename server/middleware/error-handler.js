@@ -1,4 +1,5 @@
 import { logger } from '../lib/logger.js';
+import { redactUrlForLogs } from '../lib/log-redaction.js';
 
 const isProd = process.env.NODE_ENV === 'production';
 
@@ -10,11 +11,20 @@ export function getErrorStatus(err) {
 
 export function getErrorCode(err, status) {
   const raw = String(err?.code || err || '').trim().toLowerCase();
-  if (raw === 'limit_exceeded') return 'limit_exceeded';
-  if (raw === 'auth_required' || raw === 'auth_invalid' || raw === 'token_revoked') return 'auth_required';
+  if (raw === 'email_already_exists') return 'email_already_exists';
+  if (raw === 'registration_disabled') return 'registration_disabled';
+  if (raw === 'service_unavailable') return 'service_unavailable';
+  if (raw === 'rate_limited' || raw === 'limit_exceeded') return 'rate_limited';
+  if (raw === 'unauthorized' || raw === 'auth_required' || raw === 'auth_invalid' || raw === 'token_revoked') return 'unauthorized';
+  if (raw === 'forbidden' || raw === 'request_forbidden' || raw === 'csrf_failed' || raw === 'insufficient_scope') return 'forbidden';
+  if (raw === 'payload_too_large' || raw === 'entity.too.large') return 'payload_too_large';
   if (raw === 'invalid_payload' || raw === 'validation_failed') return 'invalid_payload';
-  if (status === 429) return 'limit_exceeded';
-  if (status === 401) return 'auth_required';
+  if (status === 503) return 'service_unavailable';
+  if (status === 409) return 'request_conflict';
+  if (status === 429) return 'rate_limited';
+  if (status === 401) return 'unauthorized';
+  if (status === 403) return 'forbidden';
+  if (status === 413) return 'payload_too_large';
   if (status === 400) return 'invalid_payload';
   if (status >= 500) return 'internal_error';
   return 'request_failed';
@@ -22,10 +32,15 @@ export function getErrorCode(err, status) {
 
 export function getHumanErrorMessage(code, fallbackMessage) {
   if (fallbackMessage && String(fallbackMessage).trim()) return String(fallbackMessage).trim();
-  if (code === 'limit_exceeded') return 'Hai raggiunto il limite mensile del tuo piano. Puoi aspettare il reset o fare upgrade.';
-  if (code === 'auth_required') return 'Sessione scaduta, accedi di nuovo.';
-  if (code === 'invalid_payload') return 'Controlla i dati inseriti e riprova.';
-  return "Ops, qualcosa e' andato storto. Riprova tra poco.";
+  if (code === 'email_already_exists') return 'An account with this email already exists.';
+  if (code === 'registration_disabled') return 'Registration is currently unavailable.';
+  if (code === 'service_unavailable') return 'Service temporarily unavailable. Please try again shortly.';
+  if (code === 'rate_limited') return 'Too many requests. Wait a moment and try again.';
+  if (code === 'unauthorized') return 'Session expired. Please sign in again.';
+  if (code === 'forbidden') return 'You do not have permission for this action.';
+  if (code === 'payload_too_large') return 'The request is too large. Reduce the data sent and try again.';
+  if (code === 'invalid_payload') return 'Check your input and try again.';
+  return 'Something went wrong. Please try again in a moment.';
 }
 
 export function buildErrorPayload(req, { status = 500, error = 'request_failed', message = '', resetAt = null } = {}) {
@@ -47,7 +62,7 @@ export function errorHandler(err, req, res, _next) {
   const logPayload = {
     request_id: req?.id || null,
     method: req?.method,
-    path: req?.originalUrl || req?.url,
+    path: redactUrlForLogs(req?.originalUrl || req?.url, { maxLength: 220 }),
     status,
     error_code: code
   };

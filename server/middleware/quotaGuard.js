@@ -1,6 +1,7 @@
 import { checkAndIncrementQuota, verifyApiKey } from '../lib/saas-db.js';
 import { readDb } from '../lib/db.js';
 import { logger } from '../lib/logger.js';
+import { anonymizeIpForLogs, redactUrlForLogs } from '../lib/log-redaction.js';
 
 const SCOPE_SET = new Set(['read', 'search', 'alerts', 'export']);
 
@@ -12,14 +13,22 @@ function humanLimitMessage(counter) {
   return 'Usage limit reached for your current plan.';
 }
 
-export function requireApiScope(scope) {
+export function requireApiScope(scope, options = {}) {
   const needed = String(scope || '').toLowerCase();
+  const allowSession = options?.allowSession !== false;
   return function _requireApiScope(req, res, next) {
-    if (!req.apiKeyId) return next();
+    if (!req.apiKeyId) {
+      if (allowSession) return next();
+      return res.status(403).json({
+        error: 'forbidden',
+        message: 'Session authentication is not allowed for this endpoint.',
+        request_id: req.id || null
+      });
+    }
     const scopes = Array.isArray(req.apiScopes) ? req.apiScopes.map((s) => String(s).toLowerCase()) : [];
     if (scopes.includes(needed)) return next();
     return res.status(403).json({
-      error: 'insufficient_scope',
+      error: 'forbidden',
       message: `This API key is missing scope "${needed}".`,
       request_id: req.id || null
     });
@@ -43,15 +52,16 @@ export function createQuotaGuard({
       const result = await checkQuota(userId, cost, {
         endpoint: req.path,
         apiKeyId: req.apiKeyId || null,
-        metadata: { method: req.method, ip: req.ip }
+        metadata: { method: req.method, ip_hash: anonymizeIpForLogs(req.ip) }
       });
 
       if (!result.allowed) {
+        const endpoint = redactUrlForLogs(req.originalUrl || req.url, { maxLength: 220 });
         logger.warn(
           {
             request_id: req.id || null,
             user_id: userId,
-            endpoint: req.originalUrl || req.url,
+            endpoint,
             status_code: 429,
             quota_counter: result.counter,
             quota_limit: result.limit,
@@ -60,7 +70,7 @@ export function createQuotaGuard({
           'quota_limit_exceeded'
         );
         return res.status(429).json({
-          error: 'limit_exceeded',
+          error: 'rate_limited',
           message: humanLimitMessage(result.counter),
           counter: result.counter,
           reset_at: result.resetAt,
@@ -73,11 +83,12 @@ export function createQuotaGuard({
       res.set('X-Quota-Used', String(result.used));
       res.set('X-Quota-Remaining', String(result.remaining));
       res.set('X-Quota-Reset', String(result.resetAt));
+      const endpoint = redactUrlForLogs(req.originalUrl || req.url, { maxLength: 220 });
       logger.info(
         {
           request_id: req.id || null,
           user_id: userId,
-          endpoint: req.originalUrl || req.url,
+          endpoint,
           status_code: 200,
           quota_counter: result.counter,
           quota_limit: result.limit,

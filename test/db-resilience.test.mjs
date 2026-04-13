@@ -16,11 +16,21 @@ function restoreEnv(snapshot) {
 }
 
 async function loadDbModuleForFile(dbFile, overrides = {}) {
-  const trackedKeys = ['FLIGHT_DB_FILE', 'FLIGHT_DB_CORRUPT_KEEP', 'FLIGHT_DB_TMP_RETENTION_HOURS'];
+  const trackedKeys = [
+    'FLIGHT_DB_FILE',
+    'FLIGHT_DB_CORRUPT_KEEP',
+    'FLIGHT_DB_TMP_RETENTION_HOURS',
+    'DATA_RETENTION_AUTH_EVENTS_DAYS',
+    'DATA_RETENTION_CLIENT_TELEMETRY_DAYS',
+    'DATA_RETENTION_OUTBOUND_EVENTS_DAYS'
+  ];
   const snapshot = snapshotEnv(trackedKeys);
   process.env.FLIGHT_DB_FILE = dbFile;
   process.env.FLIGHT_DB_CORRUPT_KEEP = String(overrides.corruptKeep ?? 5);
   process.env.FLIGHT_DB_TMP_RETENTION_HOURS = String(overrides.tmpRetentionHours ?? 24);
+  process.env.DATA_RETENTION_AUTH_EVENTS_DAYS = String(overrides.authRetentionDays ?? 180);
+  process.env.DATA_RETENTION_CLIENT_TELEMETRY_DAYS = String(overrides.telemetryRetentionDays ?? 120);
+  process.env.DATA_RETENTION_OUTBOUND_EVENTS_DAYS = String(overrides.outboundRetentionDays ?? 180);
   const cacheBust = `${Date.now()}_${Math.random()}`;
   const mod = await import(`../server/lib/db.js?db_test=${cacheBust}`);
   return {
@@ -95,6 +105,60 @@ test('readDb applies retention policy for tmp and corrupt artifacts', async () =
 
     assert.deepEqual(remainingCorrupt, ['db.json.corrupt-1002', 'db.json.corrupt-1003']);
     assert.equal(remainingTmp.length, 0);
+  } finally {
+    restore();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('readDb prunes aged auth/telemetry/outbound events by retention policy', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'flight-db-data-retention-'));
+  const dbFile = join(dir, 'db.json');
+  const oldIso = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000).toISOString();
+  const freshIso = new Date().toISOString();
+  await writeFile(
+    dbFile,
+    JSON.stringify(
+      {
+        authEvents: [
+          { id: 'auth_old', at: oldIso, type: 'login_success', success: true },
+          { id: 'auth_new', at: freshIso, type: 'login_success', success: true }
+        ],
+        clientTelemetryEvents: [
+          { id: 'tel_old', at: oldIso, eventType: 'itinerary_opened' },
+          { id: 'tel_new', at: freshIso, eventType: 'itinerary_opened' }
+        ],
+        outboundClicks: [
+          { id: 'out_old', at: oldIso, eventName: 'booking_clicked' },
+          { id: 'out_new', at: freshIso, eventName: 'booking_clicked' }
+        ],
+        outboundRedirects: [
+          { id: 'redir_old', at: oldIso, eventName: 'outbound_redirect_succeeded' },
+          { id: 'redir_new', at: freshIso, eventName: 'outbound_redirect_succeeded' }
+        ]
+      },
+      null,
+      2
+    ),
+    'utf8'
+  );
+
+  const { mod, restore } = await loadDbModuleForFile(dbFile, {
+    authRetentionDays: 30,
+    telemetryRetentionDays: 30,
+    outboundRetentionDays: 30
+  });
+
+  try {
+    const db = await mod.readDb();
+    assert.equal(db.authEvents.length, 1);
+    assert.equal(db.authEvents[0]?.id, 'auth_new');
+    assert.equal(db.clientTelemetryEvents.length, 1);
+    assert.equal(db.clientTelemetryEvents[0]?.id, 'tel_new');
+    assert.equal(db.outboundClicks.length, 1);
+    assert.equal(db.outboundClicks[0]?.id, 'out_new');
+    assert.equal(db.outboundRedirects.length, 1);
+    assert.equal(db.outboundRedirects[0]?.id, 'redir_new');
   } finally {
     restore();
     await rm(dir, { recursive: true, force: true });

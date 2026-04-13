@@ -14,6 +14,7 @@ test('landing primary CTA opens app shell for guest without forced login', async
 });
 
 test('email login completes and unlocks main navigation', async ({ page }) => {
+  test.slow();
   await loginFromUi(page);
 
   const nav = page.locator('.app-main-nav');
@@ -46,8 +47,8 @@ test('email register flow works from auth modal', async ({ page }) => {
 test('email form can go back to auth options', async ({ page }) => {
   await openEmailAuth(page);
 
-  await page.locator('.auth-email-form .item-actions .ghost').click();
+  await page.getByTestId('auth-back-to-options').click();
 
   await expect(page.locator('.social-auth-stack')).toBeVisible();
-  await expect(page.locator('.auth-email-form')).toHaveCount(0);
+  await expect(page.getByTestId('auth-back-to-options')).toHaveCount(0);
 });

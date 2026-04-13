@@ -23,6 +23,8 @@ export function buildSystemRouter({
   getRuntimeConfigAudit,
   evaluateStartupReadiness,
   authGuard = (_req, _res, next) => next(),
+  requireSessionAuth = (_req, _res, next) => next(),
+  adminGuard = (_req, _res, next) => next(),
   csrfGuard = (_req, _res, next) => next(),
   requireApiScope = () => (_req, _res, next) => next(),
   quotaGuard = () => (_req, _res, next) => next(),
@@ -141,6 +143,99 @@ export function buildSystemRouter({
     res.json(audit);
   });
 
+  /**
+   * Runtime capability matrix — source of truth for UI gating and diagnostics.
+   *
+   * Each entry:
+   *   status: 'active' | 'configured_not_active' | 'disabled' | 'mock_only'
+   *   reason: human-readable explanation when not active
+   *
+   * Public endpoint (no auth required) — safe because all values are derived
+   * from env flags, not secrets. No credentials are exposed.
+   */
+  router.get('/api/system/capabilities', (_req, res) => {
+    const env = process.env;
+    const parseFlag = (v, def = false) => {
+      if (v === undefined || v === null || v === '') return def;
+      return ['true', '1', 'yes'].includes(String(v).trim().toLowerCase());
+    };
+    const hasValue = (v, min = 4) => String(v || '').trim().length >= min;
+    const notPlaceholder = (v) =>
+      !['replace-with', 'example.com', 'changeme', 'your-', 'todo'].some((p) =>
+        String(v || '').toLowerCase().includes(p)
+      );
+    const ready = (v, min = 4) => hasValue(v, min) && notPlaceholder(v);
+
+    const smtpReady = ready(env.SMTP_HOST) && ready(env.SMTP_USER) && ready(env.SMTP_PASS);
+    const googleReady = ready(env.GOOGLE_CLIENT_ID) || ready(env.GOOGLE_CLIENT_IDS);
+    const appleReady = ready(env.APPLE_CLIENT_ID) || ready(env.APPLE_CLIENT_IDS);
+    const facebookReady = ready(env.FACEBOOK_CLIENT_ID) || ready(env.FACEBOOK_CLIENT_IDS);
+    const openaiReady = ready(env.OPENAI_API_KEY, 8);
+    const anthropicReady = ready(env.ANTHROPIC_API_KEY, 8);
+    const aiReady = openaiReady || anthropicReady;
+    const stripeReady = ready(env.STRIPE_SECRET_KEY, 16);
+    const braintreeReady = ready(env.BT_MERCHANT_ID) && ready(env.BT_PUBLIC_KEY) && ready(env.BT_PRIVATE_KEY);
+    const billingProvider = String(env.BILLING_PROVIDER || 'braintree').trim().toLowerCase();
+    const billingReady = billingProvider === 'stripe' ? stripeReady : braintreeReady;
+    const duffelEnabled = parseFlag(env.ENABLE_PROVIDER_DUFFEL);
+    const amadeusEnabled = parseFlag(env.ENABLE_PROVIDER_AMADEUS);
+    const duffelReady = duffelEnabled && ready(env.DUFFEL_API_KEY, 8);
+    const amadeusReady = amadeusEnabled && ready(env.AMADEUS_CLIENT_ID) && ready(env.AMADEUS_CLIENT_SECRET);
+    const liveProvidersReady = duffelReady || amadeusReady;
+    const flightScanEnabled = parseFlag(env.FLIGHT_SCAN_ENABLED);
+    const pushReady = ready(env.PUSH_WEBHOOK_URL, 10);
+    const vapidReady = ready(env.VAPID_PUBLIC_KEY, 40) && ready(env.VAPID_PRIVATE_KEY, 30);
+    const searchHistoryEnabled = parseFlag(env.SEARCH_HISTORY_PERSIST_ENABLED);
+    const allowMockBilling = parseFlag(env.ALLOW_MOCK_BILLING_UPGRADES);
+    const dbReady = ready(env.DATABASE_URL, 10);
+    const cacheReady = ready(env.REDIS_URL, 10);
+
+    const cap = (active, reason = null) => ({ active: Boolean(active), reason: active ? null : reason });
+
+    res.json({
+      generated_at: new Date().toISOString(),
+      capabilities: {
+        // Data infrastructure
+        database_postgres:    cap(dbReady,    'DATABASE_URL not configured — using JSON file store'),
+        cache_redis:          cap(cacheReady, 'REDIS_URL not configured — using in-memory cache'),
+
+        // Flight data
+        live_flight_providers: cap(liveProvidersReady, 'No live provider configured (ENABLE_PROVIDER_DUFFEL or ENABLE_PROVIDER_AMADEUS with credentials)'),
+        flight_scan:           cap(flightScanEnabled && liveProvidersReady, flightScanEnabled ? 'Flight scan enabled but no live provider configured' : 'FLIGHT_SCAN_ENABLED=false'),
+        data_source:           liveProvidersReady ? 'live' : 'synthetic',
+
+        // AI features
+        ai_features:           cap(aiReady, 'No AI API key configured (OPENAI_API_KEY or ANTHROPIC_API_KEY)'),
+        ai_provider:           openaiReady ? 'openai' : anthropicReady ? 'anthropic' : null,
+
+        // Billing
+        billing:               cap(billingReady, `Billing provider '${billingProvider}' credentials not configured`),
+        billing_provider:      billingProvider,
+        billing_mock_mode:     allowMockBilling,
+
+        // Communications
+        email_smtp:            cap(smtpReady,   'SMTP_HOST/USER/PASS not configured — emails not sent, accounts auto-verified'),
+        push_notifications:    cap(pushReady || vapidReady, 'Neither PUSH_WEBHOOK_URL nor VAPID keys configured — alerts saved to dead-letter only'),
+        vapid_push:            cap(vapidReady,  'VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY not configured — browser push not available'),
+        push_webhook:          cap(pushReady,   'PUSH_WEBHOOK_URL not configured'),
+
+        // Auth / OAuth
+        oauth_google:    cap(googleReady,   'GOOGLE_CLIENT_ID not configured'),
+        oauth_apple:     cap(appleReady,    'APPLE_CLIENT_ID not configured'),
+        oauth_facebook:  cap(facebookReady, 'FACEBOOK_CLIENT_ID not configured'),
+        email_verification: cap(smtpReady,  'SMTP not configured — new accounts are auto-verified'),
+
+        // User features
+        search_history_persist: cap(searchHistoryEnabled, 'SEARCH_HISTORY_PERSIST_ENABLED not set — searches not stored'),
+        data_export:            cap(true, null), // always available, quota-gated per plan
+
+        // Booking
+        booking_handoff_mode: 'redirect', // always redirect, never internal booking
+        booking_partner_configured: cap(ready(env.BOOKING_BASE_URL, 10), 'BOOKING_BASE_URL not configured — booking redirects disabled')
+      }
+    });
+  });
+
   router.get('/api/health/compliance', (_req, res) => {
     res.json({
       ok: true,
@@ -154,7 +249,7 @@ export function buildSystemRouter({
     });
   });
 
-  router.get('/api/health/security', async (_req, res) => {
+  router.get('/api/health/security', authGuard, requireSessionAuth, adminGuard, async (_req, res) => {
     const db = await readDb();
     const auditChain = await verifyImmutableAudit();
     const runtimeAudit = getRuntimeConfigAudit();
@@ -232,7 +327,7 @@ export function buildSystemRouter({
     });
   });
 
-  router.get('/api/health/deploy-readiness', (_req, res) => {
+  router.get('/api/health/deploy-readiness', authGuard, requireSessionAuth, adminGuard, (_req, res) => {
     const startupReadiness = evaluateStartupReadiness();
     const runtimeAudit = startupReadiness.runtimeAudit;
     return res.status(startupReadiness.ok ? 200 : 503).json({
@@ -248,7 +343,7 @@ export function buildSystemRouter({
     });
   });
 
-  router.get('/api/system/data-status', async (_req, res) => {
+  router.get('/api/system/data-status', authGuard, requireSessionAuth, adminGuard, async (_req, res) => {
     const base = await getDataFoundationStatus();
     const opportunityPipeline = (await getOpportunityPipelineStats?.()) || null;
     const providers = providerRegistry?.listProviders?.() || [];
@@ -265,7 +360,7 @@ export function buildSystemRouter({
   });
 
   // Backward-compatible alias used by older frontend clients.
-  router.get('/api/system/opportunity-debug', async (_req, res) => {
+  router.get('/api/system/opportunity-debug', authGuard, requireSessionAuth, adminGuard, async (_req, res) => {
     try {
       if (typeof getOpportunityIntelligenceDebugStats === 'function') {
         const payload = await getOpportunityIntelligenceDebugStats();
@@ -280,7 +375,7 @@ export function buildSystemRouter({
     }
   });
 
-  router.get('/api/health/observability', async (_req, res) => {
+  router.get('/api/health/observability', authGuard, requireSessionAuth, adminGuard, async (_req, res) => {
     const opportunityPipeline = (await getOpportunityPipelineStats?.()) || null;
     const providerRuntime = providerRegistry?.runtimeStats?.() || providerRegistry?.listProviders?.() || [];
     const scanStatus = (await getFlightScanStatus?.()) || null;
@@ -318,15 +413,31 @@ export function buildSystemRouter({
     });
   });
 
-  router.get('/api/system/flight-scan/status', authGuard, requireApiScope('read'), quotaGuard({ counter: 'read', amount: 1 }), async (_req, res) => {
+  router.get(
+    '/api/system/flight-scan/status',
+    authGuard,
+    requireSessionAuth,
+    adminGuard,
+    requireApiScope('read'),
+    quotaGuard({ counter: 'read', amount: 1 }),
+    async (_req, res) => {
     const status = await getFlightScanStatus();
     return res.status(status?.ok === false ? 503 : 200).json({
       enabled: Boolean(FLIGHT_SCAN_ENABLED),
       ...status
     });
-  });
+    }
+  );
 
-  router.post('/api/system/flight-scan/scheduler/run', authGuard, csrfGuard, requireApiScope('alerts'), quotaGuard({ counter: 'alerts', amount: 1 }), async (_req, res) => {
+  router.post(
+    '/api/system/flight-scan/scheduler/run',
+    authGuard,
+    requireSessionAuth,
+    adminGuard,
+    csrfGuard,
+    requireApiScope('alerts'),
+    quotaGuard({ counter: 'alerts', amount: 1 }),
+    async (_req, res) => {
     if (typeof runFlightScanSchedulerOnce !== 'function') {
       return res.status(503).json({ error: 'scanner_not_configured' });
     }
@@ -337,9 +448,18 @@ export function buildSystemRouter({
       logger.error({ err: error }, 'flight_scan_scheduler_manual_run_failed');
       return res.status(500).json({ error: 'internal_error' });
     }
-  });
+    }
+  );
 
-  router.post('/api/system/flight-scan/worker/run', authGuard, csrfGuard, requireApiScope('alerts'), quotaGuard({ counter: 'alerts', amount: 1 }), async (_req, res) => {
+  router.post(
+    '/api/system/flight-scan/worker/run',
+    authGuard,
+    requireSessionAuth,
+    adminGuard,
+    csrfGuard,
+    requireApiScope('alerts'),
+    quotaGuard({ counter: 'alerts', amount: 1 }),
+    async (_req, res) => {
     if (typeof runFlightScanWorkerOnce !== 'function') {
       return res.status(503).json({ error: 'scanner_not_configured' });
     }
@@ -350,9 +470,18 @@ export function buildSystemRouter({
       logger.error({ err: error }, 'flight_scan_worker_manual_run_failed');
       return res.status(500).json({ error: 'internal_error' });
     }
-  });
+    }
+  );
 
-  router.post('/api/system/flight-scan/run', authGuard, csrfGuard, requireApiScope('alerts'), quotaGuard({ counter: 'alerts', amount: 1 }), async (_req, res) => {
+  router.post(
+    '/api/system/flight-scan/run',
+    authGuard,
+    requireSessionAuth,
+    adminGuard,
+    csrfGuard,
+    requireApiScope('alerts'),
+    quotaGuard({ counter: 'alerts', amount: 1 }),
+    async (_req, res) => {
     if (typeof runFlightScanCycleOnce !== 'function') {
       return res.status(503).json({ error: 'scanner_not_configured' });
     }
@@ -367,7 +496,8 @@ export function buildSystemRouter({
       logger.error({ err: error }, 'flight_scan_cycle_manual_run_failed');
       return res.status(500).json({ error: 'internal_error' });
     }
-  });
+    }
+  );
 
   return router;
 }

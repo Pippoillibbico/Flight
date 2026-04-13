@@ -1,5 +1,5 @@
 import { expect, test } from './helpers/guarded-test';
-import { bootLanding, createDefaultState, loginFromUi } from './helpers/app-test-kit';
+import { bootLanding, createDefaultState, ensureHomeSection, loginFromUi } from './helpers/app-test-kit';
 
 function parseRgb(value) {
   const match = String(value || '').match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
@@ -27,6 +27,7 @@ function contrastRatio(a, b) {
 test.beforeEach(async ({ page }) => {
   await bootLanding(page, createDefaultState());
   await loginFromUi(page);
+  await ensureHomeSection(page);
 });
 
 test('home renders real feed and clusters without empty-state fallback', async ({ page }) => {

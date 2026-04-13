@@ -1,4 +1,5 @@
 import { createIngestionJob, findRecentRunningIngestionJob, updateIngestionJob } from '../lib/deal-engine-store.js';
+import { parseFlag } from '../lib/env-flags.js';
 import { logger } from '../lib/logger.js';
 import { bootstrapFlightQuotesFromPublishedOpportunities } from '../lib/quote-bootstrap.js';
 import { refreshRoutePriceStats } from '../lib/route-price-stats-service.js';
@@ -9,12 +10,6 @@ function normalizeRouteId(value) {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed <= 0) return null;
   return parsed;
-}
-
-function parseFlag(value, fallback = false) {
-  const text = String(value ?? '').trim().toLowerCase();
-  if (!text) return fallback;
-  return ['1', 'true', 'yes', 'on'].includes(text);
 }
 
 function shouldBootstrap({ refreshResult, routeId, enabled }) {

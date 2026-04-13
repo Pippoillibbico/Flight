@@ -87,6 +87,45 @@ test('system router exposes /api/system/data-status', async () => {
   });
 });
 
+test('system router protects sensitive status endpoints with admin guard', async () => {
+  const app = express();
+  app.use(
+    buildSystemRouter({
+      BUILD_VERSION: 'test-version',
+      pgPool: null,
+      getPriceDatasetStatus: async () => ({ routes: 1 }),
+      logger: { error: () => {}, warn: () => {}, info: () => {} },
+      getCacheClient: () => ({ ping: async () => 'PONG' }),
+      readDb: async () => ({ revokedTokens: [], refreshSessions: [], oauthSessions: [] }),
+      verifyImmutableAudit: async () => ({ ok: true, count: 0 }),
+      createAuditCheck: (id, label, ok, detail) => ({ id, label, ok, detail }),
+      CORS_ALLOWLIST: new Set(['http://localhost:5173']),
+      LOGIN_MAX_FAILURES: 5,
+      LOGIN_LOCK_MINUTES: 15,
+      runFeatureAudit: () => ({ ok: true }),
+      getDataFoundationStatus: async () => ({
+        ok: true,
+        mode: 'sqlite',
+        totals: { priceObservations: 2, routeBaselines: 1, routeCoverageStats: 1, activeSubscriptions: 1 },
+        coverage: { high: 1, medium: 0, low: 0, veryLow: 0 }
+      }),
+      providerRegistry: { listProviders: () => [{ name: 'duffel', configured: true }, { name: 'amadeus', configured: false }] },
+      authGuard: (req, _res, next) => {
+        req.user = { sub: 'u1', email: 'user@example.com' };
+        next();
+      },
+      adminGuard: (_req, res) => res.status(403).json({ error: 'admin_access_denied' })
+    })
+  );
+
+  await withServer(app, async (baseUrl) => {
+    const res = await fetch(`${baseUrl}/api/system/data-status`);
+    assert.equal(res.status, 403);
+    const body = await res.json();
+    assert.equal(body.error, 'admin_access_denied');
+  });
+});
+
 test('system router exposes /api/health/observability', async () => {
   const app = express();
   app.use(
@@ -161,6 +200,8 @@ test('system router exposes flight scan status and manual run endpoints', async 
       getRuntimeConfigAudit: () => ({ checks: [], summary: { blockingFailed: 0 }, blockingFailedKeys: [] }),
       evaluateStartupReadiness: () => ({ ok: true, summary: { policy: { blockingFailed: 0 } }, runtimeAudit: { checks: [] } }),
       authGuard: (_req, _res, next) => next(),
+      requireSessionAuth: (_req, _res, next) => next(),
+      adminGuard: (_req, _res, next) => next(),
       csrfGuard: (_req, _res, next) => next(),
       requireApiScope: () => (_req, _res, next) => next(),
       quotaGuard: () => (_req, _res, next) => next(),
@@ -213,6 +254,58 @@ test('system router exposes flight scan status and manual run endpoints', async 
   assert.equal(schedulerRuns, 1);
   assert.equal(workerRuns, 1);
   assert.equal(cycleRuns, 1);
+});
+
+test('system router rejects non-admin access to flight scan operational endpoints', async () => {
+  const app = express();
+  app.use(express.json());
+  app.use(
+    buildSystemRouter({
+      BUILD_VERSION: 'test-version',
+      pgPool: null,
+      getPriceDatasetStatus: async () => ({ routes: 1 }),
+      logger: { error: () => {}, warn: () => {}, info: () => {} },
+      getCacheClient: () => ({ ping: async () => 'PONG' }),
+      readDb: async () => ({ revokedTokens: [], refreshSessions: [], oauthSessions: [] }),
+      verifyImmutableAudit: async () => ({ ok: true, count: 0 }),
+      createAuditCheck: (id, label, ok, detail) => ({ id, label, ok, detail }),
+      CORS_ALLOWLIST: new Set(['http://localhost:5173']),
+      LOGIN_MAX_FAILURES: 5,
+      LOGIN_LOCK_MINUTES: 15,
+      RL_AUTH_PER_MINUTE: 15,
+      runFeatureAudit: () => ({ ok: true }),
+      getDataFoundationStatus: async () => ({
+        ok: true,
+        mode: 'sqlite',
+        totals: { priceObservations: 2, routeBaselines: 1, routeCoverageStats: 1, activeSubscriptions: 1 },
+        coverage: { high: 1, medium: 0, low: 0, veryLow: 0 }
+      }),
+      providerRegistry: { listProviders: () => [] },
+      authGuard: (_req, _res, next) => next(),
+      requireSessionAuth: (_req, _res, next) => next(),
+      adminGuard: (_req, res) => res.status(403).json({ error: 'admin_access_denied' }),
+      csrfGuard: (_req, _res, next) => next(),
+      requireApiScope: () => (_req, _res, next) => next(),
+      quotaGuard: () => (_req, _res, next) => next(),
+      FLIGHT_SCAN_ENABLED: true,
+      getFlightScanStatus: async () => ({ ok: true, queue: { pending: 3 } }),
+      runFlightScanSchedulerOnce: async () => ({ skipped: false }),
+      runFlightScanWorkerOnce: async () => ({ skipped: false }),
+      runFlightScanCycleOnce: async () => ({ skipped: false })
+    })
+  );
+
+  await withServer(app, async (baseUrl) => {
+    const statusRes = await fetch(`${baseUrl}/api/system/flight-scan/status`);
+    assert.equal(statusRes.status, 403);
+    const statusBody = await statusRes.json();
+    assert.equal(statusBody.error, 'admin_access_denied');
+
+    const runRes = await fetch(`${baseUrl}/api/system/flight-scan/run`, { method: 'POST' });
+    assert.equal(runRes.status, 403);
+    const runBody = await runRes.json();
+    assert.equal(runBody.error, 'admin_access_denied');
+  });
 });
 
 test('search router sets cache headers on public config endpoints', async () => {

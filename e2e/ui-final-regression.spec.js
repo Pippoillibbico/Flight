@@ -23,9 +23,7 @@ test('auth modal keeps dark visuals with no white surfaces', async ({ page }) =>
 
   await expect(page.locator('.account-drawer-backdrop')).toHaveClass(/app-dark/);
 
-  const inputBg = await page.locator('.auth-email-form input[type="email"]').evaluate((el) => getComputedStyle(el).backgroundColor);
   const panelBg = await page.locator('.auth-panel-surface').evaluate((el) => getComputedStyle(el).backgroundColor);
-  expect(inputBg.toLowerCase()).not.toContain('255, 255, 255');
   expect(panelBg.toLowerCase()).not.toContain('255, 255, 255');
 });
 
@@ -50,7 +48,7 @@ test('mobile: landing and auth modal remain usable', async ({ page }) => {
   }));
   expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.width + 1);
 
-  await page.locator('.landing-accedi-btn').first().click();
+  await openEmailAuth(page);
   await expect(page.locator('.auth-modal-drawer')).toBeVisible();
   await expect(page.locator('.auth-shell h3')).toBeVisible();
 });

@@ -5,7 +5,10 @@ import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import { buildBookingLink } from './flight-engine.js';
 import { listPriceObservationsSince, scoreDeal } from './deal-engine-store.js';
+import { parseFlag } from './env-flags.js';
 import { getCacheClient } from './free-cache.js';
+import { extractJsonObject, resolveOpportunityEnrichmentPayload } from './ai-output-guards.js';
+import { sanitizeFollowMetadata } from './follow-metadata.js';
 import { ORIGINS, ROUTES } from '../data/local-flight-data.js';
 import { scoreOpportunityCandidate } from './opportunity-scoring.js';
 
@@ -276,7 +279,7 @@ function parseBaggageIncluded(value) {
   if (value === true || value === false) return value;
   const text = normalizeText(value);
   if (!text) return null;
-  if (['1', 'true', 'yes', 'included', 'incl', 'si', 'sì'].includes(text)) return true;
+  if (['1', 'true', 'yes', 'included', 'incl', 'si', 's\u00ec'].includes(text)) return true;
   if (['0', 'false', 'no', 'excluded', 'none'].includes(text)) return false;
   return null;
 }
@@ -284,7 +287,7 @@ function parseBaggageIncluded(value) {
 function buildAiCopy(row) {
   const level =
     row.opportunity_level === 'Rare opportunity'
-      ? 'Opportunita rara'
+      ? 'Opportunit\u00e0 rara'
       : row.opportunity_level === 'Exceptional price'
       ? 'Prezzo eccezionale'
       : row.opportunity_level === 'Great deal'
@@ -296,9 +299,9 @@ function buildAiCopy(row) {
     : `partenza ${row.depart_date}`;
 
   const aiTitle = `${level}: ${row.origin_airport} -> ${row.destination_city} a ${Math.round(row.price)} ${row.currency}`;
-  const aiDescription = `Questa opportunita combina prezzo competitivo, rotta ${row.stops === 0 ? 'diretta' : `con ${row.stops} scalo`} e finestra viaggio ${period}.`;
+  const aiDescription = `Questa opportunit\u00e0 combina prezzo competitivo, rotta ${row.stops === 0 ? 'diretta' : `con ${row.stops} scalo`} e finestra viaggio ${period}.`;
   const notificationText = `${level}: ${row.origin_airport} -> ${row.destination_airport} da ${Math.round(row.price)} ${row.currency}.`;
-  const whyItMatters = `Score ${row.final_score}/100 con prezzo ${Math.round(row.price)} ${row.currency} e qualita itinerario verificata.`;
+  const whyItMatters = `Score ${row.final_score}/100 con prezzo ${Math.round(row.price)} ${row.currency} e qualit\u00e0 itinerario verificata.`;
 
   return {
     aiTitle: aiTitle.slice(0, 180),
@@ -308,24 +311,8 @@ function buildAiCopy(row) {
   };
 }
 
-function extractJsonObject(text) {
-  const raw = String(text || '').trim();
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw);
-  } catch {}
-  const start = raw.indexOf('{');
-  const end = raw.lastIndexOf('}');
-  if (start === -1 || end === -1 || end <= start) return null;
-  try {
-    return JSON.parse(raw.slice(start, end + 1));
-  } catch {
-    return null;
-  }
-}
-
 async function enrichWithProviderIfEnabled(row, fallback) {
-  const aiEnabled = ['1', 'true', 'yes', 'on'].includes(String(process.env.OPPORTUNITY_AI_ENRICHMENT_ENABLED || 'false').trim().toLowerCase());
+  const aiEnabled = parseFlag(process.env.OPPORTUNITY_AI_ENRICHMENT_ENABLED, false);
   if (!aiEnabled) return fallback;
 
   const openaiKey = String(process.env.OPENAI_API_KEY || '').trim();
@@ -374,7 +361,7 @@ async function enrichWithProviderIfEnabled(row, fallback) {
             Authorization: `Bearer ${openaiKey}`
           },
           body: JSON.stringify({
-            model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+            model: process.env.OPENAI_MODEL || 'gpt-4.1-mini',
             temperature: 0.2,
             response_format: { type: 'json_object' },
             messages: [
@@ -384,6 +371,7 @@ async function enrichWithProviderIfEnabled(row, fallback) {
           }),
           signal: controller.signal
         });
+        if (!response.ok) return fallback;
         const payload = await response.json().catch(() => ({}));
         json = extractJsonObject(payload?.choices?.[0]?.message?.content || '');
       } else if (provider === 'claude' && claudeKey) {
@@ -403,6 +391,7 @@ async function enrichWithProviderIfEnabled(row, fallback) {
           }),
           signal: controller.signal
         });
+        if (!response.ok) return fallback;
         const payload = await response.json().catch(() => ({}));
         const content = Array.isArray(payload?.content) ? payload.content.map((item) => item?.text || '').join('\n') : '';
         json = extractJsonObject(content);
@@ -410,14 +399,7 @@ async function enrichWithProviderIfEnabled(row, fallback) {
     } finally {
       clearTimeout(timer);
     }
-    if (!json) return fallback;
-    return {
-      aiTitle: String(json.ai_title || fallback.aiTitle).slice(0, 180),
-      aiDescription: String(json.ai_description || fallback.aiDescription).slice(0, 280),
-      notificationText: String(json.notification_text || fallback.notificationText).slice(0, 180),
-      whyItMatters: String(json.why_it_matters || fallback.whyItMatters).slice(0, 220),
-      shortBadgeText: String(json.short_badge_text || row.opportunity_level || '').slice(0, 48)
-    };
+    return resolveOpportunityEnrichmentPayload(json, fallback, row.opportunity_level || '');
   } catch {
     return fallback;
   }
@@ -1206,7 +1188,7 @@ export async function listPublishedOpportunities({
 
 function mapUserFollowRow(row) {
   if (!row) return null;
-  const metadata = parseJsonSafe(row.metadata_json, {});
+  const metadata = sanitizeFollowMetadata(parseJsonSafe(row.metadata_json, {}));
   return {
     id: String(row.id),
     user_id: String(row.user_id),
@@ -1229,7 +1211,8 @@ export async function createOrUpdateUserFollow({ userId, entityType, slug, displ
   const normalizedSlug = slugify(slug);
   const normalizedFollowType = String(followType || 'radar').trim().toLowerCase();
   const normalizedDisplayName = String(displayName || slug || '').trim() || normalizedSlug;
-  const metadataJson = JSON.stringify(metadata || {});
+  const sanitizedMetadata = sanitizeFollowMetadata(metadata || {});
+  const metadataJson = JSON.stringify(sanitizedMetadata);
   if (!normalizedUserId || !normalizedEntityType || !normalizedSlug) {
     throw new Error('invalid_follow_payload');
   }
@@ -1316,6 +1299,57 @@ export async function listUserFollows(userId) {
   return rows.map(mapUserFollowRow).filter(Boolean);
 }
 
+export async function getFollowSignalsSummary({ limit = 8 } = {}) {
+  await ensureInitialized();
+  const safeLimit = Math.max(1, Math.min(30, Math.round(Number(limit) || 8)));
+  if (getMode() === 'postgres') {
+    const totalResult = await pgPool.query(`SELECT COUNT(*)::int AS total FROM opportunity_user_follows`);
+    const topResult = await pgPool.query(
+      `SELECT
+         slug,
+         COALESCE(NULLIF(display_name, ''), slug) AS label,
+         COUNT(*)::int AS total
+       FROM opportunity_user_follows
+       WHERE follow_type = 'radar'
+       GROUP BY slug, label
+       ORDER BY total DESC, label ASC
+       LIMIT $1`,
+      [safeLimit]
+    );
+    return {
+      total: Number(totalResult.rows[0]?.total || 0),
+      topRoutes: (topResult.rows || []).map((row) => ({
+        slug: String(row?.slug || ''),
+        label: String(row?.label || row?.slug || ''),
+        count: Number(row?.total || 0)
+      }))
+    };
+  }
+
+  const totalRow = sqliteDb.prepare(`SELECT COUNT(*) AS total FROM opportunity_user_follows`).get();
+  const rows = sqliteDb
+    .prepare(
+      `SELECT
+         slug,
+         COALESCE(NULLIF(display_name, ''), slug) AS label,
+         COUNT(*) AS total
+       FROM opportunity_user_follows
+       WHERE follow_type = 'radar'
+       GROUP BY slug, label
+       ORDER BY total DESC, label ASC
+       LIMIT ?`
+    )
+    .all(safeLimit);
+  return {
+    total: Number(totalRow?.total || 0),
+    topRoutes: rows.map((row) => ({
+      slug: String(row?.slug || ''),
+      label: String(row?.label || row?.slug || ''),
+      count: Number(row?.total || 0)
+    }))
+  };
+}
+
 export async function deleteUserFollow({ userId, followId }) {
   await ensureInitialized();
   const normalizedUserId = String(userId || '').trim();
@@ -1339,22 +1373,51 @@ export async function listDestinationClusters({ region = '', limit = 12 } = {}) 
   for (const item of items) {
     const cluster = deriveClusterInfo(item);
     const key = cluster.slug;
+    const destinationAirport = isIataCode(item?.destination_airport) ? String(item.destination_airport).toUpperCase() : '';
+    const destinationCity = String(item?.destination_city || '').trim();
+    const price = toNumber(item.price, 0);
     if (!grouped.has(key)) {
       grouped.set(key, {
         id: shortHash(`cluster_${key}`),
         cluster_name: cluster.cluster_name,
         slug: cluster.slug,
         region: cluster.region,
-        min_price: toNumber(item.price, 0),
-        opportunities_count: 1
+        min_price: price,
+        opportunities_count: 1,
+        representative_airport: destinationAirport || '',
+        representative_city: destinationCity || '',
+        representative_airport_price: destinationAirport ? price : Number.POSITIVE_INFINITY
       });
       continue;
     }
     const entry = grouped.get(key);
     entry.opportunities_count += 1;
-    entry.min_price = Math.min(entry.min_price, toNumber(item.price, 0));
+    entry.min_price = Math.min(entry.min_price, price);
+    if (destinationAirport) {
+      const currentBestPrice = Number.isFinite(entry.representative_airport_price) ? entry.representative_airport_price : Number.POSITIVE_INFINITY;
+      const nextBestPrice = price > 0 ? price : Number.POSITIVE_INFINITY;
+      const shouldReplaceAirport =
+        !entry.representative_airport ||
+        nextBestPrice < currentBestPrice ||
+        (nextBestPrice === currentBestPrice && destinationAirport < String(entry.representative_airport || ''));
+      if (shouldReplaceAirport) {
+        entry.representative_airport = destinationAirport;
+        entry.representative_city = destinationCity || entry.representative_city || '';
+        entry.representative_airport_price = nextBestPrice;
+      }
+    }
   }
   return [...grouped.values()]
+    .map((entry) => ({
+      id: entry.id,
+      cluster_name: entry.cluster_name,
+      slug: entry.slug,
+      region: entry.region,
+      min_price: entry.min_price,
+      opportunities_count: entry.opportunities_count,
+      representative_airport: entry.representative_airport || '',
+      representative_city: entry.representative_city || ''
+    }))
     .sort((a, b) => {
       if (b.opportunities_count !== a.opportunities_count) return b.opportunities_count - a.opportunities_count;
       return a.min_price - b.min_price;
@@ -1466,8 +1529,8 @@ export async function queryOpportunitiesByPrompt({ prompt, limit = 12 }) {
     filters: parsed,
     summary:
       filtered.length > 0
-        ? `Trovate ${filtered.length} opportunita reali in base ai dati disponibili.`
-        : 'Nessuna opportunita corrispondente ai filtri estratti dal prompt.'
+        ? `Trovate ${filtered.length} opportunit\u00e0 reali in base ai dati disponibili.`
+        : 'Nessuna opportunit\u00e0 corrispondente ai filtri estratti dal prompt.'
   };
 }
 

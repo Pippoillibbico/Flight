@@ -167,31 +167,73 @@ export async function countActiveAlerts(userId) {
   return (db.freeAlerts || []).filter((a) => a.userId === userId && !a.deletedAt).length;
 }
 
-export async function createAlert({ userId, originIata, destinationIata, targetPrice }) {
+export async function createAlert({ userId, originIata, destinationIata, targetPrice, maxAlerts = null }) {
   const pool = getSaasPool();
   if (pool) {
-    const result = await pool.query(
-      `INSERT INTO free_alerts (id, user_id, origin_iata, destination_iata, target_price, created_at)
-       VALUES ($1, $2, $3, $4, $5, NOW())
-       RETURNING id, user_id, origin_iata, destination_iata, target_price, created_at`,
-      [nanoid(16), userId, originIata, destinationIata, Number(targetPrice)]
-    );
-    return result.rows[0];
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      if (maxAlerts !== null) {
+        // Advisory lock serializes all createAlert calls for the same user,
+        // preventing phantom inserts that FOR UPDATE on existing rows cannot block.
+        await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [userId]);
+        const countRes = await client.query(
+          `SELECT COUNT(*) AS cnt FROM free_alerts WHERE user_id = $1 AND deleted_at IS NULL`,
+          [userId]
+        );
+        if (Number(countRes.rows[0].cnt) >= maxAlerts) {
+          await client.query('ROLLBACK');
+          const err = new Error('Alert limit reached.');
+          err.code = 'alert_limit_reached';
+          throw err;
+        }
+      }
+      const result = await client.query(
+        `INSERT INTO free_alerts (id, user_id, origin_iata, destination_iata, target_price, created_at)
+         VALUES ($1, $2, $3, $4, $5, NOW())
+         RETURNING id, user_id, origin_iata, destination_iata, target_price, created_at`,
+        [nanoid(16), userId, originIata, destinationIata, Number(targetPrice)]
+      );
+      await client.query('COMMIT');
+      return result.rows[0];
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
   }
-  const alert = {
-    id: nanoid(16),
-    userId,
-    originIata,
-    destinationIata,
-    targetPrice: Number(targetPrice),
-    createdAt: new Date().toISOString(),
-    deletedAt: null
-  };
+
+  let alert = null;
+  let limitError = null;
   await withDb(async (db) => {
+    if (maxAlerts !== null) {
+      const activeCount = (db.freeAlerts || []).filter((a) => a.userId === userId && !a.deletedAt).length;
+      if (activeCount >= maxAlerts) {
+        limitError = true;
+        return db;
+      }
+    }
+    alert = {
+      id: nanoid(16),
+      userId,
+      originIata,
+      destinationIata,
+      targetPrice: Number(targetPrice),
+      createdAt: new Date().toISOString(),
+      deletedAt: null
+    };
     db.freeAlerts = db.freeAlerts || [];
     db.freeAlerts.push(alert);
     return db;
   });
+
+  if (limitError) {
+    const err = new Error('Alert limit reached.');
+    err.code = 'alert_limit_reached';
+    throw err;
+  }
+
   return alert;
 }
 

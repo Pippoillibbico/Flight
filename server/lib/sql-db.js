@@ -1,5 +1,5 @@
 import { mkdir, readdir, readFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 
@@ -7,8 +7,13 @@ let sqliteDb = null;
 let pgPool = null;
 let mode = 'sqlite';
 
-const DB_FILE_URL = new URL('../../data/app.db', import.meta.url);
-const DB_FILE_PATH = fileURLToPath(DB_FILE_URL);
+const DEFAULT_DB_FILE_URL = new URL('../../data/app.db', import.meta.url);
+const DEFAULT_DB_FILE_PATH = fileURLToPath(DEFAULT_DB_FILE_URL);
+const DB_FILE_PATH = (() => {
+  const configured = String(process.env.SQLITE_DB_FILE || '').trim();
+  if (!configured) return DEFAULT_DB_FILE_PATH;
+  return resolve(configured);
+})();
 const MIGRATIONS_DIR = fileURLToPath(new URL('../migrations', import.meta.url));
 
 function toNumber(value) {
@@ -98,6 +103,18 @@ async function ensureSqlite() {
       created_at TEXT NOT NULL
     );
   `);
+  ensureSqliteColumn('user_leads', 'channel', "channel TEXT NOT NULL DEFAULT 'unknown'");
+  ensureSqliteColumn('search_events', 'channel', "channel TEXT NOT NULL DEFAULT 'unknown'");
+}
+
+function getSqliteColumns(tableName) {
+  return sqliteDb.prepare(`PRAGMA table_info(${tableName})`).all();
+}
+
+function ensureSqliteColumn(tableName, columnName, definition) {
+  const columns = new Set(getSqliteColumns(tableName).map((row) => String(row?.name || '').trim()).filter(Boolean));
+  if (columns.has(columnName)) return;
+  sqliteDb.exec(`ALTER TABLE ${tableName} ADD COLUMN ${definition}`);
 }
 
 export async function initSqlDb() {

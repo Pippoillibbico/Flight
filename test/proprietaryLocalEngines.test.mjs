@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { randomInt } from 'node:crypto';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -60,7 +61,7 @@ async function seedRouteBaselines({ origin, destination, base = 300, points = 36
 
 test('baseline-price-engine computes deterministic baseline from local history', async () => {
   await initPriceHistoryStore();
-  const seed = Date.now() % 17576;
+  const seed = randomInt(17576);
   const origin = iataFromSeed(seed);
   const destination = iataFromSeed((seed + 71) % 17576);
   const date = '2027-09-15';
@@ -74,7 +75,7 @@ test('baseline-price-engine computes deterministic baseline from local history',
 
 test('price-ingestion-worker imports local CSV without external providers', async () => {
   await initPriceHistoryStore();
-  const seed = (Date.now() + 777) % 17576;
+  const seed = randomInt(17576);
   const origin = iataFromSeed(seed);
   const destination = iataFromSeed((seed + 91) % 17576);
   const observedAt = new Date().toISOString();
@@ -95,7 +96,7 @@ test('price-ingestion-worker imports local CSV without external providers', asyn
 
 test('alert-intelligence triggers once for strong local deal', async () => {
   await initPriceHistoryStore();
-  const seed = (Date.now() + 1337) % 17576;
+  const seed = randomInt(17576);
   const origin = iataFromSeed(seed);
   const destination = iataFromSeed((seed + 103) % 17576);
   const date = '2027-11-15';
@@ -129,7 +130,7 @@ test('alert-intelligence triggers once for strong local deal', async () => {
 
 test('destination-discovery-engine returns local suggestions from history', async () => {
   await initPriceHistoryStore();
-  const seed = (Date.now() + 1777) % 17576;
+  const seed = randomInt(17576);
   const origin = iataFromSeed(seed);
   const destinationA = iataFromSeed((seed + 17) % 17576);
   const destinationB = iataFromSeed((seed + 29) % 17576);

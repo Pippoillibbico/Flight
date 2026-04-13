@@ -7,16 +7,11 @@ import {
   listStrongDetectedDealRoutes,
   updateIngestionJob
 } from '../deal-engine-store.js';
+import { parseFlag } from '../env-flags.js';
 import { getCacheClient } from '../free-cache.js';
 import { loadSeedRoutes } from '../seed-routes.js';
 import { logger } from '../logger.js';
 import { createScanQueue } from './scan-queue.js';
-
-function parseFlag(value, fallback = false) {
-  const text = String(value ?? '').trim().toLowerCase();
-  if (!text) return fallback;
-  return ['1', 'true', 'yes', 'on'].includes(text);
-}
 
 function safeInt(value, fallback, min, max) {
   const out = Number(value);

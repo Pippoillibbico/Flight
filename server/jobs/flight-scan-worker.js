@@ -1,16 +1,11 @@
 import { runRouteSchedulerOnce } from '../lib/scan/route-scheduler.js';
 import { runFlightScanCycleOnce as runFlightScanCycleCore } from '../lib/scan/scan-orchestrator.js';
 import { runScanWorkerOnce } from '../lib/scan/scan-worker.js';
+import { parseFlag } from '../lib/env-flags.js';
 import { runDealsContentWorkerOnce } from './deals-content-worker.js';
 import { runDetectedDealsWorkerOnce } from './detected-deals-worker.js';
 import { runPriceAlertsWorkerOnce } from './price-alerts-worker.js';
 import { runRoutePriceStatsWorkerOnce } from './route-price-stats-worker.js';
-
-function parseFlag(value, fallback = false) {
-  const text = String(value ?? '').trim().toLowerCase();
-  if (!text) return fallback;
-  return ['1', 'true', 'yes', 'on'].includes(text);
-}
 
 export async function runFlightScanSchedulerOnce(options = {}) {
   return runRouteSchedulerOnce(options);

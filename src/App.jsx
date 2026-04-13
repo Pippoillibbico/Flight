@@ -1,22 +1,122 @@
-﻿import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
-import { addDays, differenceInCalendarDays, format, parseISO } from 'date-fns';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { addDays, format } from 'date-fns';
 import { api, COOKIE_SESSION_TOKEN, setCsrfToken } from './api';
 import { handleApiError } from './utils/handleApiError';
-import { DEFAULT_LANGUAGE, DEFAULT_LANGUAGE_PACK, LANGS, LANGUAGE_OPTIONS, loadLanguagePack } from './i18n';
+import { LANGUAGE_OPTIONS } from './i18n';
 import { AppProvider } from './context/AppContext';
 import LandingSection from './components/LandingSection';
 import AuthSection from './components/AuthSection';
 import SearchSection from './components/SearchSection';
 import ExploreDiscoverySection from './components/ExploreDiscoverySection';
 import LanguageMenu from './components/LanguageMenu';
+import PersonalHubSection from './components/PersonalHubSection';
 import OpportunityFeedSection from './components/OpportunityFeedSection';
 import OpportunityDetailSection from './components/OpportunityDetailSection';
 import RadarSection from './components/RadarSection';
 import AITravelSection from './components/AITravelSection';
 import SectionAccessGate from './components/SectionAccessGate';
+import UpgradeFlowModal from './features/upgrade-flow/ui/UpgradeFlowModal';
+import CookieBanner from './components/CookieBanner';
+import { bootstrapConsentPolicy, clearConsent, isConsentGiven } from './utils/cookieConsent';
+import { readLocalStorageItem, removeLocalStorageItem, writeLocalStorageItem } from './utils/browserStorage';
+import AdminBackofficeSection from './features/admin-dashboard/ui/AdminBackofficeSection';
+import AdminBackofficeLoginSection from './features/admin-dashboard/ui/AdminBackofficeLoginSection';
+import { localizeClusterDisplayName } from './utils/localizePlace';
+import {
+  getErrorTrackingData,
+  readStoredPostAuthContext,
+  useAppDataOperations,
+  useAppLocalization,
+  useAdminTelemetryBridge,
+  useAuthSessionActions,
+  useAuthFlowCoordinator,
+  useBookingFlow,
+  useLandingActions,
+  useOpportunityFlow,
+  useRadarSessionController,
+  useResultInteractionActions,
+  useSearchFlowActions,
+  useUpgradeFlowController
+} from './features/app-shell';
+import {
+  asOptionalBoundedInt,
+  asOptionalPositiveInt,
+  buildGatewayItineraryItems,
+  buildItineraryGenerationInputs,
+  buildItineraryGenerationPreferences,
+  dealLabelText,
+  formatEur,
+  formatGeneratedSummary,
+  formatPricingDate,
+  monthsToSeasonSlugs,
+  parseCsvText,
+  radarStateText,
+  slugifyFollowValue,
+  toRadarDraft
+} from './features/app-shell/domain/app-helpers';
+import {
+  DEFAULT_MULTI_CITY_RETRY_POLICY,
+  addMultiCitySegment,
+  buildMultiCitySearchPayload,
+  createDefaultMultiCitySegments,
+  removeMultiCitySegment,
+  submitMultiCitySearchWithRetry,
+  updateMultiCitySegmentField,
+  validateMultiCityForm
+} from './features/multi-city';
+import { createBookingClickedTracker, createBookingHandoffLayer } from './features/booking-handoff';
+import { createFunnelEventService, createFunnelTracker } from './features/funnel-tracking';
+import { enrichItinerariesWithDeal, sortByDealPriority } from './features/deal-engine';
+import { enrichItinerariesWithRadar, sortByRadarPriority } from './features/radar-engine';
+import {
+  explainGeneratedItinerary,
+  generateCandidateItineraries,
+  rankGeneratedItineraries
+} from './features/itinerary-generator';
+import {
+  createAiGateway,
+  createAnthropicAdapter,
+  createMockAiAdapter,
+  createOpenAiAdapter
+} from './features/ai-gateway';
+import {
+  clearLocalTravelData,
+  clearRememberedEmail,
+  createSavedItineraryFromOpportunity,
+  readRememberedEmail,
+  readSavedItineraries,
+  saveRecentItinerary,
+  writeRememberedEmail
+} from './features/personal-hub/storage';
+import {
+  evaluateUsageLimit,
+  getPlanComparisonRows,
+  getPlanEntitlements,
+  getUpgradeTriggerContent,
+  normalizeUserPlan,
+  readStoredUserPlan,
+  resolveEffectivePlan,
+  writeStoredUserPlan
+} from './features/monetization';
+import { scoreItineraries, sortItinerariesByTravelScore } from './features/travel-score';
+import {
+  createAdminDashboardApi,
+  mapFunnelEventToAdminTelemetry,
+  mapUpgradeEventToAdminTelemetry,
+  resolveAdminAccess
+} from './features/admin-dashboard';
 
 const AdvancedAnalyticsSection = lazy(() => import('./components/AdvancedAnalyticsSection'));
 const prefetchAdvancedAnalyticsChunk = () => import('./components/AdvancedAnalyticsSection');
+
+function InfoTip({ text }) {
+  return (
+    <span className="info-tip" tabIndex={0} aria-label={text}>
+      i
+      <span className="info-tip-box">{text}</span>
+    </span>
+  );
+}
 
 const defaultFrom = format(addDays(new Date(), 14), 'yyyy-MM-dd');
 const defaultTo = format(addDays(new Date(), 18), 'yyyy-MM-dd');
@@ -46,21 +146,6 @@ const defaultSearch = {
   aiProvider: 'none'
 };
 
-const REGION_LABELS_I18N = {
-  en: { all: 'All Regions', eu: 'Europe', asia: 'Asia', america: 'America', oceania: 'Oceania' },
-  it: { all: 'Tutte le aree', eu: 'Europa', asia: 'Asia', america: 'America', oceania: 'Oceania' }
-};
-
-const CONNECTION_LABELS_I18N = {
-  en: { all: 'Any', direct: 'Direct only', with_stops: 'With stops' },
-  it: { all: 'Qualsiasi', direct: 'Solo diretti', with_stops: 'Con scali' }
-};
-
-const TRAVEL_TIME_LABELS_I18N = {
-  en: { all: 'Any time', day: 'Day flights', night: 'Night flights' },
-  it: { all: 'Qualsiasi orario', day: 'Voli diurni', night: 'Voli notturni' }
-};
-
 const MOOD_OPTIONS = ['relax', 'natura', 'party', 'cultura', 'avventura'];
 const CLIMATE_PREF_OPTIONS = ['warm', 'mild', 'cold', 'indifferent'];
 
@@ -79,80 +164,41 @@ const QUICK_INTAKE_PROMPTS_I18N = {
   ]
 };
 
-const POST_AUTH_ACTION_STORAGE_KEY = 'flight_post_auth_action';
-const POST_AUTH_MODE_STORAGE_KEY = 'flight_post_auth_mode';
-const POST_AUTH_VIEW_STORAGE_KEY = 'flight_post_auth_view';
-const LOCAL_BILLING_NONCE = 'fake-valid-nonce';
-
 function App() {
-  const [language, setLanguage] = useState(DEFAULT_LANGUAGE);
-  const [i18nPack, setI18nPack] = useState(DEFAULT_LANGUAGE_PACK);
-  const isGarbledI18nText = (value) => {
-    if (typeof value !== 'string') return false;
-    const text = value.trim();
-    if (!text || !text.includes('?')) return false;
-    const qCount = (text.match(/\?/g) || []).length;
-    const letterCount = (text.match(/[A-Za-z\u00C0-\u024F\u0400-\u04FF]/g) || []).length;
-    return qCount >= 2 && letterCount === 0;
-  };
-  const t = (key) => {
-    const override = i18nPack.extra?.[key];
-    if (override) return override;
-    const localized = i18nPack.messages?.[key];
-    if (isGarbledI18nText(localized)) return DEFAULT_LANGUAGE_PACK.messages?.[key] || key;
-    return localized || DEFAULT_LANGUAGE_PACK.messages?.[key] || key;
-  };
-  const tt = (key) => i18nPack.tooltips?.[key] || DEFAULT_LANGUAGE_PACK.tooltips?.[key] || key;
-  const regionLabel = (code) => REGION_LABELS_I18N[language]?.[code] || REGION_LABELS_I18N.en[code] || code;
-  const connectionLabel = (code) => CONNECTION_LABELS_I18N[language]?.[code] || CONNECTION_LABELS_I18N.en[code] || code;
-  const travelTimeLabel = (code) => TRAVEL_TIME_LABELS_I18N[language]?.[code] || TRAVEL_TIME_LABELS_I18N.en[code] || code;
-  useEffect(() => {
-    if (!LANGS.includes(language)) {
-      setLanguage(DEFAULT_LANGUAGE);
-    }
-  }, [language]);
+  const {
+    language,
+    setLanguage,
+    i18nPack,
+    t,
+    tt,
+    regionLabel,
+    connectionLabel,
+    travelTimeLabel,
+    canonicalCountryFilter,
+    canonicalDestinationQuery,
+    localizeDestinationSuggestionLabel,
+    normalizeSuggestionToken,
+    resolveSuggestionCityToken
+  } = useAppLocalization();
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try {
-      const saved = window.localStorage.getItem('flight_language');
-      if (saved && LANGS.includes(saved) && saved !== language) setLanguage(saved);
-    } catch {
-      // ignore storage restrictions
-    }
+    bootstrapConsentPolicy();
   }, []);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try {
-      if (LANGS.includes(language)) window.localStorage.setItem('flight_language', language);
-    } catch {
-      // ignore storage restrictions
-    }
-  }, [language]);
-
-  useEffect(() => {
     setIntakeMessages((prev) => {
-      if (!Array.isArray(prev) || prev.length !== 1) return prev;
-      if (prev[0]?.id !== 'assistant-welcome') return prev;
-      return [{ ...prev[0], text: t('aiAssistantWelcome') }];
-    });
-  }, [language]);
-
-  useEffect(() => {
-    let active = true;
-    loadLanguagePack(language)
-      .then((pack) => {
-        if (active && pack) setI18nPack(pack);
-      })
-      .catch(() => {
-        if (active) setI18nPack(DEFAULT_LANGUAGE_PACK);
+      if (!Array.isArray(prev) || prev.length === 0) return prev;
+      let hasChanged = false;
+      const next = prev.map((entry) => {
+        if (entry?.id !== 'assistant-welcome') return entry;
+        const localizedText = t('aiAssistantWelcome');
+        if (entry.text === localizedText) return entry;
+        hasChanged = true;
+        return { ...entry, text: localizedText };
       });
-
-    return () => {
-      active = false;
-    };
-  }, [language]);
+      return hasChanged ? next : prev;
+    });
+  }, [language, i18nPack]);
 
   const resolveApiError = (error) => handleApiError(error, { t });
 
@@ -164,9 +210,42 @@ function App() {
     travelTimes: ['all', 'day', 'night'],
     countriesByRegion: {}
   });
+  const originCityByIata = useMemo(() => {
+    const map = new Map();
+    for (const origin of Array.isArray(config.origins) ? config.origins : []) {
+      const code = String(origin?.code || '').trim().toUpperCase();
+      if (!/^[A-Z]{3}$/.test(code)) continue;
+      const city = String(origin?.city || '').trim();
+      if (city) {
+        map.set(code, city);
+        continue;
+      }
+      const label = String(origin?.label || '').trim();
+      const fallback = label.replace(/\s*\([A-Za-z]{3}\)\s*$/, '').trim();
+      if (fallback) map.set(code, fallback);
+    }
+    return map;
+  }, [config.origins]);
+  const resolveCityName = useCallback(
+    (value, fallbackIata = '') => {
+      const text = String(value || '').trim();
+      if (text && !/^[A-Za-z]{3}$/.test(text)) {
+        return text.replace(/\s*\([A-Za-z]{3}\)\s*$/, '').trim();
+      }
+      const code = String(fallbackIata || text || '')
+        .trim()
+        .toUpperCase();
+      if (/^[A-Z]{3}$/.test(code)) {
+        return originCityByIata.get(code) || code;
+      }
+      return text;
+    },
+    [originCityByIata]
+  );
 
   const [token, setToken] = useState(COOKIE_SESSION_TOKEN);
   const [user, setUser] = useState(null);
+  const [localUserPlan, setLocalUserPlan] = useState(() => readStoredUserPlan());
   const [authMode, setAuthMode] = useState('login');
   const [showAccountPanel, setShowAccountPanel] = useState(false);
   const [authError, setAuthError] = useState('');
@@ -178,6 +257,12 @@ function App() {
   const [deletingAccount, setDeletingAccount] = useState(false);
 
   const [searchForm, setSearchForm] = useState(defaultSearch);
+  const [searchMode, setSearchMode] = useState('single');
+  const [multiCitySegments, setMultiCitySegments] = useState(() => createDefaultMultiCitySegments(defaultFrom, defaultTo));
+  const [multiCityValidation, setMultiCityValidation] = useState(() =>
+    validateMultiCityForm({ segments: createDefaultMultiCitySegments(defaultFrom, defaultTo) })
+  );
+  const [multiCityRetryVisible, setMultiCityRetryVisible] = useState(false);
   const [uiMode, setUiMode] = useState('simple');
   const [searchError, setSearchError] = useState('');
   const [searchLoading, setSearchLoading] = useState(false);
@@ -231,16 +316,6 @@ function App() {
   });
   const [billingPricingLoading, setBillingPricingLoading] = useState(false);
   const [billingPricingError, setBillingPricingError] = useState('');
-  const [billingCheckoutModal, setBillingCheckoutModal] = useState({
-    open: false,
-    planType: 'pro',
-    loading: false,
-    processing: false,
-    error: '',
-    fallbackMode: false,
-    clientToken: ''
-  });
-  const [billingFallbackNonce, setBillingFallbackNonce] = useState('');
   const [funnelReport, setFunnelReport] = useState(null);
   const [funnelLoading, setFunnelLoading] = useState(false);
   const [funnelError, setFunnelError] = useState('');
@@ -257,6 +332,7 @@ function App() {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showLandingPage, setShowLandingPage] = useState(true);
   const [darkMode, setDarkMode] = useState(true);
+  const [premiumBillingCycle, setPremiumBillingCycle] = useState('annual');
   const [onboardingDraft, setOnboardingDraft] = useState({
     intent: 'deals',
     budget: '',
@@ -265,7 +341,33 @@ function App() {
   });
   const [onboardingSaving, setOnboardingSaving] = useState(false);
   const [pendingPostAuthAction, setPendingPostAuthAction] = useState(null);
+  const [pendingPostAuthSection, setPendingPostAuthSection] = useState(null);
   const [activeMainSection, setActiveMainSection] = useState('home');
+  const [adminRouteRequested, setAdminRouteRequested] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    const path = String(window.location.pathname || '').trim().toLowerCase();
+    return path === '/admin' || path === '/backoffice';
+  });
+  const [adminDashboardReport, setAdminDashboardReport] = useState(null);
+  const [adminDashboardLoading, setAdminDashboardLoading] = useState(false);
+  const [adminDashboardError, setAdminDashboardError] = useState('');
+  const {
+    radarSessionActivated,
+    setRadarSessionActivated,
+    activateRadarSessionFlag,
+    activateRadarFromFeedSession
+  } = useRadarSessionController({ setActiveMainSection });
+  const { persistPostAuthAction, persistPostAuthSection, persistAuthFunnelState, clearAuthFunnelState, beginAuthFlow, beginSetAlertAuthFlow } =
+    useAuthFlowCoordinator({
+      activeMainSection,
+      setShowLandingPage,
+      setShowAccountPanel,
+      setAuthMode,
+      setAuthView,
+      setAuthError,
+      setPendingPostAuthAction,
+      setPendingPostAuthSection
+    });
   const [opportunityFeed, setOpportunityFeed] = useState([]);
   const [opportunityFeedAccess, setOpportunityFeedAccess] = useState(null);
   const [destinationClusters, setDestinationClusters] = useState([]);
@@ -277,6 +379,7 @@ function App() {
   const [opportunityDetail, setOpportunityDetail] = useState(null);
   const [opportunityDetailLoading, setOpportunityDetailLoading] = useState(false);
   const [opportunityDetailError, setOpportunityDetailError] = useState('');
+  const [opportunityDetailUpgradePrompt, setOpportunityDetailUpgradePrompt] = useState(null);
   const [radarDraft, setRadarDraft] = useState({
     originAirports: '',
     favoriteDestinations: '',
@@ -313,63 +416,92 @@ function App() {
   const [exploreMapError, setExploreMapError] = useState('');
   const [exploreSelectedDestination, setExploreSelectedDestination] = useState('');
 
-  function persistPostAuthAction(action) {
-    setPendingPostAuthAction(action || null);
-    if (typeof window === 'undefined') return;
-    try {
-      if (action) window.localStorage.setItem(POST_AUTH_ACTION_STORAGE_KEY, String(action));
-      else window.localStorage.removeItem(POST_AUTH_ACTION_STORAGE_KEY);
-    } catch {
-      // Ignore storage restrictions.
-    }
+  // Runtime capability matrix — fetched once from the public /api/system/capabilities endpoint.
+  // Used to gate UI copy and features based on what is actually configured server-side.
+  const [systemCapabilities, setSystemCapabilities] = useState(null);
+  useEffect(() => {
+    api.systemCapabilities().then((data) => setSystemCapabilities(data?.capabilities || null)).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    setMultiCityValidation(validateMultiCityForm({ segments: multiCitySegments }));
+  }, [multiCitySegments]);
+
+  useEffect(() => {
+    if (searchMode === 'multi_city') return;
+    setMultiCityRetryVisible(false);
+  }, [searchMode]);
+
+  useEffect(() => {
+    if (searchMode !== 'multi_city') return;
+    setMultiCityRetryVisible(false);
+  }, [searchForm, searchMode]);
+
+  useEffect(() => {
+    if (searchMode !== 'multi_city') return;
+    const firstSegment = Array.isArray(multiCitySegments) ? multiCitySegments[0] : null;
+    if (!firstSegment || String(firstSegment.origin || '').trim()) return;
+    const fallbackOrigin = String(searchForm.origin || '')
+      .trim()
+      .toUpperCase();
+    if (!/^[A-Z]{3}$/.test(fallbackOrigin)) return;
+    setMultiCitySegments((prev) => updateMultiCitySegmentField(prev, 0, 'origin', fallbackOrigin));
+  }, [searchMode, searchForm.origin, multiCitySegments]);
+
+  function setMultiCitySegmentValue(segmentIndex, field, value) {
+    setMultiCitySegments((prev) => updateMultiCitySegmentField(prev, segmentIndex, field, value));
+    setMultiCityRetryVisible(false);
   }
 
-  function persistAuthFunnelState({ authMode: nextAuthMode, authView: nextAuthView }) {
-    if (typeof window === 'undefined') return;
-    try {
-      if (nextAuthMode) window.localStorage.setItem(POST_AUTH_MODE_STORAGE_KEY, String(nextAuthMode));
-      if (nextAuthView) window.localStorage.setItem(POST_AUTH_VIEW_STORAGE_KEY, String(nextAuthView));
-    } catch {
-      // Ignore storage restrictions.
-    }
+  function appendMultiCitySegment() {
+    setMultiCitySegments((prev) => addMultiCitySegment(prev));
+    setMultiCityRetryVisible(false);
   }
 
-  function clearAuthFunnelState() {
-    if (typeof window === 'undefined') return;
-    try {
-      window.localStorage.removeItem(POST_AUTH_MODE_STORAGE_KEY);
-      window.localStorage.removeItem(POST_AUTH_VIEW_STORAGE_KEY);
-    } catch {
-      // Ignore storage restrictions.
-    }
+  function deleteMultiCitySegment(segmentIndex) {
+    setMultiCitySegments((prev) => removeMultiCitySegment(prev, segmentIndex));
+    setMultiCityRetryVisible(false);
   }
 
-  function beginAuthFlow({ action, authMode: nextAuthMode = 'login', authView: nextAuthView = 'options', keepLandingVisible = true } = {}) {
-    setShowLandingPage(keepLandingVisible);
-    setShowAccountPanel(true);
-    setAuthMode(nextAuthMode);
-    setAuthView(nextAuthView);
-    setAuthError('');
-    persistPostAuthAction(action || null);
-    persistAuthFunnelState({ authMode: nextAuthMode, authView: nextAuthView });
-  }
-
-  function beginSetAlertAuthFlow({ keepLandingVisible = true } = {}) {
-    beginAuthFlow({
-      action: 'set_alert',
-      authMode: 'register',
-      authView: 'options',
-      keepLandingVisible
-    });
-  }
-
-  function InfoTip({ text }) {
-    return (
-      <span className="info-tip" tabIndex={0} aria-label={text}>
-        i
-        <span className="info-tip-box">{text}</span>
-      </span>
+  function applySearchResultState(result) {
+    const flights = enrichItinerariesWithRadar(
+      enrichItinerariesWithDeal(scoreItineraries(Array.isArray(result?.flights) ? result.flights : []))
     );
+    setSearchResult({
+      ...(result || {}),
+      flights
+    });
+    const resolvedRequestMode = String(result?.meta?.requestMode || result?.meta?.mode || '').trim().toLowerCase();
+    const effectiveSearchMode = resolvedRequestMode === 'multi_city' ? 'multi_city' : searchMode;
+    trackSearchEvent('results_rendered', {
+      searchModeOverride: effectiveSearchMode,
+      resultCount: flights.length,
+      extra: {
+        requestMode: resolvedRequestMode || undefined
+      }
+    });
+    clearBookingHandoffError();
+    setCompareIds([]);
+    setDestinationInsights({});
+    setInsightLoadingByFlight({});
+    setInsightErrorByFlight({});
+  }
+
+  function buildCurrentMultiCityPayload() {
+    return buildMultiCitySearchPayload(multiCitySegments, {
+      originFallback: searchForm.origin,
+      destinationQueryFallback: canonicalDestinationQuery(searchForm.destinationQuery) || undefined,
+      region: searchForm.region,
+      country: canonicalCountryFilter(searchForm.country) || undefined,
+      cheapOnly: Boolean(searchForm.cheapOnly),
+      maxBudget: asOptionalPositiveInt(searchForm.maxBudget),
+      connectionType: searchForm.connectionType,
+      maxStops: asOptionalBoundedInt(searchForm.maxStops, { min: 0, max: 2 }),
+      travelTime: searchForm.travelTime,
+      minComfortScore: asOptionalBoundedInt(searchForm.minComfortScore, { min: 1, max: 100 }),
+      travellers: asOptionalBoundedInt(searchForm.travellers, { min: 1, max: 9 }) ?? 1,
+      cabinClass: searchForm.cabinClass
+    });
   }
 
   const notifiedIdsRef = useRef(new Set());
@@ -475,19 +607,25 @@ function App() {
 
   useEffect(() => {
     if (!user || !pendingPostAuthAction) return;
+    const preferredSection = String(pendingPostAuthSection || '').trim().toLowerCase();
+    const defaultSection = pendingPostAuthAction === 'set_alert' ? 'radar' : 'explore';
+    const nextSection = preferredSection || defaultSection;
     if (pendingPostAuthAction === 'enter_app') {
       setShowLandingPage(false);
       setShowAccountPanel(false);
       setSubMessage(t('postAuthEnterAppReady'));
+      setActiveMainSection(nextSection);
     }
     if (pendingPostAuthAction === 'set_alert') {
       setShowLandingPage(false);
       setShowAccountPanel(false);
       setSubMessage(t('postAuthSetAlertHint'));
+      setActiveMainSection(nextSection);
     }
     persistPostAuthAction(null);
+    persistPostAuthSection(null);
     clearAuthFunnelState();
-  }, [user, pendingPostAuthAction]);
+  }, [user, pendingPostAuthAction, pendingPostAuthSection]);
 
   useEffect(() => {
     if (!user) {
@@ -498,28 +636,96 @@ function App() {
   }, [user]);
 
   useEffect(() => {
-    const q = searchForm.destinationQuery.trim();
-    if (q.length < 2) return setDestinationSuggestions([]);
+    const q = canonicalDestinationQuery(searchForm.destinationQuery);
+    if (q.length < 1) return setDestinationSuggestions([]);
     const id = setTimeout(() => {
-      api
-        .suggestions({ q, region: searchForm.region, country: searchForm.country })
-        .then((r) => setDestinationSuggestions(r.items || []))
+      const canonicalCountry = canonicalCountryFilter(searchForm.country);
+      const queryToken = normalizeSuggestionToken(q);
+      api.suggestions({ q, region: searchForm.region, country: canonicalCountry, limit: 12 })
+        .then((destinationRes) => {
+          const destinationItems = Array.isArray(destinationRes?.items)
+            ? destinationRes.items
+                .map((item) => {
+                  const value = String(item?.value || '').trim();
+                  const baseLabel = String(item?.label || value).trim();
+                  const type = String(item?.type || 'destination').trim().toLowerCase();
+                  // Keep destination field focused on cities/airports only.
+                  if (type === 'country') return null;
+                  const label = localizeDestinationSuggestionLabel(baseLabel);
+                  if (!value || !label) return null;
+
+                  const normalizedLabel = normalizeSuggestionToken(label);
+                  const normalizedValue = normalizeSuggestionToken(value);
+                  const fullStarts =
+                    normalizedLabel.startsWith(queryToken) ||
+                    normalizedValue.startsWith(queryToken);
+                  const tokenStarts = `${normalizedLabel} ${normalizedValue}`
+                    .split(' ')
+                    .filter(Boolean)
+                    .some((token) => token.startsWith(queryToken));
+                  const partialContains =
+                    queryToken.length >= 4 &&
+                    (normalizedLabel.includes(queryToken) || normalizedValue.includes(queryToken));
+
+                  if (!fullStarts && !tokenStarts && !partialContains) return null;
+                  const relevanceScore = fullStarts ? 3 : tokenStarts ? 2 : 1;
+                  return { type, value, label, relevanceScore };
+                })
+                .filter(Boolean)
+                .sort((a, b) => {
+                  if (b.relevanceScore !== a.relevanceScore) return b.relevanceScore - a.relevanceScore;
+                  return a.label.localeCompare(b.label, language);
+                })
+            : [];
+
+          const merged = [];
+          const seen = new Set();
+          for (const item of destinationItems) {
+            const cityToken = resolveSuggestionCityToken(item);
+            const normalizedValue = normalizeSuggestionToken(item.value);
+            const dedupeKey = cityToken ? `city:${cityToken}` : `value:${normalizedValue}`;
+            if (!dedupeKey || dedupeKey.endsWith(':')) continue;
+            if (seen.has(dedupeKey)) continue;
+            seen.add(dedupeKey);
+            merged.push({
+              type: item.type,
+              value: item.value,
+              label: item.label
+            });
+            if (merged.length >= 10) break;
+          }
+          setDestinationSuggestions(merged);
+        })
         .catch(() => setDestinationSuggestions([]));
-    }, 160);
+    }, 120);
     return () => clearTimeout(id);
-  }, [searchForm.destinationQuery, searchForm.region, searchForm.country]);
+  }, [searchForm.destinationQuery, searchForm.region, searchForm.country, language]);
 
   useEffect(() => {
     const q = searchForm.country.trim();
     if (q.length < 1) return setCountrySuggestions([]);
     const id = setTimeout(() => {
+      const canonicalQuery = canonicalCountryFilter(q) || q;
       api
-        .countries({ q, limit: 15 })
-        .then((r) => setCountrySuggestions(r.items || []))
+        .countries({ q: canonicalQuery, limit: 15 })
+        .then((r) =>
+          setCountrySuggestions(
+            (r.items || []).map((item) => {
+              const canonicalName = String(item?.name || '').trim();
+              const iso2 = String(item?.cca2 || '').trim();
+              const localizedName = localizeCountryByIso2(iso2, canonicalName, language);
+              return {
+                ...item,
+                localizedName,
+                localizedLabel: localizedName
+              };
+            })
+          )
+        )
         .catch(() => setCountrySuggestions([]));
     }, 160);
     return () => clearTimeout(id);
-  }, [searchForm.country]);
+  }, [searchForm.country, language]);
 
   useEffect(() => {
     if (!showAccountPanel) return undefined;
@@ -543,6 +749,9 @@ function App() {
     if (oauth === 'success') {
       setToken(COOKIE_SESSION_TOKEN);
       setShowAccountPanel(false);
+      persistPostAuthAction('enter_app');
+      const hasStoredSection = Boolean(readStoredPostAuthContext().section);
+      if (!hasStoredSection) persistPostAuthSection('explore');
     }
     if (oauth === 'error' || oauth === 'success') {
       params.delete('oauth');
@@ -554,23 +763,17 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try {
-      const pending = window.localStorage.getItem(POST_AUTH_ACTION_STORAGE_KEY);
-      const storedMode = window.localStorage.getItem(POST_AUTH_MODE_STORAGE_KEY);
-      const storedView = window.localStorage.getItem(POST_AUTH_VIEW_STORAGE_KEY);
-      if (pending) setPendingPostAuthAction(pending);
-      if (storedMode === 'login' || storedMode === 'register') setAuthMode(storedMode);
-      if (storedView === 'options' || storedView === 'email') setAuthView(storedView);
-    } catch {
-      // Ignore storage restrictions.
-    }
+    const { pendingAction: pending, authMode: storedMode, authView: storedView, section: storedSection } = readStoredPostAuthContext();
+    if (pending) setPendingPostAuthAction(pending);
+    if (storedMode === 'login' || storedMode === 'register') setAuthMode(storedMode);
+    if (storedView === 'options' || storedView === 'email') setAuthView(storedView);
+    if (storedSection) setPendingPostAuthSection(String(storedSection).trim().toLowerCase());
   }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
-      const savedEmail = window.localStorage.getItem('remembered_email') || '';
+      const savedEmail = readRememberedEmail();
       if (savedEmail) {
         setAuthForm((prev) => ({ ...prev, email: savedEmail }));
         setRememberMe(true);
@@ -592,8 +795,18 @@ function App() {
     };
   }, [showLandingPage, darkMode]);
 
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const scrollLockClass = 'app-scroll-lock';
+    const shouldLockScroll = showAccountPanel || showOnboarding;
+    document.body.classList.toggle(scrollLockClass, shouldLockScroll);
+    return () => {
+      document.body.classList.remove(scrollLockClass);
+    };
+  }, [showAccountPanel, showOnboarding]);
+
   const isAuthenticated = Boolean(user);
-  const userPlanType = useMemo(() => {
+  const backendUserPlanType = useMemo(() => {
     if (!user) return 'free';
     const raw = String(user.planType || user.plan_type || '').trim().toLowerCase();
     if (raw === 'elite' || raw === 'creator') return 'elite';
@@ -601,11 +814,65 @@ function App() {
     if (raw === 'free') return 'free';
     return user.isPremium ? 'pro' : 'free';
   }, [user]);
+  const userPlanType = useMemo(
+    () => resolveEffectivePlan(backendUserPlanType, localUserPlan),
+    [backendUserPlanType, localUserPlan]
+  );
+  const planEntitlements = useMemo(() => getPlanEntitlements(userPlanType), [userPlanType]);
+  const planComparisonRows = useMemo(() => getPlanComparisonRows(), []);
   const canUseRadarPlan = userPlanType === 'pro' || userPlanType === 'elite';
   const canUseAiTravelPlan = userPlanType === 'elite';
+  const canRunAiTravelMvp = isAuthenticated;
   const isMfaChallengeActive = Boolean(authMfa.ticket);
   const isAdvancedMode = uiMode === 'advanced';
   const showAuthGateModal = false;
+  const adminAccess = useMemo(
+    () =>
+      resolveAdminAccess({
+        userEmail: user?.email,
+        allowlistCsv: import.meta?.env?.VITE_ADMIN_ALLOWLIST_EMAILS || ''
+      }),
+    [user?.email]
+  );
+  const isAdminUser = adminAccess.isAdmin;
+
+  useEffect(() => {
+    writeStoredUserPlan(localUserPlan);
+  }, [localUserPlan]);
+
+  useEffect(() => {
+    const normalizedBackend = normalizeUserPlan(backendUserPlanType);
+    const resolved = resolveEffectivePlan(localUserPlan, normalizedBackend);
+    if (resolved !== localUserPlan) {
+      setLocalUserPlan(resolved);
+    }
+  }, [backendUserPlanType, localUserPlan]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const syncFromPath = () => {
+      const path = String(window.location.pathname || '').trim().toLowerCase();
+      const isAdminPath = path === '/admin' || path === '/backoffice';
+      setAdminRouteRequested(isAdminPath);
+      if (isAdminPath) {
+        setShowLandingPage(false);
+        setActiveMainSection('admin');
+        if (!user) {
+          setShowAccountPanel(false);
+          setAuthMode('login');
+          setAuthView('email');
+          setAuthError('');
+        } else {
+          setShowAccountPanel(false);
+        }
+      } else if (activeMainSection === 'admin') {
+        setActiveMainSection('explore');
+      }
+    };
+    syncFromPath();
+    window.addEventListener('popstate', syncFromPath);
+    return () => window.removeEventListener('popstate', syncFromPath);
+  }, [activeMainSection, user]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -636,7 +903,13 @@ function App() {
     };
   }, [isAdvancedMode]);
   const quickIntakePrompts = QUICK_INTAKE_PROMPTS_I18N[language] || QUICK_INTAKE_PROMPTS_I18N.en;
-  const heroSubText = t('landingHeroEyebrow');
+  const isLiveDataSource = systemCapabilities?.data_source === 'live';
+  const heroSubText = isLiveDataSource
+    ? t('appHeroSubLive') || 'Live provider mode active. Radar is scanning current fares.'
+    : t('appHeroSubSynthetic') || 'Historical/demo mode active. Use signals to explore and verify final live fare before booking.';
+  const heroDataSourceNote = isLiveDataSource
+    ? t('appDataSourceLiveNote') || 'Connected to live providers.'
+    : t('appDataSourceSyntheticNote') || 'Using historical signals: useful for discovery, not a final booking quote.';
   const authTitle = authMode === 'login' ? t('signIn') : t('register');
   const authUi = {
     welcomeTitle: t('authWelcomeTitle'),
@@ -655,13 +928,23 @@ function App() {
   const offerSummary = useMemo(() => {
     if (!searchResult.meta) return t('noSearch');
     return `${searchResult.meta.count} ${t('offers')} | ${t('stay')} ${searchResult.meta.stayDays} ${t('days')}`;
-  }, [searchResult.meta, language]);
+  }, [searchResult.meta, language, i18nPack]);
 
   const visibleFlights = useMemo(() => {
     const items = [...searchResult.flights];
-    if (searchSortBy === 'price') items.sort((a, b) => a.price - b.price || b.savingVs2024 - a.savingVs2024);
-    else if (searchSortBy === 'avg2024') items.sort((a, b) => a.avg2024 - b.avg2024 || a.price - b.price);
-    else items.sort((a, b) => b.savingVs2024 - a.savingVs2024 || a.price - b.price);
+    if (searchSortBy === 'price') {
+      items.sort((a, b) => a.price - b.price || b.savingVs2024 - a.savingVs2024);
+    } else if (searchSortBy === 'avg2024') {
+      items.sort((a, b) => a.avg2024 - b.avg2024 || a.price - b.price);
+    } else if (searchSortBy === 'travelScore') {
+      return sortItinerariesByTravelScore(items);
+    } else if (searchSortBy === 'deal') {
+      return sortByDealPriority(items);
+    } else if (searchSortBy === 'radar') {
+      return sortByRadarPriority(items);
+    } else {
+      items.sort((a, b) => b.savingVs2024 - a.savingVs2024 || a.price - b.price);
+    }
     return items;
   }, [searchResult.flights, searchSortBy]);
 
@@ -727,768 +1010,497 @@ function App() {
     };
   }, []);
 
-  async function refreshWatchlist() {
-    if (!isAuthenticated) return;
-    setWatchlistError('');
-    try {
-      const payload = await api.watchlist(token);
-      setWatchlist(payload.items);
-    } catch (error) {
-      setWatchlistError(resolveApiError(error));
-    }
-  }
+  const bookingHandoffLayer = useMemo(() => createBookingHandoffLayer(), []);
+  const bookingClickTracker = useMemo(() => createBookingClickedTracker({ apiClient: api }), []);
+  const funnelTracker = useMemo(() => createFunnelTracker(), []);
+  const funnelEventService = useMemo(() => createFunnelEventService(funnelTracker), [funnelTracker]);
+  const adminDashboardApi = useMemo(() => createAdminDashboardApi(api), []);
+  const { sendAdminTelemetryEvent, trackSearchEvent, trackResultInteraction, trackItineraryOpened } = useAdminTelemetryBridge({
+    isAuthenticated,
+    searchMode,
+    funnelEventService,
+    adminDashboardApi,
+    token,
+    mapFunnelEventToAdminTelemetry,
+    mapUpgradeEventToAdminTelemetry
+  });
+  const {
+    submitAuth,
+    submitLoginMfa,
+    loginWithGoogle,
+    loginWithApple,
+    loginWithFacebook,
+    setupMfa,
+    resetMfaSetup,
+    enableMfa,
+    disableMfa,
+    finishOnboarding,
+    openOnboardingSetup,
+    logout,
+    deleteAccount
+  } = useAuthSessionActions({
+    api,
+    token,
+    user,
+    authMode,
+    authForm,
+    authView,
+    rememberMe,
+    authMfa,
+    mfaActionCode,
+    onboardingDraft,
+    t,
+    setToken,
+    setUser,
+    setAuthForm,
+    setAuthView,
+    setAuthMfa,
+    setShowLandingPage,
+    setShowAccountPanel,
+    setAuthError,
+    setOauthLoading,
+    setSubMessage,
+    setMfaSetupData,
+    setMfaActionCode,
+    setSearchHistory,
+    setSecurityEvents,
+    setAlertDraftById,
+    setDeletingAccount,
+    setOnboardingSaving,
+    setSearchForm,
+    setShowOnboarding,
+    resolveApiError,
+    persistAuthFunnelState,
+    persistPostAuthAction,
+    persistPostAuthSection,
+    clearAuthFunnelState,
+    clearLocalTravelData,
+    clearConsent,
+    writeRememberedEmail,
+    clearRememberedEmail
+  });
+  const aiGateway = useMemo(
+    () =>
+      createAiGateway({
+        adapters: {
+          openai: createOpenAiAdapter(),
+          anthropic: createAnthropicAdapter(),
+          mock: createMockAiAdapter({
+            handlers: {
+              itinerary_generation: async ({ input, planType }) => {
+                const generationInputs = Array.isArray(input?.generationInputs) ? input.generationInputs : [];
+                const preferences = input?.preferences && typeof input.preferences === 'object' ? input.preferences : {};
+                if (generationInputs.length === 0) {
+                  return {
+                    ok: true,
+                    data: {
+                      summary: formatGeneratedSummary(language, 0),
+                      items: [],
+                      totalItems: 0,
+                      truncatedByPlan: false
+                    }
+                  };
+                }
 
-  async function refreshSubscriptions() {
-    if (!isAuthenticated) return;
-    try {
-      const payload = await api.listAlertSubscriptions(token);
-      setSubscriptions(payload.items);
-      setAlertDraftById((prev) => {
-        const next = {};
-        for (const item of payload.items || []) {
-          next[item.id] = prev[item.id] || {
-            targetPrice: Number.isFinite(item.targetPrice) ? String(item.targetPrice) : '',
-            stayDays: String(item.stayDays ?? 7),
-            travellers: String(item.travellers ?? 1),
-            cabinClass: item.cabinClass || 'economy',
-            cheapOnly: Boolean(item.cheapOnly)
-          };
+                const candidates = generateCandidateItineraries(generationInputs, preferences);
+                const ranked = rankGeneratedItineraries(candidates, preferences).map((candidate) => ({
+                  ...candidate,
+                  explanation: explainGeneratedItinerary(candidate, preferences)
+                }));
+                const entitlements = getPlanEntitlements(planType);
+                const limit = entitlements.aiTravelCandidatesLimit;
+                const hasLimit = Number.isFinite(Number(limit)) && Number(limit) > 0;
+                const safeLimit = hasLimit ? Math.max(1, Math.round(Number(limit))) : null;
+                const limited = safeLimit === null ? ranked : ranked.slice(0, safeLimit);
+
+                return {
+                  ok: true,
+                  data: {
+                    summary: formatGeneratedSummary(language, limited.length),
+                    items: buildGatewayItineraryItems(limited),
+                    totalItems: ranked.length,
+                    truncatedByPlan: safeLimit !== null && ranked.length > safeLimit
+                  }
+                };
+              }
+            }
+          })
+        },
+        providerAvailability: {
+          openai: false,
+          anthropic: false,
+          mock: true
         }
-        return next;
-      });
-    } catch {
-      setSubscriptions([]);
-    }
-  }
+      }),
+    [language]
+  );
+  const {
+    refreshWatchlist,
+    refreshSubscriptions,
+    refreshNotifications,
+    refreshSearchHistory,
+    refreshSecurityActivity,
+    loadOpportunityFeed,
+    loadOpportunityClusters,
+    loadExploreDiscovery,
+    applyExploreDestination,
+    followOpportunity,
+    followDestinationCluster,
+    followDestinationClusterFromFeed,
+    loadRadarPreferences,
+    loadRadarMatches,
+    loadRadarFollows,
+    loadOpportunityPipelineStatus,
+    openOpportunityDebugView,
+    exportOpportunityDebugSnapshot,
+    saveRadarPreferences,
+    removeRadarFollow,
+    runAiTravelQuery,
+    runSecurityAuditCheck,
+    runFeatureAuditCheck,
+    loadOutboundReport,
+    exportOutboundReportCsv,
+    loadMonetizationReport,
+    loadBillingPricing,
+    loadFunnelReport,
+    loadAdminBackofficeReport,
+    refreshOpportunityFeedNow
+  } = useAppDataOperations({
+    api,
+    token,
+    isAuthenticated,
+    isAdminUser,
+    canUseRadarPlan,
+    canUseAiTravelPlan,
+    searchForm,
+    searchMode,
+    searchSortBy,
+    searchResult,
+    opportunityFeed,
+    selectedOpportunityCluster,
+    opportunityPipelineStatus,
+    radarDraft,
+    userPlanType,
+    aiTravelPrompt,
+    onboardingDraft,
+    language,
+    t,
+    getUpgradeTriggerContent,
+    trackResultInteraction,
+    sendAdminTelemetryEvent,
+    beginSetAlertAuthFlow,
+    buildCurrentMultiCityPayload,
+    buildItineraryGenerationInputs,
+    buildItineraryGenerationPreferences,
+    asOptionalPositiveInt,
+    asOptionalBoundedInt,
+    canonicalCountryFilter,
+    canonicalDestinationQuery,
+    resolveApiError,
+    toRadarDraft,
+    parseCsvText,
+    slugifyFollowValue,
+    monthsToSeasonSlugs,
+    localizeClusterDisplayName,
+    aiGateway,
+    applySearchResultState,
+    setSearchForm,
+    setSearchError,
+    setSearchLoading,
+    setWatchlist,
+    setWatchlistError,
+    setSubscriptions,
+    setSubMessage,
+    setAlertDraftById,
+    setNotifications,
+    setUnreadCount,
+    setNotifError,
+    setSecurityEvents,
+    setSecurityError,
+    setSearchHistory,
+    setOpportunityFeed,
+    setOpportunityFeedAccess,
+    setOpportunityFeedLoading,
+    setOpportunityFeedError,
+    setDestinationClusters,
+    setDestinationClustersLoading,
+    setDestinationClustersError,
+    setExploreBudgetItems,
+    setExploreBudgetLoading,
+    setExploreBudgetError,
+    setExploreMapPoints,
+    setExploreMapLoading,
+    setExploreMapError,
+    setExploreDiscoveryInput,
+    exploreDiscoveryInput,
+    exploreSelectedDestination,
+    setExploreSelectedDestination,
+    setActiveMainSection,
+    setRadarDraft,
+    setRadarError,
+    setRadarSaving,
+    setRadarMessage,
+    setRadarMatches,
+    setRadarMatchesLoading,
+    setRadarMatchesError,
+    setRadarFollows,
+    setRadarFollowsLoading,
+    setRadarFollowsError,
+    setOpportunityPipelineStatus,
+    setOpportunityPipelineStatusLoading,
+    setOpportunityPipelineStatusError,
+    setAiTravelResult,
+    setAiTravelLoading,
+    setAiTravelError,
+    setSecurityAudit,
+    setSecurityAuditLoading,
+    setSecurityAuditError,
+    setFeatureAudit,
+    setFeatureAuditLoading,
+    setFeatureAuditError,
+    setOutboundReport,
+    setOutboundReportLoading,
+    setOutboundReportError,
+    setOutboundCsvLoading,
+    setMonetizationReport,
+    setMonetizationLoading,
+    setMonetizationError,
+    setBillingPricing,
+    setBillingPricingLoading,
+    setBillingPricingError,
+    setFunnelReport,
+    setFunnelLoading,
+    setFunnelError,
+    setDestinationInsights,
+    setInsightLoadingByFlight,
+    setInsightErrorByFlight,
+    activateRadarSessionFlag,
+    adminDashboardApi,
+    setAdminDashboardReport,
+    setAdminDashboardLoading,
+    setAdminDashboardError,
+    COOKIE_SESSION_TOKEN,
+    notifiedIdsRef,
+    trackSearchEvent,
+    getErrorTrackingData,
+    submitMultiCitySearchWithRetry,
+    DEFAULT_MULTI_CITY_RETRY_POLICY,
+    multiCitySegments,
+    setMultiCityValidation,
+    validateMultiCityForm,
+    setMultiCityRetryVisible,
+    intakePrompt,
+    setIntakeInfo,
+    setIntakeLoading,
+    setIntakeMessages,
+    setIntakePrompt
+  });
+  const {
+    submitSearch,
+    retryMultiCitySearch,
+    submitJustGo,
+    analyzeIntentPrompt,
+    runQuickIntakePrompt,
+    applySearchPreset,
+    applyPeriodPreset,
+    autoFixSearchFilters
+  } = useSearchFlowActions({
+    api,
+    token,
+    t,
+    searchMode,
+    searchForm,
+    multiCitySegments,
+    intakePrompt,
+    DEFAULT_MULTI_CITY_RETRY_POLICY,
+    trackSearchEvent,
+    getErrorTrackingData,
+    validateMultiCityForm,
+    buildCurrentMultiCityPayload,
+    submitMultiCitySearchWithRetry,
+    applySearchResultState,
+    refreshSearchHistory,
+    canonicalCountryFilter,
+    canonicalDestinationQuery,
+    asOptionalPositiveInt,
+    asOptionalBoundedInt,
+    resolveApiError,
+    setSearchError,
+    setSearchLoading,
+    setMultiCityValidation,
+    setMultiCityRetryVisible,
+    setSearchForm,
+    setIntakeInfo,
+    setIntakeLoading,
+    setIntakeMessages,
+    setIntakePrompt
+  });
+  const {
+    upgradeFlowState,
+    upgradePlanContent,
+    closePlanUpgradeFlow,
+    submitPlanUpgradeInterest,
+    openPremiumSectionFromUpgradeFlow,
+    upgradeToPremium,
+    chooseElitePlan
+  } = useUpgradeFlowController({
+    user,
+    applyLocalPlanChange,
+    setSubMessage,
+    setActiveMainSection,
+    api,
+    token,
+    systemCapabilities
+  });
+  const {
+    bookingHandoffError,
+    opportunityBookingError,
+    clearBookingHandoffError,
+    clearOpportunityBookingError,
+    handleBookingFromSearchFlight,
+    openOpportunityBooking
+  } = useBookingFlow({
+    bookingHandoffLayer,
+    bookingClickTracker,
+    funnelEventService,
+    searchForm,
+    searchMode,
+    t,
+    utmParams,
+    resolveUpgradeTriggerContent: (trigger, meta) => getUpgradeTriggerContent(userPlanType, trigger, meta),
+    saveRecentItineraryWithPlanGate,
+    setOpportunityDetailUpgradePrompt,
+    trackResultInteraction
+  });
+  const { openOpportunityDetail, openSavedHubItinerary } = useOpportunityFlow({
+    api,
+    token,
+    opportunityFeed,
+    userPlanType,
+    resolveApiError,
+    saveRecentItineraryWithPlanGate,
+    resolveUpgradeTriggerContent: (trigger, meta) => getUpgradeTriggerContent(userPlanType, trigger, meta),
+    trackResultInteraction,
+    trackItineraryOpened,
+    clearOpportunityBookingError,
+    setOpportunityDetail,
+    setOpportunityDetailLoading,
+    setOpportunityDetailError,
+    setOpportunityDetailUpgradePrompt
+  });
+  const {
+    getAlertDraft,
+    updateAlertDraft,
+    addToWatchlist,
+    removeWatchlistItem,
+    createAlertForFlight,
+    createDurationAlert,
+    loadDestinationInsights,
+    deleteSubscription,
+    toggleSubscriptionEnabled,
+    saveSubscriptionEdit,
+    markNotificationRead,
+    markAllRead,
+    enableBrowserNotifications,
+    toggleCompare,
+    saveFirstResult,
+    alertFirstResult
+  } = useResultInteractionActions({
+    api,
+    token,
+    t,
+    isAuthenticated,
+    canUseRadarPlan,
+    canUseAiTravelPlan,
+    searchForm,
+    showLandingPage,
+    alertDraftById,
+    visibleFlights,
+    trackResultInteraction,
+    beginSetAlertAuthFlow,
+    canonicalCountryFilter,
+    canonicalDestinationQuery,
+    resolveApiError,
+    refreshWatchlist,
+    refreshSubscriptions,
+    refreshNotifications,
+    setWatchlistError,
+    setSubMessage,
+    setAlertDraftById,
+    setDestinationInsights,
+    setInsightLoadingByFlight,
+    setInsightErrorByFlight,
+    setCompareIds
+  });
+  const {
+    scrollToSection,
+    handleLandingPrimaryCta,
+    handleLandingSecondaryCta,
+    handleLandingSignIn,
+    requireSectionLogin
+  } = useLandingActions({
+    isAuthenticated,
+    t,
+    beginAuthFlow,
+    persistPostAuthAction,
+    persistPostAuthSection,
+    clearAuthFunnelState,
+    setShowLandingPage,
+    setShowAccountPanel,
+    setSubMessage,
+    setActiveMainSection
+  });
 
-  async function refreshNotifications(isPolling = false) {
-    if (!isAuthenticated) return;
-    setNotifError('');
-    try {
-      const payload = await api.listNotifications(token);
-      setNotifications(payload.items);
-      setUnreadCount(payload.unread);
-
-      const canUseBrowserNotifications =
-        typeof window !== 'undefined' && 'Notification' in window && window.Notification.permission === 'granted';
-      if (isPolling && canUseBrowserNotifications) {
-        for (const n of payload.items) {
-          if (n.readAt || notifiedIdsRef.current.has(n.id)) continue;
-          notifiedIdsRef.current.add(n.id);
-          try {
-            new window.Notification(n.title, { body: n.message });
-          } catch {
-            break;
-          }
-        }
-      }
-    } catch (error) {
-      setNotifError(resolveApiError(error));
-    }
-  }
-
-  async function refreshSearchHistory() {
-    if (!isAuthenticated) return;
-    try {
-      const payload = await api.searchHistory(token);
-      setSearchHistory(payload.items || []);
-    } catch {
-      setSearchHistory([]);
-    }
-  }
-
-  async function refreshSecurityActivity() {
-    if (!isAuthenticated) return;
-    setSecurityError('');
-    try {
-      const payload = await api.securityActivity(token);
-      setSecurityEvents(payload.items || []);
-    } catch (error) {
-      setSecurityEvents([]);
-      setSecurityError(resolveApiError(error));
-    }
-  }
-
-  async function loadOpportunityFeed(forceRefresh = false) {
-    setOpportunityFeedLoading(true);
-    setOpportunityFeedError('');
-    try {
-      const payload = await api.opportunityFeed(
-        token,
-        { limit: 24, cluster: selectedOpportunityCluster || undefined },
-        { forceRefresh }
-      );
-      setOpportunityFeed(payload.items || []);
-      setOpportunityFeedAccess(payload.access || null);
-    } catch (error) {
-      setOpportunityFeed([]);
-      setOpportunityFeedAccess(null);
-      setOpportunityFeedError(resolveApiError(error));
-    } finally {
-      setOpportunityFeedLoading(false);
-    }
-  }
-
-  async function loadOpportunityClusters(forceRefresh = false) {
-    setDestinationClustersLoading(true);
-    setDestinationClustersError('');
-    try {
-      const payload = await api.opportunityClusters(token, { limit: 12 }, { forceRefresh });
-      setDestinationClusters(Array.isArray(payload?.items) ? payload.items : []);
-    } catch (error) {
-      setDestinationClusters([]);
-      setDestinationClustersError(resolveApiError(error));
-    } finally {
-      setDestinationClustersLoading(false);
-    }
-  }
-
-  async function loadExploreDiscovery(overrides = {}) {
-    const origin = String(overrides.origin ?? exploreDiscoveryInput.origin ?? '').trim().toUpperCase();
-    const budgetCandidate = overrides.budgetMax ?? exploreDiscoveryInput.budgetMax;
-    const budgetMax = Number(budgetCandidate);
-    const limitCandidate = Number(overrides.limit ?? exploreDiscoveryInput.limit ?? 24);
-    const limit = Number.isFinite(limitCandidate) && limitCandidate > 0 ? Math.min(60, Math.max(5, Math.round(limitCandidate))) : 24;
-
-    if (!/^[A-Z]{3}$/.test(origin)) {
-      setExploreBudgetItems([]);
-      setExploreMapPoints([]);
-      setExploreBudgetError(t('exploreDiscoveryOriginRequired'));
-      setExploreMapError('');
-      return;
-    }
-    if (!Number.isFinite(budgetMax) || budgetMax <= 0) {
-      setExploreBudgetItems([]);
-      setExploreMapPoints([]);
-      setExploreBudgetError(t('exploreDiscoveryBudgetRequired'));
-      setExploreMapError('');
-      return;
-    }
-
-    setExploreBudgetLoading(true);
-    setExploreMapLoading(true);
-    setExploreBudgetError('');
-    setExploreMapError('');
-    setExploreDiscoveryInput((prev) => ({
-      ...prev,
-      origin,
-      budgetMax: String(Math.round(budgetMax)),
-      limit
-    }));
-
-    const [budgetResult, mapResult] = await Promise.allSettled([
-      api.opportunityExploreBudget(token, { origin, budgetMax, limit }),
-      api.opportunityExploreMap(token, { origin, budgetMax, limit })
-    ]);
-
-    if (budgetResult.status === 'fulfilled') {
-      const items = Array.isArray(budgetResult.value?.items) ? budgetResult.value.items : [];
-      setExploreBudgetItems(items);
-      if (!items.length) setExploreSelectedDestination('');
-      else {
-        const selected = String(exploreSelectedDestination || '').toUpperCase();
-        const hasSelected = items.some((item) => String(item.destination_airport || '').toUpperCase() === selected);
-        if (!selected || !hasSelected) setExploreSelectedDestination(String(items[0].destination_airport || '').toUpperCase());
-      }
-    } else {
-      setExploreBudgetItems([]);
-      setExploreBudgetError(resolveApiError(budgetResult.reason));
-    }
-
-    if (mapResult.status === 'fulfilled') {
-      const points = Array.isArray(mapResult.value?.points) ? mapResult.value.points : [];
-      if (points.length > 0) {
-        setExploreMapPoints(points);
-      } else if (budgetResult.status === 'fulfilled') {
-        const budgetFallback = Array.isArray(budgetResult.value?.items) ? budgetResult.value.items : [];
-        setExploreMapPoints(
-          budgetFallback.map((item) => ({
-            ...item,
-            min_price: item.min_price,
-            destination_airport: item.destination_airport,
-            destination_city: item.destination_city,
-            destination_country: item.destination_country || null,
-            destination_coords: null,
-            origin_coords: null
-          }))
-        );
-      } else {
-        setExploreMapPoints([]);
-      }
-    } else {
-      setExploreMapPoints([]);
-      setExploreMapError(resolveApiError(mapResult.reason));
-    }
-
-    setExploreBudgetLoading(false);
-    setExploreMapLoading(false);
-  }
-
-  function applyExploreDestination(item) {
-    const destinationAirport = String(item?.destination_airport || '').toUpperCase();
-    const destinationQuery = String(item?.destination_city || destinationAirport || '').trim();
-    const parsedBudget = Number(item?.min_price);
-    const fallbackBudget = Number(exploreDiscoveryInput.budgetMax);
-    const resolvedBudget = Number.isFinite(parsedBudget) && parsedBudget > 0
-      ? String(Math.round(parsedBudget))
-      : Number.isFinite(fallbackBudget) && fallbackBudget > 0
-      ? String(Math.round(fallbackBudget))
-      : '';
-    if (!destinationQuery) return;
-    setExploreSelectedDestination(destinationAirport);
-    setSearchForm((prev) => ({
-      ...prev,
-      origin: String(exploreDiscoveryInput.origin || prev.origin || '').toUpperCase() || prev.origin,
-      destinationQuery,
-      maxBudget: resolvedBudget || prev.maxBudget,
-      cheapOnly: true
-    }));
-    setSubMessage(`${t('exploreDiscoveryAppliedPrefix')} ${destinationQuery}`);
-  }
-
-  async function openOpportunityDetail(opportunityId) {
-    if (!opportunityId) return;
-    setOpportunityDetailLoading(true);
-    setOpportunityDetailError('');
-    try {
-      const payload = await api.opportunityDetail(token, opportunityId);
-      setOpportunityDetail(payload);
-    } catch (error) {
-      setOpportunityDetail(null);
-      setOpportunityDetailError(resolveApiError(error));
-    } finally {
-      setOpportunityDetailLoading(false);
-    }
-  }
-
-  async function followOpportunity(opportunityId) {
-    if (!isAuthenticated) {
-      beginSetAlertAuthFlow({ keepLandingVisible: false });
-      return setSubMessage(t('loginRequiredAlert'));
-    }
-    if (!canUseRadarPlan) {
-      setSubMessage(t('upgradePromptUnlockAll'));
-      setActiveMainSection('premium');
-      return;
-    }
-    try {
-      await api.followOpportunity(token, opportunityId);
-      await refreshSubscriptions();
-      await api.runNotificationScan(token);
-      await refreshNotifications();
-      setSubMessage(t('alertCreated'));
-    } catch (error) {
-      setSubMessage(resolveApiError(error));
-    }
-  }
-
-  async function followDestinationCluster(cluster) {
-    const slug = String(cluster?.slug || '').trim();
-    const displayName = String(cluster?.cluster_name || slug || '').trim();
-    if (!slug) return;
-    if (!isAuthenticated) {
-      beginSetAlertAuthFlow({ keepLandingVisible: false });
-      setSubMessage(t('loginRequiredAlert'));
-      return;
-    }
-    if (!canUseRadarPlan) {
-      setSubMessage(t('followDestinationProOnly'));
-      setActiveMainSection('premium');
-      return;
-    }
-    try {
-      await api.followEntity(token, {
-        entityType: 'destination_cluster',
-        slug,
-        displayName,
-        followType: 'radar',
-        metadata: { source: 'cluster_follow' }
-      });
-      await loadRadarFollows();
-      setSubMessage(`${t('clusterFollowedPrefix')} ${displayName}`);
-    } catch (error) {
-      setSubMessage(resolveApiError(error));
-    }
-  }
-
-  async function loadRadarPreferences() {
-    if (!isAuthenticated) return;
-    setRadarError('');
-    try {
-      const payload = await api.getRadarPreferences(token);
-      setRadarDraft(toRadarDraft(payload.item));
-    } catch (error) {
-      setRadarError(resolveApiError(error));
-    }
-  }
-
-  async function loadRadarMatches() {
-    if (!isAuthenticated) return;
-    setRadarMatchesLoading(true);
-    setRadarMatchesError('');
-    try {
-      const payload = await api.radarMatches(token);
-      setRadarMatches(Array.isArray(payload?.items) ? payload.items : []);
-    } catch (error) {
-      setRadarMatches([]);
-      setRadarMatchesError(resolveApiError(error));
-    } finally {
-      setRadarMatchesLoading(false);
-    }
-  }
-
-  async function loadRadarFollows() {
-    if (!isAuthenticated) return;
-    setRadarFollowsLoading(true);
-    setRadarFollowsError('');
-    try {
-      const payload = await api.listFollows(token);
-      const items = Array.isArray(payload?.items) ? payload.items : [];
-      setRadarFollows(items.filter((item) => String(item.follow_type || '').toLowerCase() === 'radar'));
-    } catch (error) {
-      setRadarFollows([]);
-      setRadarFollowsError(resolveApiError(error));
-    } finally {
-      setRadarFollowsLoading(false);
-    }
-  }
-
-  async function loadOpportunityPipelineStatus() {
-    if (!isAuthenticated) return;
-    setOpportunityPipelineStatusLoading(true);
-    setOpportunityPipelineStatusError('');
-    try {
-      const payload = await api.opportunityDebug(token);
-      if (payload?.opportunityPipeline) {
-        setOpportunityPipelineStatus(payload);
-      } else {
-        const fallback = await api.opportunityPipelineStatus(token);
-        setOpportunityPipelineStatus({ opportunityPipeline: fallback?.status || null });
-      }
-    } catch (error) {
-      try {
-        const fallback = await api.opportunityPipelineStatus(token);
-        setOpportunityPipelineStatus({ opportunityPipeline: fallback?.status || null });
-      } catch {
-        setOpportunityPipelineStatus(null);
-      }
-      setOpportunityPipelineStatusError(resolveApiError(error));
-    } finally {
-      setOpportunityPipelineStatusLoading(false);
-    }
-  }
-
-  async function openOpportunityDebugView() {
-    let payload = opportunityPipelineStatus;
-    if (!payload) {
-      try {
-        payload = await api.opportunityDebug(token);
-      } catch (error) {
-        setOpportunityPipelineStatusError(resolveApiError(error));
-        return;
-      }
-    }
-    if (!payload) return;
-    const text = JSON.stringify(payload, null, 2);
-    const blob = new Blob([text], { type: 'application/json;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    if (typeof window !== 'undefined') {
-      window.open(url, '_blank', 'noopener,noreferrer');
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
-    }
-  }
-
-  async function exportOpportunityDebugSnapshot() {
-    let payload = opportunityPipelineStatus;
-    if (!payload) {
-      try {
-        payload = await api.opportunityDebug(token);
-      } catch (error) {
-        setOpportunityPipelineStatusError(resolveApiError(error));
-        return;
-      }
-    }
-    if (!payload) return;
-    const text = JSON.stringify(payload, null, 2);
-    const blob = new Blob([text], { type: 'application/json;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `opportunity-debug-${format(new Date(), 'yyyy-MM-dd-HHmm')}.json`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
-  }
-
-  function slugifyFollowValue(value) {
-    return String(value || '')
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '_')
-      .replace(/^_+|_+$/g, '')
-      .slice(0, 80);
-  }
-
-  function monthsToSeasonSlugs(months) {
-    const out = new Set();
-    const list = Array.isArray(months) ? months : [];
-    if (list.some((m) => [12, 1, 2].includes(Number(m)))) out.add('winter');
-    if (list.some((m) => [3, 4, 5].includes(Number(m)))) out.add('spring');
-    if (list.some((m) => [6, 7, 8].includes(Number(m)))) out.add('summer');
-    if (list.some((m) => [9, 10, 11].includes(Number(m)))) out.add('autumn');
-    return Array.from(out);
-  }
-
-  async function saveRadarPreferences() {
-    if (!isAuthenticated) return;
-    if (!canUseRadarPlan) {
-      setRadarError(t('radarUpgradeTitle'));
-      setActiveMainSection('premium');
-      return;
-    }
-    setRadarSaving(true);
-    setRadarError('');
-    setRadarMessage('');
-    try {
-      const body = {
-        originAirports: parseCsvText(radarDraft.originAirports, (x) => x.toUpperCase()),
-        favoriteDestinations: parseCsvText(radarDraft.favoriteDestinations),
-        favoriteCountries: parseCsvText(radarDraft.favoriteCountries),
-        budgetCeiling: radarDraft.budgetCeiling ? Number(radarDraft.budgetCeiling) : null,
-        preferredTravelMonths: parseCsvText(radarDraft.preferredTravelMonths, (x) => Number(x)).filter((x) => Number.isFinite(x) && x >= 1 && x <= 12)
+  function applyLocalPlanChange(nextPlanType) {
+    const requestedPlan = normalizeUserPlan(nextPlanType);
+    const normalizedPlan = requestedPlan === 'free' ? 'free' : resolveEffectivePlan(userPlanType, requestedPlan);
+    setLocalUserPlan(normalizedPlan);
+    setUser((prev) => {
+      if (!prev) return prev;
+      const nextIsPremium = normalizedPlan === 'pro' || normalizedPlan === 'elite';
+      return {
+        ...prev,
+        planType: normalizedPlan,
+        plan_type: normalizedPlan,
+        isPremium: nextIsPremium
       };
-      await api.updateRadarPreferences(token, body);
-      const existingRadarFollowsPayload = await api.listFollows(token);
-      const existingRadarFollows = Array.isArray(existingRadarFollowsPayload?.items)
-        ? existingRadarFollowsPayload.items.filter((item) => String(item.follow_type || '').toLowerCase() === 'radar')
-        : [];
-      for (const item of existingRadarFollows) {
-        await api.unfollowEntity(token, item.id);
-      }
-
-      const followItems = [];
-      for (const airport of body.originAirports) {
-        followItems.push({ entityType: 'airport', slug: slugifyFollowValue(airport), displayName: airport });
-      }
-      for (const city of body.favoriteDestinations) {
-        followItems.push({ entityType: 'city', slug: slugifyFollowValue(city), displayName: city });
-      }
-      for (const country of body.favoriteCountries) {
-        followItems.push({ entityType: 'country', slug: slugifyFollowValue(country), displayName: country });
-      }
-      if (Number.isFinite(Number(body.budgetCeiling)) && Number(body.budgetCeiling) > 0) {
-        const value = Number(body.budgetCeiling);
-        const bucket = value <= 250 ? 'under_250' : value <= 400 ? 'under_400' : value <= 600 ? 'under_600' : 'above_600';
-        followItems.push({ entityType: 'budget_bucket', slug: bucket, displayName: bucket.replace(/_/g, ' ') });
-      }
-      for (const season of monthsToSeasonSlugs(body.preferredTravelMonths)) {
-        followItems.push({ entityType: 'season', slug: season, displayName: season });
-      }
-
-      const dedupe = new Set();
-      for (const item of followItems) {
-        const key = `${item.entityType}:${item.slug}`;
-        if (!item.slug || dedupe.has(key)) continue;
-        dedupe.add(key);
-        await api.followEntity(token, { ...item, followType: 'radar', metadata: { source: 'radar_preferences' } });
-      }
-
-      setRadarMessage(t('radarSavedSuccess'));
-      await loadRadarMatches();
-      await loadRadarFollows();
-      await loadOpportunityPipelineStatus();
-    } catch (error) {
-      setRadarError(resolveApiError(error));
-    } finally {
-      setRadarSaving(false);
-    }
-  }
-
-  async function removeRadarFollow(followId) {
-    if (!isAuthenticated || !followId) return;
-    setRadarFollowsError('');
-    try {
-      await api.unfollowEntity(token, followId);
-      await loadRadarFollows();
-      setRadarMessage(t('radarFollowUpdated'));
-    } catch (error) {
-      setRadarFollowsError(resolveApiError(error));
-    }
-  }
-
-  async function runAiTravelQuery() {
-    if (!isAuthenticated) return setAiTravelError(t('loginRequiredAlert'));
-    if (!canUseAiTravelPlan) {
-      setAiTravelError(t('aiTravelEliteOnly'));
-      setActiveMainSection('premium');
-      return;
-    }
-    if (!aiTravelPrompt.trim()) return;
-    setAiTravelLoading(true);
-    setAiTravelError('');
-    try {
-      const payload = await api.queryAiTravel(token, { prompt: aiTravelPrompt.trim(), limit: 12 });
-      setAiTravelResult(payload);
-    } catch (error) {
-      setAiTravelResult(null);
-      setAiTravelError(resolveApiError(error));
-    } finally {
-      setAiTravelLoading(false);
-    }
-  }
-
-  function openOpportunityBooking(url) {
-    if (!url) return;
-    if (typeof window !== 'undefined') window.open(url, '_blank', 'noopener,noreferrer');
-  }
-
-  async function runSecurityAuditCheck() {
-    setSecurityAuditLoading(true);
-    setSecurityAuditError('');
-    try {
-      const payload = await api.healthSecurity();
-      setSecurityAudit(payload);
-    } catch (error) {
-      setSecurityAudit(null);
-      setSecurityAuditError(resolveApiError(error));
-    } finally {
-      setSecurityAuditLoading(false);
-    }
-  }
-
-  async function runFeatureAuditCheck() {
-    setFeatureAuditLoading(true);
-    setFeatureAuditError('');
-    try {
-      const payload = await api.healthFeatures();
-      setFeatureAudit(payload);
-    } catch (error) {
-      setFeatureAudit(null);
-      setFeatureAuditError(resolveApiError(error));
-    } finally {
-      setFeatureAuditLoading(false);
-    }
-  }
-
-  async function loadOutboundReport() {
-    if (!isAuthenticated) return;
-    setOutboundReportLoading(true);
-    setOutboundReportError('');
-    try {
-      const payload = await api.outboundReport(token);
-      setOutboundReport(payload);
-    } catch (error) {
-      setOutboundReport(null);
-      setOutboundReportError(resolveApiError(error));
-    } finally {
-      setOutboundReportLoading(false);
-    }
-  }
-
-  async function exportOutboundReportCsv() {
-    if (!isAuthenticated) return;
-    setOutboundCsvLoading(true);
-    setOutboundReportError('');
-    try {
-      const csv = await api.outboundReportCsv(token);
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `outbound-report-${format(new Date(), 'yyyy-MM-dd')}.csv`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      setOutboundReportError(resolveApiError(error));
-    } finally {
-      setOutboundCsvLoading(false);
-    }
-  }
-
-  async function loadMonetizationReport() {
-    if (!isAuthenticated) return;
-    setMonetizationLoading(true);
-    setMonetizationError('');
-    try {
-      const payload = await api.monetizationReport(token);
-      setMonetizationReport(payload);
-    } catch (error) {
-      setMonetizationReport(null);
-      setMonetizationError(resolveApiError(error));
-    } finally {
-      setMonetizationLoading(false);
-    }
-  }
-
-  async function loadBillingPricing(silent = false, forceRefresh = false) {
-    if (!silent) setBillingPricingLoading(true);
-    setBillingPricingError('');
-    try {
-      const payload = await api.billingPricing({ forceRefresh });
-      const pricing = payload?.pricing || {};
-      setBillingPricing({
-        free: { monthlyEur: Number(pricing?.free?.monthlyEur || 0) },
-        pro: { monthlyEur: Number(pricing?.pro?.monthlyEur || 7) },
-        creator: { monthlyEur: Number(pricing?.creator?.monthlyEur || 19) },
-        updatedAt: pricing?.updatedAt || null,
-        lastCostCheckAt: pricing?.lastCostCheckAt || null
-      });
-    } catch (error) {
-      if (!silent) setBillingPricingError(resolveApiError(error));
-    } finally {
-      if (!silent) setBillingPricingLoading(false);
-    }
-  }
-
-  async function loadFunnelReport() {
-    if (!isAuthenticated) return;
-    setFunnelLoading(true);
-    setFunnelError('');
-    try {
-      const payload = await api.funnelAnalytics(token);
-      setFunnelReport(payload);
-    } catch (error) {
-      setFunnelReport(null);
-      setFunnelError(resolveApiError(error));
-    } finally {
-      setFunnelLoading(false);
-    }
-  }
-
-  function isLocalBillingBypassEnabled() {
-    if (typeof window === 'undefined') return false;
-    const host = String(window.location?.hostname || '').trim().toLowerCase();
-    return host === 'localhost' || host === '127.0.0.1' || host === '::1';
-  }
-
-  function closeBillingCheckoutModal() {
-    setBillingCheckoutModal({
-      open: false,
-      planType: 'pro',
-      loading: false,
-      processing: false,
-      error: '',
-      fallbackMode: false,
-      clientToken: ''
     });
-    setBillingFallbackNonce('');
-  }
-
-  async function refreshUserAfterPlanUpgrade(planType) {
-    const payload = await api.me(token);
-    setUser(payload.user);
-    setSubMessage(planType === 'elite' ? t('planEliteActivated') : t('planProActivated'));
-  }
-
-  async function runLegacyUpgrade(planType) {
-    if (planType === 'elite') await api.upgradeElite(token);
-    else await api.upgradePro(token);
-    await refreshUserAfterPlanUpgrade(planType);
-  }
-
-  async function openBillingCheckoutModal(planType) {
-    setBillingFallbackNonce('');
-    setBillingCheckoutModal({
-      open: true,
-      planType,
-      loading: true,
-      processing: false,
-      error: '',
-      fallbackMode: true,
-      clientToken: ''
-    });
-    try {
-      const payload = await api.billingClientToken(token);
-      const clientToken = String(payload?.clientToken || '').trim();
-      setBillingCheckoutModal((prev) => ({
-        ...prev,
-        loading: false,
-        fallbackMode: true,
-        clientToken,
-        error: clientToken ? '' : 'Checkout token unavailable. Retry in a few seconds.'
-      }));
-    } catch (error) {
-      setBillingCheckoutModal((prev) => ({
-        ...prev,
-        loading: false,
-        fallbackMode: true,
-        error: resolveApiError(error)
-      }));
+    if (normalizedPlan === 'elite') {
+      setSubMessage(t('planEliteActivated'));
+    } else if (normalizedPlan === 'pro') {
+      setSubMessage(t('planProActivated'));
+    } else {
+      setSubMessage(t('planFreeActivated'));
     }
   }
 
-  async function startPlanUpgrade(planType) {
-    if (!isAuthenticated) {
-      beginAuthFlow({
-        action: 'enter_app',
-        authMode: 'register',
-        authView: 'options',
-        keepLandingVisible: false
-      });
-      return;
+  function saveRecentItineraryWithPlanGate(item) {
+    const entry = createSavedItineraryFromOpportunity(item);
+    const existing = readSavedItineraries();
+    if (!entry) {
+      return {
+        saved: false,
+        limitReached: false,
+        usage: evaluateUsageLimit(existing.length, planEntitlements.savedItinerariesLimit)
+      };
     }
 
-    setSubMessage('');
-
-    try {
-      let subscription = null;
-      try {
-        subscription = await api.subscription(token);
-      } catch (error) {
-        if (Number(error?.status || 0) === 404) {
-          await runLegacyUpgrade(planType);
-          return;
-        }
-        throw error;
-      }
-
-      const billingProvider = String(subscription?.billingProvider || '').trim().toLowerCase();
-      if (billingProvider !== 'braintree') {
-        await runLegacyUpgrade(planType);
-        return;
-      }
-
-      if (isLocalBillingBypassEnabled()) {
-        await api.billingCheckout(token, {
-          planType,
-          paymentMethodNonce: LOCAL_BILLING_NONCE
-        });
-        await refreshUserAfterPlanUpgrade(planType);
-        return;
-      }
-
-      await openBillingCheckoutModal(planType);
-    } catch (error) {
-      setSubMessage(resolveApiError(error));
+    const alreadySaved = existing.some((saved) => String(saved?.key || '').trim() === entry.key);
+    const usage = evaluateUsageLimit(existing.length, planEntitlements.savedItinerariesLimit);
+    if (!alreadySaved && usage.reached) {
+      return {
+        saved: false,
+        limitReached: true,
+        usage
+      };
     }
-  }
 
-  async function submitBillingCheckout() {
-    if (!isAuthenticated) return;
-    const planType = billingCheckoutModal.planType === 'elite' ? 'elite' : 'pro';
-    const nonce = isLocalBillingBypassEnabled() ? LOCAL_BILLING_NONCE : String(billingFallbackNonce || '').trim();
-    if (!nonce) {
-      setBillingCheckoutModal((prev) => ({ ...prev, error: 'Payment method nonce is required.' }));
-      return;
-    }
-    setBillingCheckoutModal((prev) => ({ ...prev, processing: true, error: '' }));
-    try {
-      await api.billingCheckout(token, {
-        planType,
-        paymentMethodNonce: nonce
-      });
-      closeBillingCheckoutModal();
-      await refreshUserAfterPlanUpgrade(planType);
-    } catch (error) {
-      setBillingCheckoutModal((prev) => ({ ...prev, processing: false, error: resolveApiError(error) }));
-    }
-  }
-
-  async function upgradeToPremium() {
-    await startPlanUpgrade('pro');
+    saveRecentItinerary(entry, planEntitlements.savedItinerariesLimit);
+    return {
+      saved: true,
+      limitReached: false,
+      usage
+    };
   }
 
   function activateFreePlan() {
@@ -1497,765 +1509,93 @@ function App() {
         action: 'enter_app',
         authMode: 'register',
         authView: 'options',
-        keepLandingVisible: false
+        keepLandingVisible: false,
+        targetSection: 'premium'
       });
       return;
     }
-    setSubMessage(t('planFreeActivated'));
+    applyLocalPlanChange('free');
   }
 
-  async function chooseElitePlan() {
-    await startPlanUpgrade('elite');
-  }
-
-  async function finishOnboarding() {
-    if (!isAuthenticated) return;
-    setOnboardingSaving(true);
-    try {
-      await api.completeOnboarding(token, {
-        intent: onboardingDraft.intent,
-        budget: onboardingDraft.budget ? Number(onboardingDraft.budget) : undefined,
-        preferredRegion: onboardingDraft.preferredRegion,
-        directOnly: Boolean(onboardingDraft.directOnly)
+  function viewDealsForTrackedRoute(slug) {
+    const normalizedSlug = String(slug || '').trim().toLowerCase();
+    if (!normalizedSlug) return;
+    setActiveMainSection('home');
+    setSelectedOpportunityCluster(normalizedSlug);
+    if (typeof window !== 'undefined') {
+      window.requestAnimationFrame(() => {
+        document.querySelector('[data-testid="opportunity-feed-panel"]')?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start'
+        });
       });
-      setSearchForm((prev) => ({
-        ...prev,
-        region: onboardingDraft.preferredRegion || prev.region,
-        maxBudget: onboardingDraft.budget || prev.maxBudget,
-        connectionType: onboardingDraft.directOnly ? 'direct' : prev.connectionType
-      }));
-      const payload = await api.me(token);
-      setUser(payload.user);
-      setShowOnboarding(false);
-    } catch (error) {
-      setSubMessage(resolveApiError(error));
-    } finally {
-      setOnboardingSaving(false);
     }
   }
 
-  function buildOutboundHref(flight, surface, partner = 'tde_booking') {
-    if (!flight?.destinationIata) return '#';
-    const params = new URLSearchParams();
-    params.set('partner', partner);
-    params.set('surface', surface);
-    params.set('origin', String(flight.origin || searchForm.origin || '').toUpperCase());
-    params.set('destinationIata', String(flight.destinationIata || '').toUpperCase());
-    if (flight.destination) params.set('destination', String(flight.destination));
-    params.set('dateFrom', String(flight.dateFrom || searchForm.dateFrom || ''));
-    params.set('dateTo', String(flight.dateTo || searchForm.dateTo || ''));
-    params.set('travellers', String(Number(searchForm.travellers) || 1));
-    params.set('cabinClass', String(searchForm.cabinClass || 'economy'));
-    if (Number.isFinite(flight.stopCount)) params.set('stopCount', String(flight.stopCount));
-    if (Number.isFinite(flight.comfortScore)) params.set('comfortScore', String(flight.comfortScore));
-    if (searchForm.connectionType) params.set('connectionType', searchForm.connectionType);
-    if (searchForm.travelTime) params.set('travelTime', searchForm.travelTime);
-    if (utmParams.utmSource) params.set('utmSource', utmParams.utmSource);
-    if (utmParams.utmMedium) params.set('utmMedium', utmParams.utmMedium);
-    if (utmParams.utmCampaign) params.set('utmCampaign', utmParams.utmCampaign);
-    return `/api/outbound/resolve?${params.toString()}`;
-  }
-
-  function getAlertDraft(subscription) {
-    return (
-      alertDraftById[subscription.id] || {
-        targetPrice: Number.isFinite(subscription.targetPrice) ? String(subscription.targetPrice) : '',
-        stayDays: String(subscription.stayDays ?? 7),
-        travellers: String(subscription.travellers ?? 1),
-        cabinClass: subscription.cabinClass || 'economy',
-        cheapOnly: Boolean(subscription.cheapOnly)
-      }
-    );
-  }
-
-  function formatEur(value) {
-    return Number(value || 0).toFixed(2);
-  }
-
-  function formatPricingDate(value) {
-    if (!value) return '-';
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return '-';
-    return date.toLocaleString();
-  }
-
-  function parseCsvText(value, mapper = (x) => x) {
-    return String(value || '')
-      .split(',')
-      .map((item) => mapper(String(item || '').trim()))
-      .filter(Boolean);
-  }
-
-  function toRadarDraft(item) {
-    if (!item) {
-      return {
-        originAirports: '',
-        favoriteDestinations: '',
-        favoriteCountries: '',
-        budgetCeiling: '',
-        preferredTravelMonths: ''
-      };
-    }
-    return {
-      originAirports: Array.isArray(item.originAirports) ? item.originAirports.join(', ') : '',
-      favoriteDestinations: Array.isArray(item.favoriteDestinations) ? item.favoriteDestinations.join(', ') : '',
-      favoriteCountries: Array.isArray(item.favoriteCountries) ? item.favoriteCountries.join(', ') : '',
-      budgetCeiling: Number.isFinite(Number(item.budgetCeiling)) ? String(item.budgetCeiling) : '',
-      preferredTravelMonths: Array.isArray(item.preferredTravelMonths) ? item.preferredTravelMonths.join(', ') : ''
-    };
-  }
-
-  function updateAlertDraft(id, patch) {
-    setAlertDraftById((prev) => ({
-      ...prev,
-      [id]: {
-        ...(prev[id] || {}),
-        ...patch
-      }
-    }));
-  }
-
-  async function submitAuth(event) {
-    event.preventDefault();
-    setAuthError('');
-    try {
-      if (authMode === 'register') {
-        const pass = String(authForm.password || '');
-        const confirm = String(authForm.confirmPassword || '');
-        if (!authForm.name.trim()) {
-          setAuthError(t('fullNameRequired'));
-          return;
-        }
-        if (pass !== confirm) {
-          setAuthError(t('passwordMismatch'));
-          return;
-        }
-      }
-      const payload = authMode === 'login' ? await api.login({ email: authForm.email, password: authForm.password }) : await api.register({ name: authForm.name, email: authForm.email, password: authForm.password });
-      if (payload?.mfaRequired && payload?.ticket) {
-        setAuthMfa({ ticket: payload.ticket, code: '', expiresAt: payload.expiresAt || '' });
-        return;
-      }
-      if (typeof window !== 'undefined' && authMode === 'login') {
-        try {
-          if (rememberMe) window.localStorage.setItem('remembered_email', authForm.email.trim());
-          else window.localStorage.removeItem('remembered_email');
-        } catch {
-          // Ignore storage failures and continue login flow.
-        }
-      }
-      setToken(payload.token || COOKIE_SESSION_TOKEN);
-      setCsrfToken(payload.session?.csrfToken || '');
-      setUser(payload.user);
-      setAuthForm({ name: '', email: '', password: '', confirmPassword: '' });
-      setAuthView('options');
-      setAuthMfa({ ticket: '', code: '', expiresAt: '' });
-      setShowAccountPanel(false);
-    } catch (error) {
-      setAuthError(resolveApiError(error));
+  function handleUntrackedRouteFromHub(slug) {
+    const normalizedSlug = String(slug || '').trim().toLowerCase();
+    if (!normalizedSlug) return;
+    if (String(selectedOpportunityCluster || '').trim().toLowerCase() === normalizedSlug) {
+      setSelectedOpportunityCluster('');
     }
   }
 
-  async function submitLoginMfa(event) {
-    event.preventDefault();
-    if (!authMfa.ticket || !authMfa.code) return;
-    setAuthError('');
-    try {
-      const payload = await api.loginMfa({ ticket: authMfa.ticket, code: authMfa.code });
-      setToken(payload.token || COOKIE_SESSION_TOKEN);
-      setCsrfToken(payload.session?.csrfToken || '');
-      setUser(payload.user);
-      setAuthForm({ name: '', email: '', password: '', confirmPassword: '' });
-      setAuthView('options');
-      setAuthMfa({ ticket: '', code: '', expiresAt: '' });
-      setShowAccountPanel(false);
-    } catch (error) {
-      setAuthError(resolveApiError(error));
+  function handleClearLocalTravelData() {
+    const result = clearLocalTravelData({ includeAccountHints: true });
+    setRadarSessionActivated(false);
+    setSelectedOpportunityCluster('');
+    setOpportunityDetail(null);
+    setOpportunityDetailUpgradePrompt(null);
+    clearBookingHandoffError();
+    clearOpportunityBookingError();
+    if (result.failedKeys.length > 0) {
+      setSubMessage('Some local data could not be cleared due to browser restrictions.');
+    } else {
+      setSubMessage('Local travel data cleared on this device.');
     }
   }
 
-  function startSocialLogin(provider) {
-    setAuthError('');
-    setOauthLoading(provider);
-    persistAuthFunnelState({ authMode, authView });
-    window.location.assign(`/api/auth/oauth/${provider}/start`);
-  }
-
-  async function loginWithGoogle() {
-    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-    if (!clientId) {
-      setAuthError(t('oauthNotAvailable'));
-      return;
-    }
-    startSocialLogin('google');
-  }
-
-  async function loginWithApple() {
-    const clientId = import.meta.env.VITE_APPLE_CLIENT_ID;
-    if (!clientId) {
-      setAuthError(t('oauthNotAvailable'));
-      return;
-    }
-    startSocialLogin('apple');
-  }
-
-  async function loginWithFacebook() {
-    const clientId = import.meta.env.VITE_FACEBOOK_CLIENT_ID;
-    if (!clientId) {
-      setAuthError(t('oauthNotAvailable'));
-      return;
-    }
-    startSocialLogin('facebook');
-  }
-
-  async function setupMfa() {
-    try {
-      const payload = await api.mfaSetup(token);
-      setMfaSetupData(payload);
-      setAuthError('');
-      setSubMessage(t('mfaReady'));
-    } catch (error) {
-      setAuthError(resolveApiError(error));
-    }
-  }
-
-  async function enableMfa() {
-    try {
-      await api.mfaEnable(token, { code: mfaActionCode });
-      const me = await api.me(token);
-      setUser(me.user);
-      setMfaSetupData(null);
-      setMfaActionCode('');
-      setSubMessage(t('mfaEnabledOn'));
-    } catch (error) {
-      setAuthError(resolveApiError(error));
-    }
-  }
-
-  async function disableMfa() {
-    try {
-      await api.mfaDisable(token, { code: mfaActionCode });
-      const me = await api.me(token);
-      setUser(me.user);
-      setMfaActionCode('');
-      setSubMessage(t('mfaDisabledOn'));
-    } catch (error) {
-      setAuthError(resolveApiError(error));
-    }
-  }
-
-  async function submitSearch(event) {
-    event.preventDefault();
-    setSearchError('');
-    setSearchLoading(true);
-
-    const isOneWay = String(searchForm.tripType || 'round_trip') === 'one_way';
-    const payload = {
-      ...searchForm,
-      tripType: isOneWay ? 'one_way' : 'round_trip',
-      dateTo: isOneWay ? undefined : searchForm.dateTo,
-      country: searchForm.country.trim() || undefined,
-      destinationQuery: searchForm.destinationQuery.trim() || undefined,
-      maxBudget: searchForm.maxBudget ? Number(searchForm.maxBudget) : undefined,
-      maxStops: searchForm.maxStops === '' ? undefined : Number(searchForm.maxStops),
-      minComfortScore: searchForm.minComfortScore === '' ? undefined : Number(searchForm.minComfortScore),
-      travellers: Number(searchForm.travellers)
-    };
-
-    try {
-      const result = await api.search(payload, token || undefined);
-      setSearchResult(result);
-      setCompareIds([]);
-      setDestinationInsights({});
-      setInsightLoadingByFlight({});
-      setInsightErrorByFlight({});
-      await refreshSearchHistory();
-    } catch (error) {
-      setSearchError(resolveApiError(error));
-    } finally {
-      setSearchLoading(false);
-    }
-  }
-
-  async function submitJustGo() {
-    setSearchError('');
-    setSearchLoading(true);
-    try {
-      if (String(searchForm.tripType || 'round_trip') === 'one_way') {
-        throw new Error('Just Go richiede un intervallo andata/ritorno.');
-      }
-      const tripLengthDays = Math.max(2, differenceInCalendarDays(parseISO(searchForm.dateTo), parseISO(searchForm.dateFrom)));
-      const budgetMax = searchForm.maxBudget ? Number(searchForm.maxBudget) : 0;
-      if (!Number.isFinite(budgetMax) || budgetMax <= 0) {
-        throw new Error(t('justGoBudgetRequired'));
-      }
-
-      const result = await api.justGoDecision(
-        {
-          origin: searchForm.origin,
-          region: searchForm.region,
-          country: searchForm.country.trim() || undefined,
-          dateFrom: searchForm.dateFrom,
-          dateTo: searchForm.dateTo,
-          tripLengthDays,
-          budgetMax,
-          travellers: Number(searchForm.travellers),
-          cabinClass: searchForm.cabinClass,
-          mood: searchForm.mood || 'relax',
-          climatePreference: searchForm.climatePreference || 'indifferent',
-          pace: searchForm.pace || 'normal',
-          avoidOvertourism: Boolean(searchForm.avoidOvertourism),
-          packageCount: Number(searchForm.packageCount) === 4 ? 4 : 3,
-          aiProvider: searchForm.aiProvider || 'none'
-        },
-        token || undefined
-      );
-
-      const flights = (result.recommendations || []).map((item, idx) => ({
-        id: item.id || `${searchForm.origin}-${item.destinationIata}-${idx}`,
-        origin: searchForm.origin,
-        destination: item.destination,
-        destinationIata: item.destinationIata,
-        region: item.region || searchForm.region,
-        area: item.area || '',
-        climate: item.climateInPeriod?.comfort || '-',
-        price: item.costBreakdown?.flight || item.price || 0,
-        avg2024: Math.round((item.costBreakdown?.flight || item.price || 0) * 1.15),
-        highSeasonAvg: Math.round((item.costBreakdown?.flight || item.price || 0) * 1.25),
-        cheaperThan2024: true,
-        cheaperThanHighSeason: true,
-        savingVs2024: Math.round((item.costBreakdown?.flight || item.price || 0) * 0.15),
-        stopCount: Number.isFinite(item.stopCount) ? item.stopCount : 0,
-        stopLabel: item.stopLabel || t('autoSelected'),
-        isDirect: item.stopCount === 0,
-        durationHours: item.durationHours || tripLengthDays,
-        departureHour: item.departureHour || 9,
-        arrivalHour: item.arrivalHour || 12,
-        departureTimeLabel: item.departureTimeLabel || '--:--',
-        arrivalTimeLabel: item.arrivalTimeLabel || '--:--',
-        isNightFlight: Boolean(item.isNightFlight),
-        comfortScore: item.comfortScore || 70,
-        routeType: item.routeType || 'auto',
-        link: item.bookingLink || item.link,
-        bookingLink: item.bookingLink || item.link,
-        travelScore: item.travelScore,
-        reasons: item.reasons || [],
-        aiWhyNow: item.aiWhyNow || '',
-        aiRiskNote: item.aiRiskNote || '',
-        trendScore: item.trendScore,
-        crowding: item.crowding,
-        climateInPeriod: item.climateInPeriod,
-        costBreakdown: item.costBreakdown
-      }));
-
-      setSearchResult({
-        meta: {
-          ...(result.meta || {}),
-          count: flights.length,
-          stayDays: tripLengthDays,
-          mode: 'just_go',
-          ai: result.ai || { provider: 'none', enhanced: false }
-        },
-        alerts: [],
-        flights
-      });
-      setCompareIds([]);
-      setDestinationInsights({});
-      setInsightLoadingByFlight({});
-      setInsightErrorByFlight({});
-      await refreshSearchHistory();
-    } catch (error) {
-      setSearchError(resolveApiError(error));
-    } finally {
-      setSearchLoading(false);
-    }
-  }
-
-  async function analyzeIntentPrompt(promptOverride) {
-    const text = String(promptOverride ?? intakePrompt).trim();
-    if (!text) return;
-    setSearchError('');
-    setIntakeInfo('');
-    setIntakeLoading(true);
-    setIntakeMessages((prev) => [
-      ...prev,
-      {
-        id: `user-${Date.now()}`,
-        role: 'user',
-        text
-      }
-    ]);
-    try {
-      const payload = await api.decisionIntake(
-        {
-          prompt: text,
-          aiProvider: searchForm.aiProvider || 'none',
-          packageCount: Number(searchForm.packageCount) === 4 ? 4 : 3
-        },
-        token || undefined
-      );
-      const prefs = payload.preferences || {};
-      setSearchForm((prev) => {
-        const next = { ...prev };
-        if (prefs.origin) next.origin = String(prefs.origin).toUpperCase();
-        if (Number.isFinite(prefs.budgetMax) && prefs.budgetMax > 0) next.maxBudget = String(prefs.budgetMax);
-        if (Number.isFinite(prefs.tripLengthDays)) {
-          const from = parseISO(prev.dateFrom);
-          if (!Number.isNaN(from.getTime())) next.dateTo = format(addDays(from, Number(prefs.tripLengthDays)), 'yyyy-MM-dd');
-        }
-        if (prefs.mood) next.mood = prefs.mood;
-        if (prefs.climatePreference) next.climatePreference = prefs.climatePreference;
-        if (prefs.pace) next.pace = prefs.pace;
-        if (prefs.region) next.region = prefs.region;
-        if (prefs.country) next.country = prefs.country;
-        if (typeof prefs.avoidOvertourism === 'boolean') next.avoidOvertourism = prefs.avoidOvertourism;
-        if (prefs.packageCount === 4 || prefs.packageCount === 3) next.packageCount = prefs.packageCount;
-        return next;
-      });
-      const summary = payload.summary || 'Preferenze aggiornate.';
-      setIntakeInfo(summary);
-      setIntakeMessages((prev) => [
-        ...prev,
-        {
-          id: `assistant-${Date.now()}`,
-          role: 'assistant',
-          text: summary
-        }
-      ]);
-      setIntakePrompt('');
-    } catch (error) {
-      setSearchError(resolveApiError(error));
-      setIntakeMessages((prev) => [
-        ...prev,
-        {
-          id: `assistant-error-${Date.now()}`,
-          role: 'assistant',
-          text: resolveApiError(error)
-        }
-      ]);
-    } finally {
-      setIntakeLoading(false);
-    }
-  }
-
-  function runQuickIntakePrompt(promptText) {
-    setIntakePrompt(promptText);
-    analyzeIntentPrompt(promptText);
-  }
-
-  async function addToWatchlist(flight) {
-    if (!isAuthenticated) return setWatchlistError(t('loginRequiredAlert'));
-    try {
-      await api.addWatchlist(token, {
-        flightId: flight.id,
-        destination: flight.destination,
-        destinationIata: flight.destinationIata,
-        price: flight.price,
-        dateFrom: searchForm.dateFrom,
-        dateTo: searchForm.dateTo,
-        link: flight.bookingLink || flight.link
-      });
-      await refreshWatchlist();
-    } catch (error) {
-      setWatchlistError(resolveApiError(error));
-    }
-  }
-
-  async function removeWatchlistItem(id) {
-    try {
-      await api.removeWatchlist(token, id);
-      await refreshWatchlist();
-    } catch (error) {
-      setWatchlistError(resolveApiError(error));
-    }
-  }
-
-  async function createAlertForFlight(flight) {
-    if (!isAuthenticated) {
-      beginSetAlertAuthFlow({ keepLandingVisible: showLandingPage });
-      setSubMessage(t('loginRequiredAlert'));
-      return;
-    }
-
-    const stayDays = Math.max(2, differenceInCalendarDays(parseISO(searchForm.dateTo), parseISO(searchForm.dateFrom)));
-    const daysFromNow = Math.max(1, differenceInCalendarDays(parseISO(searchForm.dateFrom), new Date()));
-
-    try {
-      await api.createAlertSubscription(token, {
-        origin: searchForm.origin,
-        region: searchForm.region,
-        country: searchForm.country.trim() || undefined,
-        destinationQuery: searchForm.destinationQuery.trim() || undefined,
-        destinationIata: flight.destinationIata,
-        targetPrice: Number(flight.price),
-        connectionType: searchForm.connectionType,
-        maxStops: searchForm.maxStops === '' ? undefined : Number(searchForm.maxStops),
-        travelTime: searchForm.travelTime,
-        minComfortScore: searchForm.minComfortScore === '' ? undefined : Number(searchForm.minComfortScore),
-        cheapOnly: searchForm.cheapOnly,
-        travellers: Number(searchForm.travellers),
-        cabinClass: searchForm.cabinClass,
-        stayDays,
-        daysFromNow
-      });
-      await api.runNotificationScan(token);
-      await refreshSubscriptions();
-      await refreshNotifications();
-      setSubMessage(t('alertCreated'));
-    } catch (error) {
-      setSubMessage(resolveApiError(error));
-    }
-  }
-
-  async function createDurationAlert() {
-    if (!isAuthenticated) return setSubMessage(t('loginRequiredAlert'));
-    if (!canUseRadarPlan) return setSubMessage(t('premiumRequired'));
-
-    const stayDays = Math.max(2, differenceInCalendarDays(parseISO(searchForm.dateTo), parseISO(searchForm.dateFrom)));
-
-    try {
-      await api.createAlertSubscription(token, {
-        origin: searchForm.origin,
-        region: searchForm.region,
-        country: searchForm.country.trim() || undefined,
-        destinationQuery: searchForm.destinationQuery.trim() || undefined,
-        destinationIata: undefined,
-        targetPrice: undefined,
-        connectionType: searchForm.connectionType,
-        maxStops: searchForm.maxStops === '' ? undefined : Number(searchForm.maxStops),
-        travelTime: searchForm.travelTime,
-        minComfortScore: searchForm.minComfortScore === '' ? undefined : Number(searchForm.minComfortScore),
-        cheapOnly: searchForm.cheapOnly,
-        travellers: Number(searchForm.travellers),
-        cabinClass: searchForm.cabinClass,
-        stayDays,
-        daysFromNow: undefined
-      });
-      await api.runNotificationScan(token);
-      await refreshSubscriptions();
-      await refreshNotifications();
-      setSubMessage(t('durationAlertCreated'));
-    } catch (error) {
-      setSubMessage(resolveApiError(error));
-    }
-  }
-
-  async function loadDestinationInsights(flight) {
-    if (!canUseAiTravelPlan) return setSubMessage(t('routeInsightsEliteOnly'));
-    const stayDays = Math.max(2, differenceInCalendarDays(parseISO(searchForm.dateTo), parseISO(searchForm.dateFrom)));
-    setInsightErrorByFlight((prev) => ({ ...prev, [flight.id]: '' }));
-    setInsightLoadingByFlight((prev) => ({ ...prev, [flight.id]: true }));
-
-    try {
-      const payload = await api.destinationInsights({
-        origin: searchForm.origin,
-        region: searchForm.region,
-        country: searchForm.country.trim() || undefined,
-        destinationQuery: searchForm.destinationQuery.trim() || flight.destination,
-        destinationIata: flight.destinationIata,
-        cheapOnly: searchForm.cheapOnly,
-        maxBudget: searchForm.maxBudget ? Number(searchForm.maxBudget) : undefined,
-        connectionType: searchForm.connectionType,
-        maxStops: searchForm.maxStops === '' ? undefined : Number(searchForm.maxStops),
-        travelTime: searchForm.travelTime,
-        minComfortScore: searchForm.minComfortScore === '' ? undefined : Number(searchForm.minComfortScore),
-        travellers: Number(searchForm.travellers),
-        cabinClass: searchForm.cabinClass,
-        stayDays,
-        horizonDays: 120
-      }, token);
-      setDestinationInsights((prev) => ({ ...prev, [flight.id]: payload }));
-    } catch {
-      setInsightErrorByFlight((prev) => ({ ...prev, [flight.id]: t('bestDatesError') }));
-    } finally {
-      setInsightLoadingByFlight((prev) => ({ ...prev, [flight.id]: false }));
-    }
-  }
-
-  async function deleteSubscription(id) {
-    try {
-      await api.deleteAlertSubscription(token, id);
-      await refreshSubscriptions();
-    } catch (error) {
-      setSubMessage(resolveApiError(error));
-    }
-  }
-
-  async function toggleSubscriptionEnabled(subscription) {
-    if (!isAuthenticated) return;
-    try {
-      await api.updateAlertSubscription(token, subscription.id, { enabled: !subscription.enabled });
-      await refreshSubscriptions();
-      setSubMessage(t('alertUpdated'));
-    } catch (error) {
-      setSubMessage(resolveApiError(error));
-    }
-  }
-
-  async function saveSubscriptionEdit(subscription) {
-    if (!isAuthenticated) return;
-    const draft = getAlertDraft(subscription);
-    const parsedTarget = draft.targetPrice === '' ? null : Number(draft.targetPrice);
-    const parsedStay = Number(draft.stayDays);
-    const parsedTravellers = Number(draft.travellers);
-
-    if (!Number.isFinite(parsedStay) || parsedStay < 2 || parsedStay > 30) return setSubMessage(t('updateFailed'));
-    if (!Number.isFinite(parsedTravellers) || parsedTravellers < 1 || parsedTravellers > 9) return setSubMessage(t('updateFailed'));
-    if (draft.targetPrice !== '' && (!Number.isFinite(parsedTarget) || parsedTarget <= 0)) return setSubMessage(t('updateFailed'));
-
-    try {
-      await api.updateAlertSubscription(token, subscription.id, {
-        targetPrice: parsedTarget,
-        stayDays: parsedStay,
-        travellers: parsedTravellers,
-        cabinClass: draft.cabinClass,
-        cheapOnly: Boolean(draft.cheapOnly)
-      });
-      await refreshSubscriptions();
-      await refreshNotifications();
-      setSubMessage(t('alertUpdated'));
-    } catch (error) {
-      setSubMessage(resolveApiError(error) || t('updateFailed'));
-    }
-  }
-
-  async function markNotificationRead(id) {
-    await api.markNotificationRead(token, id);
-    await refreshNotifications();
-  }
-
-  async function markAllRead() {
-    await api.markAllNotificationsRead(token);
-    await refreshNotifications();
-  }
-
-  async function enableBrowserNotifications() {
-    if (typeof window === 'undefined' || !('Notification' in window)) return;
-    try {
-      await window.Notification.requestPermission();
-    } catch {}
-  }
-
-  async function logout() {
-    try {
-      await api.logout(token);
-    } catch {}
-    persistPostAuthAction(null);
-    clearAuthFunnelState();
-    setCsrfToken('');
-    setToken('');
-    setUser(null);
-    setMfaSetupData(null);
-    setMfaActionCode('');
-    setSearchHistory([]);
-    setSecurityEvents([]);
-    setAlertDraftById({});
-    setShowAccountPanel(false);
-  }
-
-  async function deleteAccount() {
-    if (!user) return;
-    const ok = typeof window === 'undefined' ? true : window.confirm(t('deleteAccountConfirm'));
-    if (!ok) return;
-    setDeletingAccount(true);
-    try {
-      await api.deleteAccount(token);
-      await logout();
-      setSubMessage(t('deleteAccountDone'));
-    } catch (error) {
-      setSubMessage(resolveApiError(error));
-    } finally {
-      setDeletingAccount(false);
-    }
-  }
-
-  function applySearchPreset(item) {
-    const payload = item?.payload || {};
-    setSearchForm((prev) => ({
-      ...prev,
-      origin: payload.origin || prev.origin,
-      region: payload.region || prev.region,
-      connectionType: payload.connectionType || prev.connectionType,
-      maxStops: Number.isFinite(payload.maxStops) ? String(payload.maxStops) : prev.maxStops,
-      travelTime: payload.travelTime || prev.travelTime,
-      minComfortScore: Number.isFinite(payload.minComfortScore) ? String(payload.minComfortScore) : prev.minComfortScore,
-      country: payload.country || '',
-      destinationQuery: payload.destinationQuery || '',
-      periodPreset: 'custom',
-      dateFrom: payload.dateFrom || prev.dateFrom,
-      dateTo: payload.dateTo || prev.dateTo,
-      cheapOnly: Boolean(payload.cheapOnly),
-      maxBudget: payload.maxBudget ? String(payload.maxBudget) : '',
-      travellers: payload.travellers ? String(payload.travellers) : prev.travellers,
-      cabinClass: payload.cabinClass || prev.cabinClass
-    }));
-  }
-
-  function applyPeriodPreset(preset) {
-    const map = {
-      weekend: [4, 3],
-      week: [14, 7],
-      two_weeks: [20, 14],
-      one_month: [30, 7],
-      three_months: [90, 10],
-      six_months: [180, 10],
-      one_year: [365, 14]
-    };
-    if (preset === 'custom') {
-      setSearchForm((prev) => ({ ...prev, periodPreset: 'custom' }));
-      return;
-    }
-    const target = map[preset];
-    if (!target) return;
-    const [daysFromNow, stayDays] = target;
-    const from = addDays(new Date(), daysFromNow);
-    const to = addDays(from, stayDays);
-    setSearchForm((prev) => ({
-      ...prev,
-      periodPreset: preset,
-      dateFrom: format(from, 'yyyy-MM-dd'),
-      dateTo: format(to, 'yyyy-MM-dd')
-    }));
-  }
-
-  function autoFixSearchFilters() {
-    setSearchForm((prev) => ({
-      ...prev,
-      region: 'all',
-      connectionType: 'all',
-      maxStops: '2',
-      travelTime: 'all',
-      minComfortScore: '',
-      country: '',
-      cheapOnly: false,
-      maxBudget: '',
-      travellers: prev.travellers || 1
-    }));
-  }
-
-  function toggleCompare(flightId) {
-    setCompareIds((prev) => {
-      if (prev.includes(flightId)) return prev.filter((id) => id !== flightId);
-      if (prev.length >= 3) return [...prev.slice(1), flightId];
-      return [...prev, flightId];
+  function handleTrackedRoutesLimitReached(meta) {
+    const usage = evaluateUsageLimit(meta?.used, meta?.limit ?? planEntitlements.trackedRoutesLimit);
+    const content = getUpgradeTriggerContent(userPlanType, 'tracked_routes_limit', {
+      used: usage.used,
+      limit: usage.limit
     });
+    setSubMessage(content.message);
   }
 
-  async function saveFirstResult() {
-    const first = visibleFlights[0];
-    if (!first) return;
-    await addToWatchlist(first);
-  }
+  const closeAdminBackoffice = useCallback(() => {
+    if (typeof window !== 'undefined') {
+      window.history.pushState({}, '', '/');
+    }
+    setAdminRouteRequested(false);
+    setActiveMainSection('explore');
+  }, []);
 
-  async function alertFirstResult() {
-    const first = visibleFlights[0];
-    if (!first) return;
-    await createAlertForFlight(first);
-  }
+  const activateRadarFromFeedWithTelemetry = useCallback(() => {
+    activateRadarFromFeedSession();
+    sendAdminTelemetryEvent({
+      eventType: 'radar_activated',
+      source: 'opportunity_feed',
+      planType: userPlanType
+    });
+  }, [activateRadarFromFeedSession, sendAdminTelemetryEvent, userPlanType]);
 
-  function scrollToSection(sectionId) {
-    document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth' });
-  }
+  const activateRadarFromHubWithTelemetry = useCallback(() => {
+    activateRadarFromFeedSession();
+    sendAdminTelemetryEvent({
+      eventType: 'radar_activated',
+      source: 'personal_hub',
+      planType: userPlanType
+    });
+  }, [activateRadarFromFeedSession, sendAdminTelemetryEvent, userPlanType]);
+
+  useEffect(() => {
+    if (activeMainSection !== 'admin') return;
+    if (!isAuthenticated || !isAdminUser) return;
+    void loadAdminBackofficeReport();
+  }, [activeMainSection, isAuthenticated, isAdminUser, token]);
+
 
   const landingNavItems = [
     { id: 'landing-chiamo', label: t('navChiSiamo') },
@@ -2264,9 +1604,9 @@ function App() {
   ];
 
   const landingFeatureCards = [
-    { color: 'blue', icon: t('landingFeature1Icon'), title: t('landingFeature1Title'), desc: t('landingFeature1Desc'), step: '01' },
-    { color: 'teal', icon: t('landingFeature2Icon'), title: t('landingFeature2Title'), desc: t('landingFeature2Desc'), step: '02' },
-    { color: 'purple', icon: t('landingFeature3Icon'), title: t('landingFeature3Title'), desc: t('landingFeature3Desc'), step: '03' }
+    { color: 'blue', icon: '\u{1F50D}', title: t('landingFeature1Title'), desc: t('landingFeature1Desc'), step: '01' },
+    { color: 'teal', icon: '\u{1F514}', title: t('landingFeature2Title'), desc: t('landingFeature2Desc'), step: '02' },
+    { color: 'purple', icon: '\u{1F9ED}', title: t('landingFeature3Title'), desc: t('landingFeature3Desc'), step: '03' }
   ];
 
   const landingValueCards = [
@@ -2282,6 +1622,8 @@ function App() {
       amountText: t('landingPricingFreePrice') || 'Free',
       desc: t('landingPricingFreeDesc') || 'Perfect for occasional travellers',
       features: [t('landingPricingFeatureFree1'), t('landingPricingFeatureFree2'), t('landingPricingFeatureFree3')],
+      monthlyBillingNote: 'Always free',
+      annualBillingNote: 'Always free',
       ctaClassName: 'landing-plan-cta ghost',
       ctaLabel: t('landingPricingCtaFree'),
       onClick: () => setShowLandingPage(false),
@@ -2291,103 +1633,179 @@ function App() {
       id: 'pro',
       name: t('landingPricingProName') || 'Pro',
       amount: formatEur(7),
+      monthlyAmount: formatEur(7),
+      annualAmount: formatEur(4.92),
+      annualDiscountTag: 'Save 25 EUR/year',
       currency: 'EUR',
       period: t('landingPricingMonthly'),
       desc: t('landingPricingProDesc') || 'For regular travellers',
       features: [t('landingPricingFeaturePro1'), t('landingPricingFeaturePro2'), t('landingPricingFeaturePro3'), t('landingPricingFeaturePro4'), t('landingPricingFeaturePro5')],
+      monthlyBillingNote: 'Billed monthly',
+      annualBillingNote: `Billed yearly at EUR ${formatEur(59)}`,
       ctaClassName: 'landing-plan-cta landing-plan-cta-primary',
       ctaLabel: t('landingPricingCtaPro'),
-      onClick: () => beginAuthFlow({ action: 'enter_app', authMode: 'register', authView: 'options', keepLandingVisible: false }),
+      onClick: () =>
+        beginAuthFlow({
+          action: 'enter_app',
+          authMode: 'register',
+          authView: 'options',
+          keepLandingVisible: false,
+          targetSection: 'premium'
+        }),
       featured: true
     },
     {
       id: 'elite',
-      name: t('landingPricingCreatorName') || 'Elite',
+      name: t('landingPricingEliteName') || t('landingPricingCreatorName') || 'Elite',
       amount: formatEur(19),
+      monthlyAmount: formatEur(19),
+      annualAmount: formatEur(14),
+      annualDiscountTag: 'Save 60 EUR/year',
       currency: 'EUR',
       period: t('landingPricingMonthly'),
-      desc: t('landingPricingCreatorDesc') || 'For professionals and analysts',
+      desc: t('landingPricingEliteDesc') || t('landingPricingCreatorDesc') || 'For professionals and analysts',
       features: [t('landingPricingFeatureCreator1'), t('landingPricingFeatureCreator2'), t('landingPricingFeatureCreator3'), t('landingPricingFeatureCreator4'), t('landingPricingFeatureCreator5')],
+      monthlyBillingNote: 'Billed monthly',
+      annualBillingNote: `Billed yearly at EUR ${formatEur(168)}`,
       ctaClassName: 'landing-plan-cta ghost',
-      ctaLabel: t('landingPricingCtaCreator'),
-      onClick: () => beginAuthFlow({ action: 'enter_app', authMode: 'register', authView: 'options', keepLandingVisible: false }),
+      ctaLabel: t('landingPricingCtaElite') || t('landingPricingCtaCreator'),
+      onClick: () =>
+        beginAuthFlow({
+          action: 'enter_app',
+          authMode: 'register',
+          authView: 'options',
+          keepLandingVisible: false,
+          targetSection: 'premium'
+        }),
       featured: false
     }
   ];
 
   const landingContactCards = [
     { icon: '\u2709', label: t('landingEmailLabel'), value: 'hello@flightsuite.app', href: 'mailto:hello@flightsuite.app' },
-    { icon: '\u260E', label: t('landingPhoneLabel'), value: '+39 02 0000 0000' },
     { icon: '\u{1F4CD}', label: t('landingAddressLabel'), value: t('landingAddressValue') }
   ];
 
-  function enterGuestApp(targetSection = 'home') {
-    persistPostAuthAction(null);
-    clearAuthFunnelState();
-    setShowLandingPage(false);
-    setShowAccountPanel(false);
-    setActiveMainSection(targetSection);
-  }
-
-  async function refreshOpportunityFeedNow() {
-    if (isAuthenticated && token && token !== COOKIE_SESSION_TOKEN) {
-      try {
-        await api.opportunityPipelineRun(token);
-      } catch {
-        // Non blocca il refresh UI se la pipeline non puo partire.
-      }
+  const premiumPackages = [
+    {
+      id: 'free',
+      badge: 'Starter',
+      badgeDetail: 'For first-time users',
+      planName: 'FREE',
+      subtitle: t('pricingFreeSub'),
+      valueTitle: t('pricingFreeFeature1'),
+      valueItems: [t('pricingFreeFeature2'), t('pricingFreeFeature3')],
+      meterStops: ['3/day', '7/day', '15/day'],
+      monthly: {
+        discountTag: '',
+        legacyPrice: '',
+        price: 'EUR 0',
+        priceSuffix: '/month',
+        billingNote: 'No card required',
+        billingSubNote: 'Start immediately and upgrade only when you need more.',
+        saveNote: 'Always free.'
+      },
+      annual: {
+        discountTag: '',
+        legacyPrice: '',
+        price: 'EUR 0',
+        priceSuffix: '/month',
+        billingNote: 'No annual billing',
+        billingSubNote: 'FREE plan stays unchanged across billing cycles.',
+        saveNote: 'Always free.'
+      },
+      compareNote: t('premiumCompareNoteFree') || 'Best for trying the platform with zero risk.',
+      included: [t('pricingFreeFeature1'), t('pricingFreeFeature2'), t('pricingFreeFeature3')],
+      missing: [t('pricingProFeature2'), t('pricingProFeature3'), t('pricingEliteFeature1')],
+      ctaLabel: t('pricingFreeCta'),
+      ctaClassName: 'premium-cta premium-cta-light',
+      onClick: activateFreePlan,
+      cardTestId: 'premium-plan-free',
+      ctaTestId: 'premium-switch-free'
+    },
+    {
+      id: 'pro',
+      badge: 'Most Popular',
+      badgeDetail: 'For regular travelers',
+      planName: 'PRO',
+      subtitle: t('pricingProSub'),
+      valueTitle: t('pricingProFeature1'),
+      valueItems: [t('pricingProFeature2'), t('pricingProFeature3')],
+      meterStops: ['12', '9', '7'],
+      monthly: {
+        discountTag: '',
+        legacyPrice: '',
+        price: 'EUR 7',
+        priceSuffix: '/month',
+        billingNote: 'Billed monthly',
+        billingSubNote: 'Full PRO access with month-to-month flexibility.',
+        saveNote: 'Cancel anytime.'
+      },
+      annual: {
+        discountTag: 'UP TO 30% OFF',
+        legacyPrice: 'EUR 7',
+        price: 'EUR 4.92',
+        priceSuffix: '/month',
+        billingNote: 'Billed yearly at EUR 59',
+        billingSubNote: 'Equivalent to EUR 4.92/month with one annual payment.',
+        saveNote: 'Save EUR 25 per year vs monthly.'
+      },
+      compareNote: t('premiumCompareNotePro') || 'Ideal if you want to monitor prices and act fast.',
+      included: [t('pricingProFeature1'), t('pricingProFeature2'), t('pricingProFeature3'), t('pricingProFeature4')],
+      missing: [t('pricingEliteFeature1'), t('pricingEliteFeature2'), t('pricingEliteFeature3')],
+      ctaLabel: t('pricingProCta'),
+      ctaClassName: 'premium-cta',
+      onClick: () => upgradeToPremium('premium_page'),
+      cardTestId: 'premium-plan-pro',
+      ctaTestId: 'premium-upgrade-pro'
+    },
+    {
+      id: 'elite',
+      badge: 'Best Value',
+      badgeDetail: 'For power workflows',
+      planName: 'ELITE',
+      subtitle: t('pricingEliteSub'),
+      valueTitle: t('pricingEliteFeature1'),
+      valueItems: [t('pricingEliteFeature2'), t('pricingEliteFeature3')],
+      meterStops: ['29', '24', '21'],
+      monthly: {
+        discountTag: '',
+        legacyPrice: '',
+        price: 'EUR 19',
+        priceSuffix: '/month',
+        billingNote: 'Billed monthly',
+        billingSubNote: 'Priority intelligence and advanced planning unlocked.',
+        saveNote: 'Priority intelligence unlocked.'
+      },
+      annual: {
+        discountTag: '26% OFF',
+        legacyPrice: 'EUR 19',
+        price: 'EUR 14',
+        priceSuffix: '/month',
+        billingNote: 'Billed yearly at EUR 168',
+        billingSubNote: 'Equivalent to EUR 14/month when billed annually.',
+        saveNote: 'Save EUR 60 per year vs monthly.'
+      },
+      compareNote: t('premiumCompareNoteElite') || 'For power users who need AI planning and premium depth.',
+      included: [t('pricingEliteFeature1'), t('pricingEliteFeature2'), t('pricingEliteFeature3'), t('pricingEliteFeature4')],
+      missing: [],
+      ctaLabel: t('pricingEliteCta'),
+      ctaClassName: 'premium-cta premium-cta-dark',
+      onClick: () => chooseElitePlan('premium_page'),
+      cardTestId: 'premium-plan-elite',
+      ctaTestId: 'premium-upgrade-elite'
     }
-    await Promise.all([
-      loadOpportunityFeed(true),
-      loadOpportunityClusters(true),
-      isAuthenticated ? loadOpportunityPipelineStatus() : Promise.resolve()
-    ]);
-  }
+  ].map((plan) => {
+    const pricing = premiumBillingCycle === 'annual' ? plan.annual : plan.monthly;
+    const { monthly, annual, ...basePlan } = plan;
+    return {
+      ...basePlan,
+      ...pricing
+    };
+  });
 
-  function handleLandingPrimaryCta() {
-    if (isAuthenticated) {
-      setShowLandingPage(false);
-      setShowAccountPanel(false);
-      setSubMessage(t('postAuthEnterAppReady'));
-      setActiveMainSection('home');
-      return;
-    }
-    enterGuestApp('home');
-  }
+  const isAnnualBilling = premiumBillingCycle === 'annual';
 
-  function handleLandingSecondaryCta() {
-    if (isAuthenticated) {
-      setShowLandingPage(false);
-      setShowAccountPanel(false);
-      setSubMessage(t('postAuthSetAlertHint'));
-      setActiveMainSection('radar');
-      return;
-    }
-    enterGuestApp('radar');
-  }
-
-  function handleLandingSignIn() {
-    beginAuthFlow({
-      action: 'enter_app',
-      authMode: 'login',
-      authView: 'options',
-      keepLandingVisible: false
-    });
-  }
-
-  function requireSectionLogin(targetSection) {
-    if (isAuthenticated) {
-      setActiveMainSection(targetSection);
-      return;
-    }
-    setActiveMainSection(targetSection);
-    beginAuthFlow({
-      action: 'enter_app',
-      authMode: 'register',
-      authView: 'options',
-      keepLandingVisible: false
-    });
-  }
 
   return (
     <AppProvider value={appContextValue}>
@@ -2408,7 +1826,8 @@ function App() {
         onOpenAuth={handleLandingSignIn}
       />
     ) : (
-    <main className={`page app-shell${darkMode ? ' app-dark' : ''}`}>
+    <>
+    <main className={`page app-shell${darkMode ? ' app-dark' : ''}${activeMainSection === 'home' ? ' app-home' : ''}${adminRouteRequested ? ' app-admin-route' : ''}`}>
       <header className="hero">
         <div className="hero-top-row">
           <p className="eyebrow">{t('landingTitle')}</p>
@@ -2439,34 +1858,137 @@ function App() {
               options={LANGUAGE_OPTIONS}
               title={t('language')}
             />
+            {isAuthenticated && !adminRouteRequested ? (
+              <button type="button" className="landing-ctrl-btn landing-onboarding-cta" onClick={openOnboardingSetup}>
+                {t('onboardingReopenCta')}
+              </button>
+            ) : null}
             <button
               type="button"
               className="landing-accedi-btn"
-              onClick={() => (isAuthenticated ? setShowAccountPanel((prev) => !prev) : beginAuthFlow({ action: 'enter_app', keepLandingVisible: false }))}
+              data-testid="header-account-button"
+              onClick={() => {
+                if (isAuthenticated) {
+                  setShowAccountPanel((prev) => !prev);
+                  return;
+                }
+                if (adminRouteRequested) {
+                  setAuthMode('login');
+                  setAuthView('email');
+                  setAuthError('');
+                  if (typeof window !== 'undefined') {
+                    window.requestAnimationFrame(() => {
+                      document.querySelector('[data-testid="admin-backoffice-login"]')?.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start'
+                      });
+                    });
+                  }
+                  return;
+                }
+                beginAuthFlow({
+                  action: 'enter_app',
+                  authMode: 'login',
+                  authView: 'email',
+                  keepLandingVisible: false,
+                  targetSection: 'explore'
+                });
+              }}
             >
               {isAuthenticated ? user?.name || t('account') : t('signIn')}
             </button>
           </nav>
         </div>
-        <h1>{t('appTitle')}</h1>
-        <p className="hero-sub">{heroSubText}</p>
-        <div className="app-main-nav">
-          <button type="button" className={activeMainSection === 'home' ? 'tab active' : 'tab'} onClick={() => setActiveMainSection('home')}>
-            Home
-          </button>
-          <button type="button" className={activeMainSection === 'explore' ? 'tab active' : 'tab'} onClick={() => setActiveMainSection('explore')}>
-            Explore
-          </button>
-          <button type="button" className={activeMainSection === 'radar' ? 'tab active' : 'tab'} onClick={() => setActiveMainSection('radar')}>
-            Radar
-          </button>
-          <button type="button" className={activeMainSection === 'ai-travel' ? 'tab active' : 'tab'} onClick={() => setActiveMainSection('ai-travel')}>
-            AI Travel
-          </button>
-          <button type="button" className={activeMainSection === 'premium' ? 'tab active' : 'tab'} onClick={() => setActiveMainSection('premium')}>
-            Premium
-          </button>
+        <div className="app-hero-headline-group">
+          <h1>{adminRouteRequested ? 'Admin Backoffice' : t('appTitle')}</h1>
+          <p className="hero-sub">
+            {adminRouteRequested
+              ? 'Private analytics and control room for launch monitoring.'
+              : heroSubText}
+          </p>
+          {!adminRouteRequested ? (
+            <p className={`hero-data-source-note${isLiveDataSource ? ' live' : ' synthetic'}`} data-testid="hero-data-source-note">
+              {heroDataSourceNote}
+            </p>
+          ) : null}
         </div>
+        {!adminRouteRequested ? (
+          <div className="app-hero-cinematic-row">
+            <div className="app-hero-cinematic-main">
+              <div className="app-hero-pill-row">
+                <span className={`app-hero-pill${isLiveDataSource ? ' app-hero-pill-live' : ''}`}>
+                  {isLiveDataSource ? 'Live providers connected' : 'Historical intelligence mode'}
+                </span>
+                <span className="app-hero-pill">{opportunityFeed.length} feed opportunities</span>
+                <span className="app-hero-pill">{destinationClusters.length} destination clusters</span>
+              </div>
+              <div className="item-actions app-hero-direct-actions">
+                <button type="button" onClick={() => setActiveMainSection('explore')}>
+                  {t('landingHeroCta')}
+                </button>
+                <button type="button" className="ghost" onClick={() => setActiveMainSection('premium')}>
+                  {t('premiumPageTitle')}
+                </button>
+              </div>
+            </div>
+            <div className="app-hero-preview-grid">
+              <article className="app-hero-preview-card">
+                <p className="app-hero-preview-label">Radar snapshots</p>
+                <strong className="app-hero-preview-value">{radarMatches.length}</strong>
+                <p className="app-hero-preview-copy">{radarSessionActivated ? 'Session active' : 'Activate radar to monitor routes'}</p>
+              </article>
+              <article className="app-hero-preview-card app-hero-preview-card-accent">
+                <p className="app-hero-preview-label">Current plan</p>
+                <strong className="app-hero-preview-value">{String(userPlanType || 'free').toUpperCase()}</strong>
+                <p className="app-hero-preview-copy">Upgrade when you need deeper intelligence and automation.</p>
+              </article>
+            </div>
+          </div>
+        ) : null}
+        {!adminRouteRequested ? (
+          <div className="app-main-nav">
+            <button
+              type="button"
+              className={activeMainSection === 'home' ? 'tab active' : 'tab'}
+              onClick={() => setActiveMainSection('home')}
+              data-testid="app-nav-home"
+            >
+              Home
+            </button>
+            <button
+              type="button"
+              className={activeMainSection === 'explore' ? 'tab active' : 'tab'}
+              onClick={() => setActiveMainSection('explore')}
+              data-testid="app-nav-explore"
+            >
+              Explore
+            </button>
+            <button
+              type="button"
+              className={activeMainSection === 'radar' ? 'tab active' : 'tab'}
+              onClick={() => setActiveMainSection('radar')}
+              data-testid="app-nav-radar"
+            >
+              Radar
+            </button>
+            <button
+              type="button"
+              className={activeMainSection === 'ai-travel' ? 'tab active' : 'tab'}
+              onClick={() => setActiveMainSection('ai-travel')}
+              data-testid="app-nav-ai-travel"
+            >
+              AI Travel
+            </button>
+            <button
+              type="button"
+              className={activeMainSection === 'premium' ? 'tab active' : 'tab'}
+              onClick={() => setActiveMainSection('premium')}
+              data-testid="app-nav-premium"
+            >
+              Premium
+            </button>
+          </div>
+        ) : null}
       </header>
 
       {showOnboarding && isAuthenticated ? (
@@ -2492,7 +2014,7 @@ function App() {
               </label>
               <label>
                 {t('onboardingBudget')}
-                <input type="number" min={0} value={onboardingDraft.budget} onChange={(e) => setOnboardingDraft((prev) => ({ ...prev, budget: e.target.value }))} />
+                <input type="number" inputMode="numeric" min={0} value={onboardingDraft.budget} onChange={(e) => setOnboardingDraft((prev) => ({ ...prev, budget: e.target.value }))} />
               </label>
               <label>
                 {t('onboardingRegion')}
@@ -2524,7 +2046,7 @@ function App() {
       ) : null}
 
       <AuthSection
-        showAccountPanel={showAccountPanel || showAuthGateModal}
+        showAccountPanel={(!adminRouteRequested || isAuthenticated) && (showAccountPanel || showAuthGateModal)}
         darkMode={darkMode}
         setShowAccountPanel={setShowAccountPanel}
         logout={logout}
@@ -2534,10 +2056,12 @@ function App() {
         billingPricingLoading={billingPricingLoading}
         loadBillingPricing={loadBillingPricing}
         billingPricingError={billingPricingError}
-        upgradeToPremium={upgradeToPremium}
-        chooseElitePlan={chooseElitePlan}
+        upgradeToPremium={() => upgradeToPremium('account_panel')}
+        chooseElitePlan={() => chooseElitePlan('account_panel')}
+        reopenOnboarding={openOnboardingSetup}
         setupMfa={setupMfa}
         disableMfa={disableMfa}
+        resetMfaSetup={resetMfaSetup}
         mfaActionCode={mfaActionCode}
         setMfaActionCode={setMfaActionCode}
         mfaSetupData={mfaSetupData}
@@ -2561,55 +2085,63 @@ function App() {
         authError={authError}
         deleteAccount={deleteAccount}
         deletingAccount={deletingAccount}
+        systemCapabilities={systemCapabilities}
       />
 
-      {billingCheckoutModal.open ? (
-        <div className="account-drawer-backdrop" onClick={() => (billingCheckoutModal.processing ? null : closeBillingCheckoutModal())}>
-          <aside
-            className="account-drawer"
-            role="dialog"
-            aria-modal="true"
-            aria-label={billingCheckoutModal.planType === 'elite' ? 'Checkout ELITE' : 'Checkout PRO'}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <section className="panel account-panel onboarding-panel">
-              <div className="panel-head">
-                <h2>{billingCheckoutModal.planType === 'elite' ? t('pricingEliteCta') : t('pricingProCta')}</h2>
-                <button className="ghost" type="button" onClick={closeBillingCheckoutModal} disabled={billingCheckoutModal.processing}>
-                  {t('close')}
-                </button>
-              </div>
-              <p className="muted">Secure checkout initialization in progress.</p>
-              {billingCheckoutModal.error ? <p className="error">{billingCheckoutModal.error}</p> : null}
-              {billingCheckoutModal.loading ? <p className="muted">{t('loadReport')}...</p> : null}
-              {!billingCheckoutModal.loading && billingCheckoutModal.fallbackMode ? (
-                <label>
-                  Payment method nonce
-                  <input
-                    type="text"
-                    value={billingFallbackNonce}
-                    onChange={(e) => setBillingFallbackNonce(e.target.value)}
-                    placeholder="fake-valid-nonce"
-                    autoComplete="off"
-                    disabled={billingCheckoutModal.processing}
-                  />
-                </label>
-              ) : null}
-              <div className="item-actions">
-                <button type="button" onClick={submitBillingCheckout} disabled={billingCheckoutModal.loading || billingCheckoutModal.processing}>
-                  {billingCheckoutModal.processing ? `${t('loadReport')}...` : 'Conferma checkout'}
-                </button>
-                <button className="ghost" type="button" onClick={closeBillingCheckoutModal} disabled={billingCheckoutModal.processing}>
-                  {t('close')}
-                </button>
-              </div>
-            </section>
-          </aside>
-        </div>
+      <UpgradeFlowModal
+        isOpen={upgradeFlowState.isOpen}
+        step={upgradeFlowState.step}
+        content={upgradePlanContent}
+        currentPlanType={userPlanType}
+        comparisonRows={planComparisonRows}
+        onClose={closePlanUpgradeFlow}
+        onPrimaryAction={submitPlanUpgradeInterest}
+        onOpenPremiumSection={openPremiumSectionFromUpgradeFlow}
+      />
+
+      {activeMainSection === 'admin' ? (
+        !isAuthenticated ? (
+          <AdminBackofficeLoginSection
+            authForm={authForm}
+            authError={authError}
+            onEmailChange={(value) => setAuthForm((prev) => ({ ...prev, email: value }))}
+            onPasswordChange={(value) => setAuthForm((prev) => ({ ...prev, password: value }))}
+            onSubmit={submitAuth}
+            data-testid="admin-backoffice-login-section"
+          />
+        ) : (
+          <AdminBackofficeSection
+            isAuthorized={isAuthenticated && isAdminUser}
+            loading={adminDashboardLoading}
+            error={adminDashboardError}
+            report={adminDashboardReport}
+            onRefresh={loadAdminBackofficeReport}
+            onBackToApp={closeAdminBackoffice}
+            data-testid="admin-backoffice-section"
+          />
+        )
       ) : null}
 
       {activeMainSection === 'home' ? (
         <>
+          {isAuthenticated ? (
+            <PersonalHubSection
+              clusters={destinationClusters}
+              language={language}
+              planType={userPlanType}
+              trackedRoutesLimit={planEntitlements.trackedRoutesLimit}
+              savedItinerariesLimit={planEntitlements.savedItinerariesLimit}
+              radarMessagingTier={planEntitlements.radarMessagingTier}
+              radarSessionActivated={radarSessionActivated}
+              onViewDeals={viewDealsForTrackedRoute}
+              onUntrackRoute={handleUntrackedRouteFromHub}
+              onClearLocalData={handleClearLocalTravelData}
+              onOpenItinerary={openSavedHubItinerary}
+              onActivateRadar={activateRadarFromHubWithTelemetry}
+              onUpgradePro={() => upgradeToPremium('personal_hub_prompt')}
+              onUpgradeElite={() => chooseElitePlan('personal_hub_prompt')}
+            />
+          ) : null}
           <OpportunityFeedSection
             items={opportunityFeed}
             clusters={destinationClusters}
@@ -2621,20 +2153,33 @@ function App() {
             onRefresh={refreshOpportunityFeedNow}
             onSelectCluster={setSelectedOpportunityCluster}
             onClearCluster={() => setSelectedOpportunityCluster('')}
-            onFollowCluster={followDestinationCluster}
+            onFollowCluster={followDestinationClusterFromFeed}
             onView={openOpportunityDetail}
             onFollow={followOpportunity}
             onAlert={followOpportunity}
             onDiscover={() => setActiveMainSection('explore')}
-            onActivateRadar={() => setActiveMainSection('radar')}
+            onActivateRadar={activateRadarFromFeedWithTelemetry}
             isAuthenticated={isAuthenticated}
-            onCreateAccount={() => beginAuthFlow({ action: 'enter_app', authMode: 'register', authView: 'options', keepLandingVisible: false })}
+            radarSessionActivated={radarSessionActivated}
+            onCreateAccount={() =>
+              beginAuthFlow({
+                action: 'enter_app',
+                authMode: 'register',
+                authView: 'options',
+                keepLandingVisible: false,
+                targetSection: 'explore'
+              })
+            }
             t={t}
             language={language}
-            showUpgradePrompt={Boolean(opportunityFeedAccess?.showUpgradePrompt)}
+            planType={userPlanType}
+            trackedRoutesLimit={planEntitlements.trackedRoutesLimit}
+            showUpgradePrompt={Boolean(opportunityFeedAccess?.showUpgradePrompt) && userPlanType === 'free'}
             upgradeMessage={t(opportunityFeedAccess?.upgradeMessageKey || 'upgradePromptUnlockAll')}
-            onUpgradePro={upgradeToPremium}
-            onUpgradeElite={chooseElitePlan}
+            onTrackedRoutesLimitReached={handleTrackedRoutesLimitReached}
+            onUpgradePro={() => upgradeToPremium('opportunity_feed_prompt')}
+            onUpgradeElite={() => chooseElitePlan('opportunity_feed_prompt')}
+            dataSource={systemCapabilities?.data_source || 'synthetic'}
           />
           {(opportunityDetailLoading || opportunityDetailError || opportunityDetail) ? (
             <OpportunityDetailSection
@@ -2643,11 +2188,19 @@ function App() {
               detail={opportunityDetail}
               language={language}
               t={t}
-              onClose={() => setOpportunityDetail(null)}
+              bookingError={opportunityBookingError}
+              onClose={() => {
+                setOpportunityDetail(null);
+                clearOpportunityBookingError();
+                setOpportunityDetailUpgradePrompt(null);
+              }}
               onFollow={followOpportunity}
               onActivateAlert={followOpportunity}
               onOpenBooking={openOpportunityBooking}
               onViewRelated={openOpportunityDetail}
+              upgradePrompt={opportunityDetailUpgradePrompt}
+              onUpgradePro={() => upgradeToPremium('opportunity_detail_prompt')}
+              onUpgradeElite={() => chooseElitePlan('opportunity_detail_prompt')}
             />
           ) : null}
         </>
@@ -2657,6 +2210,7 @@ function App() {
         isAuthenticated ? (
           <RadarSection
             t={t}
+            language={language}
             draft={radarDraft}
             setDraft={setRadarDraft}
             saving={radarSaving}
@@ -2682,9 +2236,12 @@ function App() {
             onRemoveFollow={removeRadarFollow}
             onFollowCluster={followDestinationCluster}
             onSave={saveRadarPreferences}
+            sessionActivated={radarSessionActivated}
+            radarMessagingTier={planEntitlements.radarMessagingTier}
             canUseRadar={canUseRadarPlan}
-            onUpgradePro={upgradeToPremium}
-            onUpgradeElite={chooseElitePlan}
+            token={token}
+            onUpgradePro={() => upgradeToPremium('radar_prompt')}
+            onUpgradeElite={() => chooseElitePlan('radar_prompt')}
           />
         ) : (
           <SectionAccessGate
@@ -2701,6 +2258,7 @@ function App() {
           <>
             <AITravelSection
               t={t}
+              language={language}
               prompt={aiTravelPrompt}
               setPrompt={setAiTravelPrompt}
               loading={aiTravelLoading}
@@ -2708,9 +2266,10 @@ function App() {
               error={aiTravelError}
               onRun={runAiTravelQuery}
               onView={openOpportunityDetail}
-              canUseAiTravel={canUseAiTravelPlan}
-              onUpgradePro={upgradeToPremium}
-              onUpgradeElite={chooseElitePlan}
+              planType={userPlanType}
+              canUseAiTravel={canRunAiTravelMvp}
+              onUpgradePro={() => upgradeToPremium('ai_travel_prompt')}
+              onUpgradeElite={() => chooseElitePlan('ai_travel_prompt')}
             />
             {(opportunityDetailLoading || opportunityDetailError || opportunityDetail) ? (
               <OpportunityDetailSection
@@ -2719,11 +2278,19 @@ function App() {
                 detail={opportunityDetail}
                 language={language}
                 t={t}
-                onClose={() => setOpportunityDetail(null)}
+                bookingError={opportunityBookingError}
+                onClose={() => {
+                  setOpportunityDetail(null);
+                  clearOpportunityBookingError();
+                  setOpportunityDetailUpgradePrompt(null);
+                }}
                 onFollow={followOpportunity}
                 onActivateAlert={followOpportunity}
                 onOpenBooking={openOpportunityBooking}
                 onViewRelated={openOpportunityDetail}
+                upgradePrompt={opportunityDetailUpgradePrompt}
+                onUpgradePro={() => upgradeToPremium('opportunity_detail_prompt')}
+                onUpgradeElite={() => chooseElitePlan('opportunity_detail_prompt')}
               />
             ) : null}
           </>
@@ -2738,49 +2305,129 @@ function App() {
       ) : null}
 
       {activeMainSection === 'premium' ? (
-        <section className="panel premium-panel">
-          <div className="panel-head">
-            <h2>{t('premiumPageTitle')}</h2>
-          </div>
-          <p className="muted">{t('premiumPageSubtitle')}</p>
-          <div className="premium-grid">
-            <article className="premium-card">
-              <p className="premium-plan-tag">FREE</p>
-              <p className="premium-price">{t('pricingFreePrice')}</p>
-              <p className="premium-card-sub">{t('pricingFreeSub')}</p>
-              <ul className="premium-feature-list">
-                <li>{t('pricingFreeFeature1')}</li>
-                <li>{t('pricingFreeFeature2')}</li>
-                <li>{t('pricingFreeFeature3')}</li>
-              </ul>
-              <button type="button" className="premium-cta premium-cta-light" onClick={activateFreePlan}>{t('pricingFreeCta')}</button>
-            </article>
-            <article className="premium-card premium-card-featured">
-              <p className="premium-plan-tag">PRO</p>
-              <p className="premium-price">{t('pricingProPrice')}</p>
-              <p className="premium-card-sub">{t('pricingProSub')}</p>
-              <ul className="premium-feature-list">
-                <li>{t('pricingProFeature1')}</li>
-                <li>{t('pricingProFeature2')}</li>
-                <li>{t('pricingProFeature3')}</li>
-                <li>{t('pricingProFeature4')}</li>
-              </ul>
-              <button type="button" className="premium-cta" onClick={upgradeToPremium}>{t('pricingProCta')}</button>
-            </article>
-            <article className="premium-card">
-              <p className="premium-plan-tag">ELITE</p>
-              <p className="premium-price">{t('pricingElitePrice')}</p>
-              <p className="premium-card-sub">{t('pricingEliteSub')}</p>
-              <ul className="premium-feature-list">
-                <li>{t('pricingEliteFeature1')}</li>
-                <li>{t('pricingEliteFeature2')}</li>
-                <li>{t('pricingEliteFeature3')}</li>
-                <li>{t('pricingEliteFeature4')}</li>
-              </ul>
-              <button type="button" className="premium-cta premium-cta-dark" onClick={chooseElitePlan}>{t('pricingEliteCta')}</button>
-            </article>
-          </div>
-        </section>
+        <div className="ph-shell">
+          <section className="ph-panel" data-testid="premium-panel">
+            <div className="ph-panel-glow" aria-hidden="true" />
+            <div className="ph-head">
+              <p className="ph-eyebrow">Premium Access</p>
+              <h2 className="ph-title">{t('premiumPageTitle')}</h2>
+              <p className="ph-subtitle">{t('premiumPageSubtitle')}</p>
+              <div className="ph-cycle-wrap" data-testid="premium-billing-controls">
+                <div className={`ph-cycle-pill ph-cycle-pill--${premiumBillingCycle}`} role="radiogroup" aria-label="Billing cycle">
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={premiumBillingCycle === 'monthly'}
+                    data-testid="premium-billing-monthly"
+                    className={`ph-cycle-btn${premiumBillingCycle === 'monthly' ? ' ph-cycle-btn--on' : ''}`}
+                    onClick={() => setPremiumBillingCycle('monthly')}
+                  >
+                    <span>Monthly</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={premiumBillingCycle === 'annual'}
+                    data-testid="premium-billing-annual"
+                    className={`ph-cycle-btn${premiumBillingCycle === 'annual' ? ' ph-cycle-btn--on' : ''}`}
+                    onClick={() => setPremiumBillingCycle('annual')}
+                  >
+                    <span>Annual</span>
+                    <span className="ph-cycle-save-chip">30% off</span>
+                  </button>
+                  <span className="ph-cycle-pill-active" aria-hidden="true" />
+                </div>
+                <span className={`ph-off-badge${isAnnualBilling ? ' ph-off-badge--active' : ''}`}>
+                  {isAnnualBilling ? 'Annual pricing active - save up to 30%' : 'Switch to annual and save up to 30%'}
+                </span>
+              </div>
+            </div>
+
+            <div className="ph-grid">
+              {premiumPackages.map((plan) => (
+                <article
+                  key={plan.id}
+                  className={`ph-card ph-card--${plan.id}${plan.id === 'pro' ? ' ph-card--featured' : ''}`}
+                  data-testid={plan.cardTestId}
+                >
+                  <div className="ph-card-top">
+                    {plan.id === 'pro' ? (
+                      <p className="ph-top-label ph-top-label--featured">Recommended</p>
+                    ) : plan.id === 'elite' ? (
+                      <p className="ph-top-label ph-top-label--elite">Best value</p>
+                    ) : (
+                      <p className="ph-top-label ph-top-label--free">Get started</p>
+                    )}
+                    <p className="ph-top-caption">{plan.badgeDetail}</p>
+                  </div>
+
+                  <div className="ph-card-inner">
+                    <div className="ph-name-row">
+                      <h3 className="ph-plan-name">{plan.planName}</h3>
+                      <span className="ph-plan-badge">{plan.badge}</span>
+                      {isAnnualBilling && plan.discountTag ? <span className="ph-disc">{plan.discountTag}</span> : null}
+                    </div>
+                    <p className="ph-plan-desc">{plan.subtitle}</p>
+
+                    <div className="ph-price-block">
+                      <div className="ph-price-row">
+                        {plan.legacyPrice ? <span className="ph-old-price">{plan.legacyPrice}</span> : null}
+                        <span className="ph-price">{plan.price}</span>
+                        <span className="ph-per">{plan.priceSuffix}</span>
+                      </div>
+                      <p className="ph-billing-note">{plan.billingNote}</p>
+                      <p className="ph-billing-sub-note">{plan.billingSubNote}</p>
+                    </div>
+
+                    <div className="ph-val-box">
+                      <p className="ph-val-headline">{plan.valueTitle}</p>
+                      <ul className="ph-val-list">
+                        {plan.valueItems.map((item) => (
+                          <li key={`${plan.id}-v-${item}`}>{item}</li>
+                        ))}
+                      </ul>
+                      <ul className="ph-meter-stops" aria-hidden="true">
+                        {plan.meterStops.map((step, idx) => (
+                          <li key={`${plan.id}-m-${step}`} className={idx === 0 ? 'ph-meter-stop--active' : ''}>{step}</li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    <ul className="ph-feats">
+                      {plan.included.map((feat) => (
+                        <li key={`${plan.id}-i-${feat}`} className="ph-feat ph-feat--yes">
+                          <span className="ph-feat-icon">+</span>{feat}
+                        </li>
+                      ))}
+                      {plan.missing.map((feat) => (
+                        <li key={`${plan.id}-x-${feat}`} className="ph-feat ph-feat--no">
+                          <span className="ph-feat-icon">-</span>{feat}
+                        </li>
+                      ))}
+                    </ul>
+
+                    <div className="ph-card-actions">
+                      <button
+                        type="button"
+                        className={`ph-cta ph-cta--${plan.id}`}
+                        onClick={plan.onClick}
+                        data-testid={plan.ctaTestId}
+                      >
+                        <span>{plan.ctaLabel}</span>
+                        <span className="ph-cta-arrow" aria-hidden="true">{'->'}</span>
+                      </button>
+                      <p className="ph-save-line">{plan.saveNote}</p>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+
+            <p className="ph-trust">
+              {t('premiumTrustNote') || 'No payment is charged in this step. You can switch or cancel anytime.'}
+            </p>
+          </section>
+        </div>
       ) : null}
 
       {activeMainSection === 'explore' ? (
@@ -2795,7 +2442,7 @@ function App() {
           ) : null}
         </div>
         <p className="muted">{t('explorePageSubtitleExtended')}</p>
-        <div className="item-actions">
+        <div className="item-actions explore-cluster-shortcuts">
           {destinationClusters.slice(0, 6).map((cluster) => (
             <button
               key={cluster.slug}
@@ -2806,7 +2453,7 @@ function App() {
                 setActiveMainSection('home');
               }}
             >
-              {cluster.cluster_name}
+              {localizeClusterDisplayName(cluster, language)}
             </button>
           ))}
         </div>
@@ -2815,6 +2462,7 @@ function App() {
       <ExploreDiscoverySection
         t={t}
         language={language}
+        dataSource={systemCapabilities?.data_source || 'synthetic'}
         origins={config.origins}
         value={exploreDiscoveryInput}
         onChange={(next) => setExploreDiscoveryInput((prev) => ({ ...prev, ...next }))}
@@ -2834,6 +2482,15 @@ function App() {
         uiMode={uiMode}
         setUiMode={setUiMode}
         submitSearch={submitSearch}
+        searchMode={searchMode}
+        setSearchMode={setSearchMode}
+        multiCitySegments={multiCitySegments}
+        multiCityValidation={multiCityValidation}
+        setMultiCitySegmentValue={setMultiCitySegmentValue}
+        appendMultiCitySegment={appendMultiCitySegment}
+        deleteMultiCitySegment={deleteMultiCitySegment}
+        retryMultiCitySearch={retryMultiCitySearch}
+        multiCityRetryVisible={multiCityRetryVisible}
         intakePrompt={intakePrompt}
         setIntakePrompt={setIntakePrompt}
         analyzeIntentPrompt={analyzeIntentPrompt}
@@ -2855,7 +2512,7 @@ function App() {
         submitJustGo={submitJustGo}
         searchLoading={searchLoading}
         createDurationAlert={createDurationAlert}
-        upgradeToPremium={upgradeToPremium}
+        upgradeToPremium={() => upgradeToPremium('search_results_soft_gate')}
         canUseProFeatures={canUseRadarPlan}
         canUseEliteFeatures={canUseAiTravelPlan}
         searchError={searchError}
@@ -2904,7 +2561,7 @@ function App() {
       ) : null}
 
       {!isAdvancedMode && visibleFlights.length > 0 ? (
-        <section className="panel">
+        <section className="panel search-quick-actions-panel">
           <div className="panel-head">
             <h2>{t('quickActions')}</h2>
           </div>
@@ -2920,7 +2577,7 @@ function App() {
       ) : null}
 
       {visibleFlights.length > 0 ? (
-        <section className="panel">
+        <section className="panel search-top-picks-panel">
           <div className="panel-head">
             <h2>{t('topPicks')}</h2>
           </div>
@@ -2930,17 +2587,22 @@ function App() {
                 <div>
                   <strong>{t('cheapestNow')}</strong>
                   <p>
-                    {cheapestFlight.destination} ({cheapestFlight.destinationIata}) | EUR {cheapestFlight.price} | {cheapestFlight.stopLabel}
+                    {resolveCityName(cheapestFlight.destination, cheapestFlight.destinationIata)} | EUR {cheapestFlight.price} | {cheapestFlight.stopLabel}
                   </p>
+                  {cheapestFlight.dealLabel ? (
+                    <p className={`deal-value-label deal-value-${cheapestFlight.dealLabel}`}>
+                      {dealLabelText(t, cheapestFlight.dealLabel)} {cheapestFlight.dealReason ? `- ${cheapestFlight.dealReason}` : ''}
+                    </p>
+                  ) : null}
                 </div>
                 <div className="item-actions">
-                  <a
-                    href={buildOutboundHref(cheapestFlight, 'top_picks')}
-                    target="_blank"
-                    rel="noreferrer"
+                  <button
+                    type="button"
+                    data-testid="book-top-pick"
+                    onClick={() => handleBookingFromSearchFlight(cheapestFlight, 'top_picks')}
                   >
                     {t('partnerCta')}
-                  </a>
+                  </button>
                   <button type="button" onClick={() => addToWatchlist(cheapestFlight)}>
                     {t('save')}
                   </button>
@@ -2952,17 +2614,22 @@ function App() {
                 <div>
                   <strong>{t('bestValue')}</strong>
                   <p>
-                    {bestValueFlight.destination} ({bestValueFlight.destinationIata}) | {t('save')} EUR {bestValueFlight.savingVs2024} | {bestValueFlight.stopLabel}
+                    {resolveCityName(bestValueFlight.destination, bestValueFlight.destinationIata)} | {t('savingVs2024')}: EUR {bestValueFlight.savingVs2024} | {bestValueFlight.stopLabel}
                   </p>
+                  {bestValueFlight.dealLabel ? (
+                    <p className={`deal-value-label deal-value-${bestValueFlight.dealLabel}`}>
+                      {dealLabelText(t, bestValueFlight.dealLabel)} {bestValueFlight.dealReason ? `- ${bestValueFlight.dealReason}` : ''}
+                    </p>
+                  ) : null}
                 </div>
                 <div className="item-actions">
-                  <a
-                    href={buildOutboundHref(bestValueFlight, 'top_picks')}
-                    target="_blank"
-                    rel="noreferrer"
+                  <button
+                    type="button"
+                    data-testid="book-best-value"
+                    onClick={() => handleBookingFromSearchFlight(bestValueFlight, 'top_picks')}
                   >
                     {t('partnerCta')}
-                  </a>
+                  </button>
                   <button type="button" className="ghost" onClick={() => createAlertForFlight(bestValueFlight)}>
                     {t('alertAtPrice')}
                   </button>
@@ -2973,7 +2640,7 @@ function App() {
         </section>
       ) : null}
 
-      <section className="panel">
+      <section className="panel search-results-panel">
         <div className="panel-head">
           <h2>{t('results')}</h2>
           {isAdvancedMode ? (
@@ -2983,50 +2650,64 @@ function App() {
                 <option value="saving">{t('sortSaving')}</option>
                 <option value="price">{t('sortPrice')}</option>
                 <option value="avg2024">{t('sortAvg2024')}</option>
+                <option value="travelScore">{t('sortTravelScore') || `${t('travelScore')} (${t('bestValue')})`}</option>
+                <option value="deal">{t('sortDealPriority')}</option>
+                <option value="radar">{t('sortRadarPriority')}</option>
               </select>
             </label>
           ) : null}
         </div>
         {searchResult?.meta?.bookability ? (
           <p className="muted">
-            Search mode: {searchResult.meta.searchMode || 'unknown'} | Bookability: {searchResult.meta.bookability}
+            {t('searchModeLabel')}: {searchResult.meta.searchMode || t('notAvailable')} | {t('bookabilityLabel')}: {searchResult.meta.bookability}
           </p>
         ) : null}
         {searchResult?.inventory?.providerValidated?.degradedReason ? (
           <p className="muted">
-            Provider validation degraded: {String(searchResult.inventory.providerValidated.degradedReason)}
+            {t('providerValidationDegradedLabel')}: {String(searchResult.inventory.providerValidated.degradedReason)}
           </p>
         ) : null}
 
         {searchResult.flights.length === 0 ? <p className="muted">{t('noResults')}</p> : null}
+        {bookingHandoffError ? <p className="error" data-testid="booking-handoff-error">{bookingHandoffError}</p> : null}
 
         <div className="results-grid">
           {visibleFlights.map((flight) => (
-            <article key={flight.id} className="result-card">
+            <article key={flight.id} className="result-card" data-testid={`result-card-${flight.id}`}>
               <div>
                 <strong>
-                  {flight.origin} {t('to')} {flight.destination} ({flight.destinationIata})
+                  {resolveCityName(flight.origin, flight.origin)} {t('to')} {resolveCityName(flight.destination, flight.destinationIata)}
                 </strong>
                 <p>
                   EUR {flight.price} | {flight.stopLabel} | {flight.departureTimeLabel} {t('to')} {flight.arrivalTimeLabel} | {flight.durationHours}h | {t('comfort')} {flight.comfortScore}/100
                 </p>
                 {Number.isFinite(flight.travelScore) ? (
                   <p>
-                    {t('travelScore')} {flight.travelScore}/100 | {t('totalEstimated')} EUR {flight.costBreakdown?.total ?? '-'} | {t('climate')} {flight.climateInPeriod?.avgTempC ?? '-'}C | {t('crowding')}{' '}
+                    <span data-testid={`travel-score-${flight.id}`}>{t('travelScore')} {flight.travelScore}/100</span> | {t('totalEstimated')} EUR {flight.costBreakdown?.total ?? '-'} | {t('climate')} {flight.climateInPeriod?.avgTempC ?? '-'}C | {t('crowding')}{' '}
                     {flight.crowding?.index ?? '-'}
+                  </p>
+                ) : null}
+                {flight.dealLabel ? (
+                  <p className={`deal-value-label deal-value-${flight.dealLabel}`} data-testid={`deal-label-${flight.id}`}>
+                    {dealLabelText(t, flight.dealLabel)} {flight.dealReason ? `- ${flight.dealReason}` : ''}
+                  </p>
+                ) : null}
+                {flight.radarState ? (
+                  <p className={`radar-state-badge radar-state-${flight.radarState}`} data-testid={`radar-badge-${flight.id}`}>
+                    {radarStateText(t, flight.radarState)} {flight.radarReason ? `- ${flight.radarReason}` : ''}
                   </p>
                 ) : null}
                 {Array.isArray(flight.reasons) && flight.reasons.length > 0 ? <p>{flight.reasons.slice(0, 2).join(' | ')}</p> : null}
                 {flight.aiWhyNow ? <p>AI: {flight.aiWhyNow}</p> : null}
               </div>
               <div className="item-actions">
-                <a
-                  href={buildOutboundHref(flight, 'results')}
-                  target="_blank"
-                  rel="noreferrer"
+                <button
+                  type="button"
+                  data-testid={`book-result-${flight.id}`}
+                  onClick={() => handleBookingFromSearchFlight(flight, 'results')}
                 >
                   {t('partnerCta')}
-                </a>
+                </button>
                 <button type="button" onClick={() => addToWatchlist(flight)}>{t('save')}</button>
                 <button type="button" className="ghost" onClick={() => createAlertForFlight(flight)}>{t('alertAtPrice')}</button>
                 <button
@@ -3066,13 +2747,22 @@ function App() {
                           EUR {windowItem.price} | {t('avg2024Label')} EUR {windowItem.avg2024}
                         </p>
                       </div>
-                      <a
-                        href={buildOutboundHref({ ...windowItem, origin: flight.origin, stopCount: flight.stopCount, comfortScore: flight.comfortScore }, 'insights')}
-                        target="_blank"
-                        rel="noreferrer"
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleBookingFromSearchFlight(
+                            {
+                              ...windowItem,
+                              origin: flight.origin,
+                              stopCount: flight.stopCount,
+                              comfortScore: flight.comfortScore
+                            },
+                            'insights'
+                          )
+                        }
                       >
                         {t('partnerCta')}
-                      </a>
+                      </button>
                     </div>
                   ))}
                 </div>
@@ -3096,7 +2786,7 @@ function App() {
               <article key={flight.id} className="watch-item compare-card">
                 <div>
                   <strong>
-                    {flight.destination} ({flight.destinationIata})
+                    {resolveCityName(flight.destination, flight.destinationIata)}
                   </strong>
                   <p>EUR {flight.price}</p>
                   <p>
@@ -3106,13 +2796,12 @@ function App() {
                   <p>{flight.climate}</p>
                 </div>
                 <div className="item-actions">
-                  <a
-                    href={buildOutboundHref(flight, 'compare')}
-                    target="_blank"
-                    rel="noreferrer"
+                  <button
+                    type="button"
+                    onClick={() => handleBookingFromSearchFlight(flight, 'compare')}
                   >
                     {t('partnerCta')}
-                  </a>
+                  </button>
                   <button type="button" onClick={() => addToWatchlist(flight)}>
                     {t('save')}
                   </button>
@@ -3131,6 +2820,7 @@ function App() {
                 <h2>{t('priceAlerts')}</h2>
                 <button className="ghost" type="button" onClick={refreshSubscriptions} disabled={!isAuthenticated}>{t('refresh')}</button>
               </div>
+              <p className="muted">{t('priceAlertsHelp')}</p>
               {subMessage ? <p className="muted">{subMessage}</p> : null}
               {subscriptions.length === 0 ? <p className="muted">{t('noAlerts')}</p> : null}
               <div className="list-stack">
@@ -3241,6 +2931,7 @@ function App() {
                 <h2>{t('watchlist')}</h2>
                 <button className="ghost" type="button" onClick={refreshWatchlist} disabled={!isAuthenticated}>{t('refresh')}</button>
               </div>
+              <p className="muted">{t('watchlistHelp')}</p>
               {watchlistError ? <p className="error">{watchlistError}</p> : null}
               {watchlist.length === 0 ? <p className="muted">{t('emptyWatchlist')}</p> : null}
               <div className="list-stack">
@@ -3251,22 +2942,23 @@ function App() {
                       <p>EUR {item.price} | {item.dateFrom} {t('to')} {item.dateTo}</p>
                     </div>
                     <div className="item-actions">
-                      <a
-                        href={buildOutboundHref(
-                          {
-                            origin: item.flightId?.split('-')?.[0] || searchForm.origin,
-                            destinationIata: item.destinationIata,
-                            destination: item.destination,
-                            dateFrom: item.dateFrom,
-                            dateTo: item.dateTo
-                          },
-                          'watchlist'
-                        )}
-                        target="_blank"
-                        rel="noreferrer"
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleBookingFromSearchFlight(
+                            {
+                              origin: item.flightId?.split('-')?.[0] || searchForm.origin,
+                              destinationIata: item.destinationIata,
+                              destination: item.destination,
+                              dateFrom: item.dateFrom,
+                              dateTo: item.dateTo
+                            },
+                            'watchlist'
+                          )
+                        }
                       >
                         {t('partnerCta')}
-                      </a>
+                      </button>
                       <button className="ghost" type="button" onClick={() => removeWatchlistItem(item.id)}>{t('remove')}</button>
                     </div>
                   </div>
@@ -3279,13 +2971,12 @@ function App() {
       </>
       ) : null}
     </main>
+    </>
     )}
+    <CookieBanner t={t} />
     </AppProvider>
   );
 }
 
 export default App;
-
-
-
 

@@ -1,19 +1,37 @@
 import { addDays } from 'date-fns';
 
 function csvEscape(value) {
-  const text = String(value ?? '');
+  const raw = String(value ?? '');
+  const formulaLike = /^[=+\-@]/.test(raw.trimStart());
+  const text = formulaLike ? `'${raw}` : raw;
   if (text.includes(',') || text.includes('"') || text.includes('\n')) {
     return `"${text.replace(/"/g, '""')}"`;
   }
   return text;
 }
 
+function normalizeCorrelationId(value) {
+  const normalized = String(value || '').trim();
+  return normalized || '';
+}
+
 export function buildOutboundReport(db, windowDays = 30) {
   const safeDb = db || {};
-  const clicksSource = Array.isArray(safeDb.outboundClicks) ? safeDb.outboundClicks : [];
+  const outboundEventsSource = Array.isArray(safeDb.outboundClicks) ? safeDb.outboundClicks : [];
   const searchesSource = Array.isArray(safeDb.searches) ? safeDb.searches : [];
   const since = addDays(new Date(), -windowDays).getTime();
-  const clicks = clicksSource.filter((c) => new Date(c?.at).getTime() >= since);
+  const outboundEvents = outboundEventsSource.filter((event) => new Date(event?.at).getTime() >= since);
+  const isRedirectSuccess = (eventName) => {
+    const normalized = String(eventName || '').trim().toLowerCase();
+    return normalized === 'outbound_redirect_succeeded' || normalized === 'booking_resolved_redirect';
+  };
+  const isRedirectFailure = (eventName) => {
+    const normalized = String(eventName || '').trim().toLowerCase();
+    return normalized === 'outbound_redirect_failed' || normalized === 'booking_redirect_failed';
+  };
+  const clicks = outboundEvents.filter((event) => String(event?.eventName || 'booking_clicked') === 'booking_clicked');
+  const redirectSuccesses = outboundEvents.filter((event) => isRedirectSuccess(event?.eventName));
+  const redirectFailures = outboundEvents.filter((event) => isRedirectFailure(event?.eventName));
   const searches = searchesSource.filter((s) => new Date(s?.at).getTime() >= since);
 
   const partnerMap = new Map();
@@ -21,6 +39,7 @@ export function buildOutboundReport(db, windowDays = 30) {
   const filterMap = new Map();
   const campaignMap = new Map();
   const sourceMediumMap = new Map();
+  const failureReasonMap = new Map();
 
   for (const click of clicks) {
     partnerMap.set(click.partner, (partnerMap.get(click.partner) || 0) + 1);
@@ -30,6 +49,11 @@ export function buildOutboundReport(db, windowDays = 30) {
     campaignMap.set(campaign, (campaignMap.get(campaign) || 0) + 1);
     const sourceMedium = `${click.utmSource || 'direct'} / ${click.utmMedium || 'none'}`;
     sourceMediumMap.set(sourceMedium, (sourceMediumMap.get(sourceMedium) || 0) + 1);
+  }
+
+  for (const failure of redirectFailures) {
+    const reason = String(failure?.failureReason || 'unknown_reason');
+    failureReasonMap.set(reason, (failureReasonMap.get(reason) || 0) + 1);
   }
 
   for (const search of searches) {
@@ -52,6 +76,22 @@ export function buildOutboundReport(db, windowDays = 30) {
     .map(([sourceMedium, clicksCount]) => ({ sourceMedium, clicks: clicksCount }))
     .sort((a, b) => b.clicks - a.clicks)
     .slice(0, 10);
+  const redirectFailureReasons = [...failureReasonMap.entries()]
+    .map(([reason, count]) => ({ reason, count }))
+    .sort((a, b) => b.count - a.count);
+
+  const clickCorrelationIds = new Set(clicks.map((event) => normalizeCorrelationId(event?.correlationId)).filter(Boolean));
+  const redirectOutcomes = [...redirectSuccesses, ...redirectFailures];
+  const redirectOutcomesWithCorrelation = redirectOutcomes.filter((event) => Boolean(normalizeCorrelationId(event?.correlationId)));
+  const correlatedRedirectOutcomes = redirectOutcomesWithCorrelation.filter((event) =>
+    clickCorrelationIds.has(normalizeCorrelationId(event?.correlationId))
+  );
+  const clicksWithCorrelationId = clicks.filter((event) => Boolean(normalizeCorrelationId(event?.correlationId))).length;
+  const redirectOutcomesWithCorrelationId = redirectOutcomesWithCorrelation.length;
+  const correlatedRedirectOutcomeCount = correlatedRedirectOutcomes.length;
+  const redirectCorrelationRatePct = redirectOutcomes.length > 0
+    ? Math.round((correlatedRedirectOutcomeCount / redirectOutcomes.length) * 1000) / 10
+    : 0;
 
   return {
     generatedAt: new Date().toISOString(),
@@ -66,13 +106,20 @@ export function buildOutboundReport(db, windowDays = 30) {
       searchCount: searches.length,
       outboundClicks: clicks.length,
       clickThroughRatePct: searches.length > 0 ? Math.round((clicks.length / searches.length) * 1000) / 10 : 0,
-      uniqueRoutesClicked: routeMap.size
+      uniqueRoutesClicked: routeMap.size,
+      redirectSuccesses: redirectSuccesses.length,
+      redirectFailures: redirectFailures.length,
+      clicksWithCorrelationId,
+      redirectOutcomesWithCorrelationId,
+      correlatedRedirectOutcomes: correlatedRedirectOutcomeCount,
+      redirectCorrelationRatePct
     },
     byPartner,
     topRoutes,
     topDecisionPatterns,
     topCampaigns,
-    topSources
+    topSources,
+    redirectFailureReasons
   };
 }
 
@@ -85,6 +132,12 @@ export function outboundReportToCsv(report) {
   lines.push(['summary', 'outboundClicks', csvEscape(report.summary.outboundClicks)].join(','));
   lines.push(['summary', 'clickThroughRatePct', csvEscape(report.summary.clickThroughRatePct)].join(','));
   lines.push(['summary', 'uniqueRoutesClicked', csvEscape(report.summary.uniqueRoutesClicked)].join(','));
+  lines.push(['summary', 'redirectSuccesses', csvEscape(report.summary.redirectSuccesses)].join(','));
+  lines.push(['summary', 'redirectFailures', csvEscape(report.summary.redirectFailures)].join(','));
+  lines.push(['summary', 'clicksWithCorrelationId', csvEscape(report.summary.clicksWithCorrelationId)].join(','));
+  lines.push(['summary', 'redirectOutcomesWithCorrelationId', csvEscape(report.summary.redirectOutcomesWithCorrelationId)].join(','));
+  lines.push(['summary', 'correlatedRedirectOutcomes', csvEscape(report.summary.correlatedRedirectOutcomes)].join(','));
+  lines.push(['summary', 'redirectCorrelationRatePct', csvEscape(report.summary.redirectCorrelationRatePct)].join(','));
 
   lines.push('');
   lines.push(['partner', 'clicks'].join(','));
@@ -114,6 +167,12 @@ export function outboundReportToCsv(report) {
   lines.push(['decision_pattern', 'used'].join(','));
   for (const row of report.topDecisionPatterns || []) {
     lines.push([csvEscape(row.pattern), csvEscape(row.used)].join(','));
+  }
+
+  lines.push('');
+  lines.push(['redirect_failure_reason', 'count'].join(','));
+  for (const row of report.redirectFailureReasons || []) {
+    lines.push([csvEscape(row.reason), csvEscape(row.count)].join(','));
   }
 
   return lines.join('\n');

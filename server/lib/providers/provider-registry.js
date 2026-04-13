@@ -1,14 +1,9 @@
 import { DuffelProvider } from './duffel-provider.js';
 import { AmadeusProvider } from './amadeus-provider.js';
+import { parseFlag } from '../env-flags.js';
 import { logger } from '../logger.js';
 
 const providerWarnState = new Map();
-
-function parseFlag(value, fallback = false) {
-  const text = String(value ?? '').trim().toLowerCase();
-  if (!text) return fallback;
-  return ['1', 'true', 'yes', 'on'].includes(text);
-}
 
 function parseIntSafe(value, fallback) {
   const out = Number.parseInt(String(value ?? '').trim(), 10);

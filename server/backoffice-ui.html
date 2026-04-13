@@ -1,0 +1,711 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Flight Suite Admin Backoffice</title>
+  <style>
+    :root { --bg:#081326; --line:rgba(139,178,242,.24); --txt:#e7f0ff; --muted:#8eaed9; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; color:var(--txt); font-family:Inter,Segoe UI,Arial,sans-serif; line-height:1.4; background:radial-gradient(circle at 90% -10%,rgba(75,158,255,.22),transparent 45%),radial-gradient(circle at -10% 120%,rgba(16,185,129,.12),transparent 35%),var(--bg); }
+    .wrap { width:min(1280px,100%); margin:0 auto; padding:20px 18px 42px; display:grid; gap:12px; }
+    .top { border:1px solid var(--line); border-radius:14px; padding:14px; display:flex; gap:12px; justify-content:space-between; align-items:center; flex-wrap:wrap; background:linear-gradient(130deg,rgba(17,45,88,.95),rgba(17,35,67,.95)); }
+    .title { margin:0; font-size:clamp(20px,3.5vw,28px); line-height:1.1; letter-spacing:-.02em; }
+    .meta-line { margin:4px 0 0; color:var(--muted); font-size:13px; }
+    .actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    .btn { border:1px solid rgba(146,188,252,.6); background:linear-gradient(180deg,#fff 0%,#edf4ff 100%); color:#163f84; border-radius:10px; padding:9px 14px; font-weight:700; min-height:38px; cursor:pointer; transition:border-color .15s,box-shadow .15s,color .15s,background .15s; font-size:14px; }
+    .btn:hover { background:linear-gradient(180deg,#fff 0%,#f3f8ff 100%); color:#103978; border-color:#98c3ff; box-shadow:0 0 0 1px rgba(141,186,255,.9),0 0 18px rgba(82,143,230,.35); }
+    .btn.primary { background:linear-gradient(180deg,#58a8ff,#337de4); border-color:rgba(108,171,255,.7); color:#fff; }
+    .btn.primary:hover { background:linear-gradient(180deg,#6bb4ff,#4187e9); border-color:rgba(143,192,255,.95); color:#fff; box-shadow:0 0 0 1px rgba(150,199,255,.85),0 0 18px rgba(71,136,230,.45); }
+    .btn.danger { background:rgba(239,68,68,.18); border-color:rgba(239,68,68,.45); color:#ffc4c4; }
+    .btn.danger:hover { background:rgba(239,68,68,.26); border-color:rgba(247,125,125,.8); color:#ffd7d7; box-shadow:0 0 0 1px rgba(255,149,149,.7),0 0 16px rgba(239,68,68,.3); }
+    .btn.lang-btn { min-width:110px; display:flex; align-items:center; justify-content:center; gap:6px; }
+    .lang-flag { font-size:16px; line-height:1; }
+    .status { display:flex; gap:8px; flex-wrap:wrap; margin-top:4px; }
+    .badge { font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; border-radius:999px; padding:4px 9px; border:1px solid transparent; }
+    .ok { background:rgba(16,185,129,.16); color:#6ee7b7; border-color:rgba(16,185,129,.42); }
+    .warn { background:rgba(245,158,11,.16); color:#facc7a; border-color:rgba(245,158,11,.42); }
+    .bad { background:rgba(239,68,68,.16); color:#ffb5b5; border-color:rgba(239,68,68,.42); }
+    .kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:10px; }
+    .kpi { background:rgba(11,28,55,.88); border:1px solid var(--line); border-radius:12px; padding:14px; display:grid; gap:4px; }
+    .kpi .v { font-size:28px; font-weight:800; line-height:1; color:#f2f7ff; }
+    .kpi .l { font-size:11px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:#88aad8; }
+    .kpi .s { font-size:12px; color:#5e84b8; }
+    .g2 { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+    .card { background:rgba(10,27,52,.84); border:1px solid var(--line); border-radius:14px; padding:14px; display:grid; gap:8px; min-width:0; }
+    h2 { margin:0; font-size:16px; color:#cfe0fb; }
+    .sub { margin:0; color:#7ea2d4; font-size:12px; }
+    .chart { min-height:240px; position:relative; }
+    .chart.sm { min-height:210px; }
+    .metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+    .m { border:1px solid var(--line); border-radius:10px; padding:10px 8px; text-align:center; background:rgba(255,255,255,.03); }
+    .m .v { display:block; font-size:22px; font-weight:800; line-height:1; }
+    .m .l { display:block; margin-top:4px; font-size:11px; color:#7ea2d4; text-transform:uppercase; letter-spacing:.05em; }
+    .list { margin:0; padding:0; list-style:none; display:grid; gap:8px; }
+    .list li { border-radius:10px; padding:10px 11px; font-size:13px; line-height:1.5; border:1px solid transparent; background:rgba(255,255,255,.03); color:#d8e6fb; }
+    .list li.high { border-color:rgba(239,68,68,.45); background:rgba(239,68,68,.16); color:#ffc5c5; }
+    .list li.medium { border-color:rgba(245,158,11,.45); background:rgba(245,158,11,.16); color:#ffd894; }
+    .list li.ok { border-color:rgba(16,185,129,.45); background:rgba(16,185,129,.16); color:#a2f0ce; }
+    table { width:100%; border-collapse:collapse; table-layout:fixed; }
+    th,td { text-align:left; padding:8px 10px; border-bottom:1px solid rgba(146,182,240,.2); font-size:12px; vertical-align:top; overflow-wrap:anywhere; }
+    th { color:#8cb0e0; text-transform:uppercase; letter-spacing:.04em; font-size:11px; }
+    tr:last-child td { border-bottom:none; }
+    .empty { margin:0; color:#7ea2d4; font-size:13px; padding:10px 0; }
+    .errbox { display:none; border-radius:11px; border:1px solid rgba(239,68,68,.45); background:rgba(239,68,68,.15); color:#ffc4c4; padding:10px 12px; font-size:13px; }
+    .errbox.show { display:block; }
+    .loading-txt { color:#89acd9; font-size:13px; }
+    @media (max-width:960px){ .g2{grid-template-columns:1fr;} .chart{min-height:220px;} }
+    @media (max-width:620px){ .wrap{padding:12px 10px 28px;} .metrics{grid-template-columns:1fr;} .kpis{grid-template-columns:repeat(2,minmax(0,1fr));} .kpi .v{font-size:24px;} }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header class="top">
+      <div>
+        <h1 id="hTitle" class="title">Flight Suite Admin Backoffice</h1>
+        <p id="metaLine" class="meta-line"></p>
+        <div id="statusRow" class="status"></div>
+      </div>
+      <div class="actions">
+        <button id="langBtn" type="button" class="btn lang-btn">
+          <span id="langLabel"></span>
+        </button>
+        <button id="refreshBtn" type="button" class="btn primary"></button>
+        <form method="post" action="/logout" style="margin:0">
+          <button id="logoutBtn" type="submit" class="btn danger"></button>
+        </form>
+      </div>
+    </header>
+
+    <div id="globalErr" class="errbox"></div>
+    <section id="kpiGrid" class="kpis"></section>
+
+    <section class="g2">
+      <article class="card">
+        <h2 id="fTitle"></h2>
+        <p id="fSub" class="sub"></p>
+        <div class="chart"><canvas id="funnelChart"></canvas></div>
+      </article>
+      <article class="card">
+        <h2 id="pTitle"></h2>
+        <p id="pSub" class="sub"></p>
+        <div class="chart sm"><canvas id="planChart"></canvas></div>
+        <div class="metrics">
+          <div class="m"><span id="upClicks" class="v">0</span><span id="upClicksL" class="l"></span></div>
+          <div class="m"><span id="proInt" class="v">0</span><span id="proIntL" class="l"></span></div>
+          <div class="m"><span id="eliteInt" class="v">0</span><span id="eliteIntL" class="l"></span></div>
+        </div>
+      </article>
+    </section>
+
+    <section class="g2">
+      <article class="card"><h2 id="tTrack"></h2><div class="chart"><canvas id="trackedChart"></canvas></div></article>
+      <article class="card"><h2 id="tItin"></h2><div class="chart"><canvas id="itineraryChart"></canvas></div></article>
+    </section>
+
+    <section class="g2">
+      <article class="card"><h2 id="tBook"></h2><div class="chart"><canvas id="bookingChart"></canvas></div></article>
+      <article class="card"><h2 id="tUpSurf"></h2><div class="chart"><canvas id="upgradeChart"></canvas></div></article>
+    </section>
+
+    <section class="g2">
+      <article class="card"><h2 id="opsTitle"></h2><div class="chart sm"><canvas id="opsChart"></canvas></div></article>
+      <article class="card"><h2 id="insTitle"></h2><ul id="insList" class="list"></ul></article>
+    </section>
+
+    <section class="card"><h2 id="errTitle"></h2><div id="errWrap"></div></section>
+    <section class="card"><h2 id="actTitle"></h2><div id="actWrap"></div></section>
+  </main>
+
+  <script defer src="/assets/chart.umd.min.js"></script>
+  <script type="module">
+    // ── i18n dictionary ────────────────────────────────────────────────────
+    const S = {
+      it: {
+        pageTitle: 'Flight Suite Admin Backoffice',
+        loadingReport: 'Caricamento report...',
+        loading: 'Caricamento...',
+        refresh: 'Aggiorna',
+        refreshing: 'Aggiornamento...',
+        logout: 'Esci',
+        // Language button: shows TARGET language (the one you switch TO)
+        switchLang: 'English',
+        switchFlag: '🇬🇧',
+        // Sections
+        fTitle: 'Funnel di conversione',
+        fSub: 'Login → Traccia rotta → Apri itinerario → Click prenotazione',
+        pTitle: 'Distribuzione piani',
+        pSub: 'Utenti correnti per piano',
+        upClicksL: 'Click upgrade',
+        proIntL: 'Interesse PRO',
+        eliteIntL: 'Interesse ELITE',
+        tTrack: 'Top rotte tracciate',
+        tItin: 'Top itinerari aperti',
+        tBook: 'Top rotte con click prenotazione',
+        tUpSurf: 'Surface di trigger upgrade',
+        opsTitle: 'Operazioni (ultime 24h)',
+        insTitle: 'Perché gli utenti non acquistano?',
+        errTitle: 'Errori recenti',
+        actTitle: 'Attività recente',
+        // Status badges
+        stAuth: 'Auth falliti',
+        stOut: 'Errori outbound',
+        stRate: 'Rate limit',
+        // KPI labels
+        kUsers: 'Utenti totali',
+        kLogin: 'Sessioni login',
+        kTrack: 'Rotte tracciate',
+        kItin: 'Itinerari aperti',
+        kBook: 'Click prenotazione',
+        kUp: 'Click upgrade',
+        kActive24: '{n} attivi (24h)',
+        kActive7: '{n} attivi (7g)',
+        kTrackTot: '{n} rotte totali',
+        kOpp: 'Interesse opportunità',
+        kOut: 'Intent outbound',
+        kMon: 'Segnale monetizzazione',
+        // Fallbacks
+        noData: 'Nessun dato',
+        noPlans: 'Nessun piano',
+        noRoutes: 'Nessuna rotta',
+        noItin: 'Nessun itinerario',
+        noBook: 'Nessuna prenotazione',
+        noSurf: 'Nessuna surface',
+        // Chart labels
+        cUsers: 'Utenti',
+        cTrack: 'Rotte tracciate',
+        cItin: 'Itinerari',
+        cBook: 'Rotte prenotazione',
+        cSurf: 'Surface upgrade',
+        cEv24: 'Eventi (24h)',
+        cAuth: 'Auth',
+        cOut: 'Outbound',
+        cRate: 'Rate limit',
+        // Funnel step labels (in chart)
+        fStep0: 'Login completato',
+        fStep1: 'Tracking rotta',
+        fStep2: 'Itinerario aperto',
+        fStep3: 'Click prenotazione',
+        // Activity types
+        aRoute: 'Rotta tracciata',
+        aItin: 'Itinerario aperto',
+        aBook: 'Prenotazione cliccata',
+        aOpen: 'Upgrade aperto',
+        aConf: 'Upgrade confermato',
+        aRadar: 'Radar attivato',
+        // Time
+        now: 'adesso',
+        mAgo: '{n} min fa',
+        hAgo: '{n}h fa',
+        dAgo: '{n}g fa',
+        // Meta line
+        meta: 'Aggiornato {rel} · finestra {d}g · {dt}',
+        // Insights
+        i1h: '{v}% di drop dopo il login prima del tracking rotta. Migliorare la guida alla prima azione.',
+        i1m: '{v}% di drop nel tracking rotta. Valutare onboarding più chiaro.',
+        i2h: '{v}% di drop prima dell\'apertura itinerario. Rivedere qualità raccomandazioni.',
+        i2m: '{v}% di drop in apertura itinerario. Migliorare rilevanza offerte e chiarezza card.',
+        i3h: '{v}% di drop prima del click prenotazione. Verificare handoff e segnali di fiducia.',
+        i3m: '{v}% di drop tra itinerario e prenotazione. Testare prominenza CTA e proof points.',
+        i4: 'Nessun click upgrade rilevato. Verificare gating premium e punti di ingresso.',
+        i5: 'Le modal upgrade si aprono ma nessun piano viene selezionato. Rivedere UX pricing.',
+        iOk: 'Funnel e segnali monetizzazione al momento stabili.',
+        // Tables
+        noErr: 'Nessun errore recente nella finestra selezionata.',
+        noAct: 'Nessuna attività recente raccolta.',
+        thWhen: 'Quando',
+        thScope: 'Ambito',
+        thMsg: 'Messaggio',
+        thType: 'Tipo',
+        thLabel: 'Etichetta',
+        thMeta: 'Meta',
+        // Errors
+        loadErr: 'Errore nel caricamento report: {m}',
+        chartFail: 'Impossibile caricare Chart.js',
+        invalid: 'Payload report non valido'
+      },
+      en: {
+        pageTitle: 'Flight Suite Admin Backoffice',
+        loadingReport: 'Loading report...',
+        loading: 'Loading...',
+        refresh: 'Refresh',
+        refreshing: 'Refreshing...',
+        logout: 'Logout',
+        // Language button: shows TARGET language
+        switchLang: 'Italiano',
+        switchFlag: '🇮🇹',
+        // Sections
+        fTitle: 'Conversion funnel',
+        fSub: 'Login → Track route → Open itinerary → Booking click',
+        pTitle: 'Plan distribution',
+        pSub: 'Current users by plan',
+        upClicksL: 'Upgrade clicks',
+        proIntL: 'PRO interest',
+        eliteIntL: 'ELITE interest',
+        tTrack: 'Top tracked routes',
+        tItin: 'Top viewed itineraries',
+        tBook: 'Top booking routes',
+        tUpSurf: 'Upgrade trigger surfaces',
+        opsTitle: 'Operations (last 24h)',
+        insTitle: 'Why aren\'t users purchasing?',
+        errTitle: 'Recent errors',
+        actTitle: 'Recent activity',
+        // Status badges
+        stAuth: 'Auth failures',
+        stOut: 'Outbound failures',
+        stRate: 'Rate limits',
+        // KPI labels
+        kUsers: 'Total users',
+        kLogin: 'Login sessions',
+        kTrack: 'Tracked routes',
+        kItin: 'Itinerary opens',
+        kBook: 'Booking clicks',
+        kUp: 'Upgrade clicks',
+        kActive24: '{n} active (24h)',
+        kActive7: '{n} active (7d)',
+        kTrackTot: '{n} total routes',
+        kOpp: 'Opportunity interest',
+        kOut: 'Outbound intent',
+        kMon: 'Monetization signal',
+        // Fallbacks
+        noData: 'No data',
+        noPlans: 'No plans',
+        noRoutes: 'No routes',
+        noItin: 'No itineraries',
+        noBook: 'No bookings',
+        noSurf: 'No surfaces',
+        // Chart labels
+        cUsers: 'Users',
+        cTrack: 'Tracked routes',
+        cItin: 'Itineraries',
+        cBook: 'Booking routes',
+        cSurf: 'Upgrade surfaces',
+        cEv24: 'Events (24h)',
+        cAuth: 'Auth',
+        cOut: 'Outbound',
+        cRate: 'Rate limits',
+        // Funnel step labels (in chart)
+        fStep0: 'Login completed',
+        fStep1: 'Track route',
+        fStep2: 'Itinerary opened',
+        fStep3: 'Booking click',
+        // Activity types
+        aRoute: 'Route tracked',
+        aItin: 'Itinerary opened',
+        aBook: 'Booking clicked',
+        aOpen: 'Upgrade opened',
+        aConf: 'Upgrade confirmed',
+        aRadar: 'Radar activated',
+        // Time
+        now: 'just now',
+        mAgo: '{n}m ago',
+        hAgo: '{n}h ago',
+        dAgo: '{n}d ago',
+        // Meta line
+        meta: 'Updated {rel} · window {d}d · {dt}',
+        // Insights
+        i1h: '{v}% drop after login before route tracking. Improve first-action guidance.',
+        i1m: '{v}% drop at route tracking. Consider clearer onboarding copy.',
+        i2h: '{v}% drop before itinerary open. Review recommendation quality.',
+        i2m: '{v}% drop at itinerary open. Improve card clarity and relevance.',
+        i3h: '{v}% drop before booking click. Validate handoff and trust signals.',
+        i3m: '{v}% drop from itinerary to booking. Test CTA prominence and proof points.',
+        i4: 'No upgrade clicks detected. Verify premium gating and entry points.',
+        i5: 'Upgrade modals open but no plan is selected. Review pricing UX.',
+        iOk: 'Funnel and monetization signals look stable.',
+        // Tables
+        noErr: 'No recent errors in the selected window.',
+        noAct: 'No recent activity collected yet.',
+        thWhen: 'When',
+        thScope: 'Scope',
+        thMsg: 'Message',
+        thType: 'Type',
+        thLabel: 'Label',
+        thMeta: 'Meta',
+        // Errors
+        loadErr: 'Failed to load report: {m}',
+        chartFail: 'Chart.js failed to load',
+        invalid: 'Invalid report payload'
+      }
+    };
+
+    // ── State ──────────────────────────────────────────────────────────────
+    const LANG_KEY = 'backoffice_lang';
+    let lang = (localStorage.getItem(LANG_KEY) || 'it').toLowerCase();
+    if (!['it', 'en'].includes(lang)) lang = 'it';
+    let report = null;
+    const charts = new Map();
+
+    // ── Helpers ────────────────────────────────────────────────────────────
+    function q(id) { return document.getElementById(id); }
+    function tr(k, vars = {}) {
+      const dict = S[lang] || S.it;
+      const tpl = String(dict[k] ?? S.it[k] ?? k);
+      return tpl.replace(/\{(\w+)\}/g, (_, x) => String(vars[x] ?? ''));
+    }
+    function n(v) { const x = Number(v); return Number.isFinite(x) ? x : 0; }
+    function esc(s) { return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+    function fmtDate(v) {
+      const x = new Date(v);
+      if (Number.isNaN(x.getTime())) return '-';
+      return x.toLocaleString(lang === 'it' ? 'it-IT' : 'en-US');
+    }
+    function relTime(v) {
+      const x = new Date(v);
+      if (Number.isNaN(x.getTime())) return '-';
+      const ms = Date.now() - x.getTime();
+      if (ms < 60000) return tr('now');
+      if (ms < 3600000) return tr('mAgo', { n: Math.floor(ms / 60000) });
+      if (ms < 86400000) return tr('hAgo', { n: Math.floor(ms / 3600000) });
+      return tr('dAgo', { n: Math.floor(ms / 86400000) });
+    }
+    function statClass(v, w, b) {
+      if (v <= 0) return 'ok';
+      if (v >= b) return 'bad';
+      return 'warn';
+    }
+
+    // ── DOM refs ───────────────────────────────────────────────────────────
+    const UI = {
+      hTitle: q('hTitle'), metaLine: q('metaLine'), statusRow: q('statusRow'),
+      langBtn: q('langBtn'), langLabel: q('langLabel'),
+      refreshBtn: q('refreshBtn'), logoutBtn: q('logoutBtn'),
+      kpiGrid: q('kpiGrid'), globalErr: q('globalErr'),
+      fTitle: q('fTitle'), fSub: q('fSub'),
+      pTitle: q('pTitle'), pSub: q('pSub'),
+      upClicks: q('upClicks'), upClicksL: q('upClicksL'),
+      proInt: q('proInt'), proIntL: q('proIntL'),
+      eliteInt: q('eliteInt'), eliteIntL: q('eliteIntL'),
+      tTrack: q('tTrack'), tItin: q('tItin'), tBook: q('tBook'), tUpSurf: q('tUpSurf'),
+      opsTitle: q('opsTitle'), insTitle: q('insTitle'),
+      errTitle: q('errTitle'), actTitle: q('actTitle'),
+      insList: q('insList'), errWrap: q('errWrap'), actWrap: q('actWrap')
+    };
+
+    // ── Apply all static labels ────────────────────────────────────────────
+    function applyLabels() {
+      document.documentElement.lang = lang;
+      document.title = tr('pageTitle');
+      UI.hTitle.textContent = tr('pageTitle');
+      UI.langLabel.textContent = tr('switchLang');
+      UI.refreshBtn.textContent = tr('refresh');
+      UI.logoutBtn.textContent = tr('logout');
+      UI.fTitle.textContent = tr('fTitle');
+      UI.fSub.textContent = tr('fSub');
+      UI.pTitle.textContent = tr('pTitle');
+      UI.pSub.textContent = tr('pSub');
+      UI.upClicksL.textContent = tr('upClicksL');
+      UI.proIntL.textContent = tr('proIntL');
+      UI.eliteIntL.textContent = tr('eliteIntL');
+      UI.tTrack.textContent = tr('tTrack');
+      UI.tItin.textContent = tr('tItin');
+      UI.tBook.textContent = tr('tBook');
+      UI.tUpSurf.textContent = tr('tUpSurf');
+      UI.opsTitle.textContent = tr('opsTitle');
+      UI.insTitle.textContent = tr('insTitle');
+      UI.errTitle.textContent = tr('errTitle');
+      UI.actTitle.textContent = tr('actTitle');
+      // Update loading states if report not yet loaded
+      if (!report) {
+        UI.metaLine.textContent = tr('loadingReport');
+        UI.errWrap.innerHTML = `<p class="loading-txt">${esc(tr('loading'))}</p>`;
+        UI.actWrap.innerHTML = `<p class="loading-txt">${esc(tr('loading'))}</p>`;
+      }
+    }
+
+    // ── Render status badges ───────────────────────────────────────────────
+    function renderStatus(ops) {
+      const o = ops || {};
+      const items = [
+        { label: `${tr('stAuth')}: ${n(o.authFailures24h)}`, cls: statClass(n(o.authFailures24h), 3, 8) },
+        { label: `${tr('stOut')}: ${n(o.outboundRedirectFailures24h)}`, cls: statClass(n(o.outboundRedirectFailures24h), 1, 4) },
+        { label: `${tr('stRate')}: ${n(o.rateLimitEvents24h)}`, cls: statClass(n(o.rateLimitEvents24h), 1, 4) }
+      ];
+      UI.statusRow.innerHTML = items.map(i => `<span class="badge ${i.cls}">${esc(i.label)}</span>`).join('');
+    }
+
+    // ── Render KPI grid ────────────────────────────────────────────────────
+    function renderKpi(ov) {
+      const o = ov || {};
+      const items = [
+        { icon: '👥', v: n(o.totalUsers),          l: tr('kUsers'), s: tr('kActive24', { n: n(o.activeUsers24h) }) },
+        { icon: '📅', v: n(o.loginSessions),        l: tr('kLogin'), s: tr('kActive7',  { n: n(o.activeUsers7d) }) },
+        { icon: '📍', v: n(o.trackedRouteActions),  l: tr('kTrack'), s: tr('kTrackTot', { n: n(o.trackedRoutesTotal) }) },
+        { icon: '✈️', v: n(o.itineraryOpens),       l: tr('kItin'),  s: tr('kOpp') },
+        { icon: '🛒', v: n(o.bookingClicks),        l: tr('kBook'),  s: tr('kOut') },
+        { icon: '⬆️', v: n(o.upgradeClicks),        l: tr('kUp'),    s: tr('kMon') }
+      ];
+      UI.kpiGrid.innerHTML = items.map(i =>
+        `<article class="kpi">
+          <div class="v">${i.v}</div>
+          <div class="l">${esc(i.l)}</div>
+          <div class="s">${esc(i.s)}</div>
+        </article>`
+      ).join('');
+    }
+
+    // ── Chart helpers ──────────────────────────────────────────────────────
+    function chartData(items, fallbackKey) {
+      const list = Array.isArray(items) ? items.filter(Boolean) : [];
+      if (!list.length) return { labels: [tr(fallbackKey)], values: [0] };
+      return {
+        labels: list.map(i => String(i.label || tr(fallbackKey))),
+        values: list.map(i => n(i.count))
+      };
+    }
+
+    function upsertChart(id, cfg) {
+      const canvas = q(id);
+      if (!canvas || !window.Chart) return;
+      const prev = charts.get(id);
+      if (prev) prev.destroy();
+      charts.set(id, new Chart(canvas.getContext('2d'), cfg));
+    }
+
+    function axisOpts(horizontal) {
+      return {
+        responsive: true,
+        maintainAspectRatio: false,
+        indexAxis: horizontal ? 'y' : 'x',
+        scales: {
+          x: { ticks: { color: '#b7cff2' }, grid: { color: 'rgba(147,184,240,.16)' } },
+          y: { ticks: { color: '#b7cff2' }, grid: { color: 'rgba(147,184,240,.1)' } }
+        },
+        plugins: { legend: { labels: { color: '#d4e5ff' } } }
+      };
+    }
+
+    function barChart(labels, values, label, color) {
+      return {
+        type: 'bar',
+        data: { labels, datasets: [{ label, data: values, borderRadius: 8, backgroundColor: color }] },
+        options: axisOpts(true)
+      };
+    }
+
+    // ── Render all charts ──────────────────────────────────────────────────
+    function renderCharts(r) {
+      // Funnel — use tr() keys for step labels
+      const funnelKeyMap = {
+        login_completed:    tr('fStep0'),
+        track_route_clicked: tr('fStep1'),
+        itinerary_opened:   tr('fStep2'),
+        booking_clicked:    tr('fStep3')
+      };
+      const steps = Array.isArray(r?.funnel?.steps) ? r.funnel.steps : [];
+      const fLabels = steps.map(s => funnelKeyMap[s.key] || String(s.label || tr('noData')));
+      const fValues = steps.map(s => n(s.count));
+      upsertChart('funnelChart', {
+        type: 'bar',
+        data: {
+          labels: fLabels.length ? fLabels : [tr('noData')],
+          datasets: [{
+            label: tr('cUsers'),
+            data: fValues.length ? fValues : [0],
+            borderRadius: 8,
+            backgroundColor: ['#4b9eff', '#4790f0', '#3f7fd7', '#366dbb']
+          }]
+        },
+        options: axisOpts(false)
+      });
+
+      // Plan distribution (doughnut)
+      const pd = chartData(r?.monetization?.planDistribution, 'noPlans');
+      upsertChart('planChart', {
+        type: 'doughnut',
+        data: {
+          labels: pd.labels,
+          datasets: [{ data: pd.values, backgroundColor: ['#93a5bf', '#56a5ff', '#f5b14b'], borderColor: '#081326', borderWidth: 2 }]
+        },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#cfe0fb' } } } }
+      });
+
+      // Behaviour charts
+      const td = chartData(r?.behavior?.topTrackedRoutes, 'noRoutes');
+      const id = chartData(r?.behavior?.topViewedItineraries, 'noItin');
+      const bd = chartData(r?.behavior?.topBookingRoutes, 'noBook');
+      const ud = chartData(r?.behavior?.topUpgradeSurfaces, 'noSurf');
+      upsertChart('trackedChart',   barChart(td.labels, td.values, tr('cTrack'), '#4b9eff'));
+      upsertChart('itineraryChart', barChart(id.labels, id.values, tr('cItin'),  '#9b7bff'));
+      upsertChart('bookingChart',   barChart(bd.labels, bd.values, tr('cBook'),  '#36c38f'));
+      upsertChart('upgradeChart',   barChart(ud.labels, ud.values, tr('cSurf'),  '#f2a93b'));
+
+      // Operations bar
+      const ops = r?.operations || {};
+      upsertChart('opsChart', {
+        type: 'bar',
+        data: {
+          labels: [tr('cAuth'), tr('cOut'), tr('cRate')],
+          datasets: [{
+            label: tr('cEv24'),
+            data: [n(ops.authFailures24h), n(ops.outboundRedirectFailures24h), n(ops.rateLimitEvents24h)],
+            borderRadius: 8,
+            backgroundColor: ['#ef4444', '#f59e0b', '#facc15']
+          }]
+        },
+        options: axisOpts(false)
+      });
+    }
+
+    // ── Render insights list ───────────────────────────────────────────────
+    function renderInsights(r) {
+      const out = [];
+      const steps = Array.isArray(r?.funnel?.steps) ? r.funnel.steps : [];
+      const m = r?.monetization || {};
+      const s1 = steps[1], s2 = steps[2], s3 = steps[3];
+      if (n(s1?.dropOffPct) >= 60) out.push({ c: 'high',   t: tr('i1h', { v: n(s1.dropOffPct) }) });
+      else if (n(s1?.dropOffPct) >= 35) out.push({ c: 'medium', t: tr('i1m', { v: n(s1.dropOffPct) }) });
+      if (n(s2?.dropOffPct) >= 60) out.push({ c: 'high',   t: tr('i2h', { v: n(s2.dropOffPct) }) });
+      else if (n(s2?.dropOffPct) >= 35) out.push({ c: 'medium', t: tr('i2m', { v: n(s2.dropOffPct) }) });
+      if (n(s3?.dropOffPct) >= 70) out.push({ c: 'high',   t: tr('i3h', { v: n(s3.dropOffPct) }) });
+      else if (n(s3?.dropOffPct) >= 40) out.push({ c: 'medium', t: tr('i3m', { v: n(s3.dropOffPct) }) });
+      if (n(m.upgradeClicked) === 0) out.push({ c: 'high', t: tr('i4') });
+      else if (n(m.proInterestCount) + n(m.eliteInterestCount) === 0) out.push({ c: 'medium', t: tr('i5') });
+      if (!out.length) out.push({ c: 'ok', t: tr('iOk') });
+      UI.insList.innerHTML = out.map(x => `<li class="${x.c}">${esc(x.t)}</li>`).join('');
+    }
+
+    // ── Render error table ─────────────────────────────────────────────────
+    function renderErrTable(ops) {
+      const rows = Array.isArray(ops?.recentErrors) ? ops.recentErrors : [];
+      if (!rows.length) {
+        UI.errWrap.innerHTML = `<p class="empty">${esc(tr('noErr'))}</p>`;
+        return;
+      }
+      UI.errWrap.innerHTML = `<table>
+        <thead><tr>
+          <th style="width:22%">${esc(tr('thWhen'))}</th>
+          <th style="width:16%">${esc(tr('thScope'))}</th>
+          <th>${esc(tr('thMsg'))}</th>
+        </tr></thead>
+        <tbody>${rows.map(r =>
+          `<tr>
+            <td>${esc(fmtDate(r.at))}</td>
+            <td>${esc(String(r.scope || '-').toUpperCase())}</td>
+            <td>${esc(r.message || '-')}</td>
+          </tr>`
+        ).join('')}</tbody>
+      </table>`;
+    }
+
+    // ── Render activity table ──────────────────────────────────────────────
+    function renderActTable(r) {
+      const rows = Array.isArray(r?.recentActivity) ? r.recentActivity : [];
+      if (!rows.length) {
+        UI.actWrap.innerHTML = `<p class="empty">${esc(tr('noAct'))}</p>`;
+        return;
+      }
+      const typeMap = {
+        route_tracked:     tr('aRoute'),
+        itinerary_opened:  tr('aItin'),
+        booking_clicked:   tr('aBook'),
+        upgrade_opened:    tr('aOpen'),
+        upgrade_confirmed: tr('aConf'),
+        radar_activated:   tr('aRadar')
+      };
+      UI.actWrap.innerHTML = `<table>
+        <thead><tr>
+          <th style="width:22%">${esc(tr('thWhen'))}</th>
+          <th style="width:22%">${esc(tr('thType'))}</th>
+          <th>${esc(tr('thLabel'))}</th>
+          <th style="width:18%">${esc(tr('thMeta'))}</th>
+        </tr></thead>
+        <tbody>${rows.map(x =>
+          `<tr>
+            <td>${esc(relTime(x.at))}<br/><span style="color:#6f93c5;font-size:11px">${esc(fmtDate(x.at))}</span></td>
+            <td>${esc(typeMap[x.type] || String(x.type || '—'))}</td>
+            <td>${esc(x.label || '—')}</td>
+            <td>${esc(x.meta || '—')}</td>
+          </tr>`
+        ).join('')}</tbody>
+      </table>`;
+    }
+
+    // ── Render full report ─────────────────────────────────────────────────
+    function renderReport(r) {
+      UI.metaLine.textContent = tr('meta', {
+        rel: relTime(r?.generatedAt),
+        d: n(r?.windowDays),
+        dt: fmtDate(r?.generatedAt)
+      });
+      renderStatus(r?.operations);
+      renderKpi(r?.overview);
+      UI.upClicks.textContent = n(r?.monetization?.upgradeClicked);
+      UI.proInt.textContent   = n(r?.monetization?.proInterestCount);
+      UI.eliteInt.textContent = n(r?.monetization?.eliteInterestCount);
+      renderCharts(r);
+      renderInsights(r);
+      renderErrTable(r?.operations);
+      renderActTable(r);
+    }
+
+    // ── Error banner ───────────────────────────────────────────────────────
+    function showError(msg) {
+      if (!msg) { UI.globalErr.classList.remove('show'); UI.globalErr.textContent = ''; return; }
+      UI.globalErr.textContent = msg;
+      UI.globalErr.classList.add('show');
+    }
+
+    // ── Language toggle ────────────────────────────────────────────────────
+    function setLang(next) {
+      lang = next;
+      localStorage.setItem(LANG_KEY, lang);
+      applyLabels();
+      if (report) renderReport(report);
+    }
+
+    // ── Load report from API ───────────────────────────────────────────────
+    async function waitForChart(timeoutMs = 5000) {
+      const deadline = Date.now() + timeoutMs;
+      while (!window.Chart) {
+        if (Date.now() > deadline) throw new Error(tr('chartFail'));
+        await new Promise(r => setTimeout(r, 50));
+      }
+    }
+
+    async function loadReport(manual = false) {
+      if (manual) {
+        UI.refreshBtn.disabled = true;
+        UI.refreshBtn.textContent = tr('refreshing');
+      }
+      showError('');
+      try {
+        const res = await fetch('/api/report', {
+          method: 'GET',
+          credentials: 'same-origin',
+          cache: 'no-store',
+          headers: { accept: 'application/json' }
+        });
+        if (res.status === 401 || res.status === 403) { location.href = '/login'; return; }
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const body = await res.json();
+        if (!body?.ok || !body?.report) throw new Error(body?.error || tr('invalid'));
+        report = body.report;
+        renderReport(report);
+      } catch (e) {
+        showError(tr('loadErr', { m: e instanceof Error ? e.message : String(e) }));
+      } finally {
+        UI.refreshBtn.disabled = false;
+        UI.refreshBtn.textContent = tr('refresh');
+      }
+    }
+
+    // ── Boot ───────────────────────────────────────────────────────────────
+    async function boot() {
+      applyLabels();
+      UI.langBtn.addEventListener('click', () => setLang(lang === 'it' ? 'en' : 'it'));
+      UI.refreshBtn.addEventListener('click', () => loadReport(true));
+      try {
+        await waitForChart();
+      } catch (e) {
+        showError(e instanceof Error ? e.message : tr('chartFail'));
+        return;
+      }
+      await loadReport(false);
+      setInterval(() => loadReport(false), 60_000);
+    }
+
+    boot();
+  </script>
+</body>
+</html>

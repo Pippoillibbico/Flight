@@ -2,18 +2,18 @@ import dotenv from 'dotenv';
 import express from 'express';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
-import cron from 'node-cron';
 import { nanoid } from 'nanoid';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
-import { addDays, format, parseISO } from 'date-fns';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { addDays } from 'date-fns';
 import worldCountries from 'world-countries';
 import { z } from 'zod';
 import speakeasy from 'speakeasy';
 import QRCode from 'qrcode';
 import { hashPassword, signAccessToken, signRefreshToken, verifyAccessToken, verifyPassword, verifyRefreshToken } from './lib/auth.js';
 import { buildBookingLink, decideTrips, getDestinationSuggestions, searchFlights } from './lib/flight-engine.js';
+import { buildAffiliateLink, buildAllAffiliateLinks, getAffiliateConfig } from './lib/affiliate-links.js';
 import { readDb, withDb } from './lib/db.js';
 import { appendImmutableAudit, verifyImmutableAudit } from './lib/audit-log.js';
 import { getBusinessMetrics, getFunnelMetricsByChannel, initSqlDb, insertEmailDeliveryLog, insertSearchEvent, upsertUserLead } from './lib/sql-db.js';
@@ -30,10 +30,17 @@ import { buildFreeFoundationRouter } from './routes/free-foundation.js';
 import { buildDealEngineRouter } from './routes/deal-engine.js';
 import { buildDiscoveryRouter } from './routes/discovery.js';
 import { buildOpportunitiesRouter } from './routes/opportunities.js';
+import { buildOutboundRouter } from './routes/outbound.js';
+import { buildUserExportRouter } from './routes/user-export.js';
+import { renderPrivacyPolicy, renderCookiePolicy, renderTermsOfService } from './lib/legal-pages.js';
 import { buildAlertsRouter } from './routes/alerts.js';
 import { buildSystemRouter } from './routes/system.js';
 import { buildSearchRouter } from './routes/search.js';
 import { buildAuthSessionRouter } from './routes/auth-session.js';
+import { buildAuthLocalRouter } from './routes/auth-local.js';
+import { buildAuthOAuthRouter } from './routes/auth-oauth.js';
+import { buildPushRouter } from './routes/push.js';
+import { startRuntimeLifecycle } from './bootstrap/runtime-lifecycle.js';
 import { runNightlyFreePrecompute } from './jobs/free-precompute.js';
 import { runFreeAlertWorkerOnce } from './jobs/free-alert-worker.js';
 import { runNightlyRouteBaselineJob } from './jobs/route-baselines.js';
@@ -58,16 +65,28 @@ import { getScanProviderAdapterMetrics } from './lib/scan/provider-adapter.js';
 import { createScanStatusService } from './lib/scan/scan-status-service.js';
 import { requestIdMiddleware } from './middleware/request-id.js';
 import { buildErrorPayload, errorHandler, getErrorCode, getHumanErrorMessage } from './middleware/error-handler.js';
+import { createPayloadHardeningMiddleware, safeJsonByteLength } from './middleware/payload-hardening.js';
 import { logger, requestLogger } from './lib/logger.js';
+import { anonymizeIpForLogs, hashValueForLogs, redactUrlForLogs } from './lib/log-redaction.js';
 import { getDataFoundationStatus, runIngestionJobsMaintenance } from './lib/deal-engine-store.js';
-import { getOpportunityIntelligenceDebugStats, getOpportunityPipelineStats } from './lib/opportunity-store.js';
+import { getFollowSignalsSummary, getOpportunityIntelligenceDebugStats, getOpportunityPipelineStats } from './lib/opportunity-store.js';
 import { getDiscoveryFeedRuntimeMetrics } from './lib/discovery-feed-service.js';
 import { getRuntimeConfigAudit } from './lib/runtime-config.js';
 import { evaluateStartupReadiness } from './lib/startup-readiness.js';
+import { parseFlag } from './lib/env-flags.js';
+import { createAiIntentService } from './lib/ai-intent-service.js';
+import {
+  getAccessTokenFromCookie as readAccessTokenFromCookie,
+  getAuthToken as resolveRequestAuthToken,
+  getCookies,
+  getRefreshTokenFromCookie as readRefreshTokenFromCookie
+} from './lib/auth-request-utils.js';
+import { buildDestinationInsights } from './lib/destination-insights.js';
 import { canUseAITravel, canUseRadar, resolveUserPlan } from './lib/plan-access.js';
 import { createNotificationScanService } from './lib/notification-scan-service.js';
-import { buildOutboundReport, outboundReportToCsv } from './lib/outbound-report.js';
+import { buildAdminBackofficeReport } from './lib/admin-backoffice-report.js';
 import { createAuditCheck, runFeatureAudit as runFeatureAuditModule } from './lib/feature-audit.js';
+import { extractJsonObject, parseDecisionAiPayload, parseIntentAiPayload } from './lib/ai-output-guards.js';
 
 dotenv.config();
 try {
@@ -148,24 +167,126 @@ const BOOTSTRAP_SEED_IMPORT_FILE = String(process.env.BOOTSTRAP_SEED_IMPORT_FILE
 const BOOTSTRAP_SEED_IMPORT_DRY_RUN = String(process.env.BOOTSTRAP_SEED_IMPORT_DRY_RUN || 'false').trim().toLowerCase() === 'true';
 const JSON_BODY_LIMIT = String(process.env.BODY_JSON_LIMIT || '256kb').trim() || '256kb';
 const BUILD_VERSION = String(process.env.BUILD_VERSION || process.env.npm_package_version || '0.0.0-dev').trim();
-const OUTBOUND_CLICK_SECRET = String(process.env.OUTBOUND_CLICK_SECRET || process.env.JWT_SECRET || 'dev_outbound_secret').trim();
+const NODE_ENV = String(process.env.NODE_ENV || 'development').trim().toLowerCase();
+
+function isStrongOutboundClickSecret(secretValue, jwtSecretValue = process.env.JWT_SECRET) {
+  const secret = String(secretValue || '').trim();
+  if (secret.length < 24) return false;
+  if (/dev_outbound_secret|changeme|replace-with|example|default|secret/i.test(secret)) return false;
+  const jwtSecret = String(jwtSecretValue || '').trim();
+  if (jwtSecret && secret === jwtSecret) return false;
+  return true;
+}
+
+function resolveOutboundClickSecret() {
+  const configured = String(process.env.OUTBOUND_CLICK_SECRET || '').trim();
+  if (isStrongOutboundClickSecret(configured)) return configured;
+  if (NODE_ENV === 'production') {
+    logger.fatal(
+      {
+        reason: 'missing_or_weak_outbound_click_secret',
+        hint: 'Set OUTBOUND_CLICK_SECRET to a unique secret (>=24 chars) and distinct from JWT_SECRET.'
+      },
+      'startup_blocked_missing_required_runtime_config'
+    );
+    process.exit(1);
+  }
+  const ephemeral = randomBytes(32).toString('hex');
+  logger.warn('OUTBOUND_CLICK_SECRET missing/weak in non-production; generated ephemeral secret for this process');
+  return ephemeral;
+}
+
+const OUTBOUND_CLICK_SECRET = resolveOutboundClickSecret();
 const OUTBOUND_CLICK_TTL_SECONDS = Number(process.env.OUTBOUND_CLICK_TTL_SECONDS || 300);
+const ADMIN_TELEMETRY_MAX_BODY_BYTES = Math.max(
+  1024,
+  Math.min(32768, Number(process.env.ADMIN_TELEMETRY_MAX_BODY_BYTES || 8192))
+);
+const ADMIN_TELEMETRY_ALLOWED_SKEW_MS = Math.max(
+  60 * 1000,
+  Math.min(7 * 24 * 60 * 60 * 1000, Number(process.env.ADMIN_TELEMETRY_ALLOWED_SKEW_MS || 24 * 60 * 60 * 1000))
+);
+const ADMIN_TELEMETRY_DEDUPE_WINDOW_MS = Math.max(250, Number(process.env.TELEMETRY_DEDUPE_WINDOW_MS || 2500));
+const API_MAX_BODY_BYTES = Math.max(8 * 1024, Math.min(256 * 1024, Number(process.env.API_MAX_BODY_BYTES || 64 * 1024)));
+const AUTH_MAX_BODY_BYTES = Math.max(4 * 1024, Math.min(64 * 1024, Number(process.env.AUTH_MAX_BODY_BYTES || 12 * 1024)));
+const OUTBOUND_MAX_BODY_BYTES = Math.max(4 * 1024, Math.min(64 * 1024, Number(process.env.OUTBOUND_MAX_BODY_BYTES || 16 * 1024)));
+const OUTBOUND_MAX_QUERY_CHARS = Math.max(256, Math.min(4096, Number(process.env.OUTBOUND_MAX_QUERY_CHARS || 1600)));
+const PAYLOAD_MAX_DEPTH = Math.max(2, Math.min(24, Number(process.env.PAYLOAD_MAX_DEPTH || 8)));
+const PAYLOAD_MAX_NODES = Math.max(50, Math.min(20_000, Number(process.env.PAYLOAD_MAX_NODES || 600)));
+const PAYLOAD_MAX_ARRAY_LENGTH = Math.max(10, Math.min(5000, Number(process.env.PAYLOAD_MAX_ARRAY_LENGTH || 250)));
+const PAYLOAD_MAX_OBJECT_KEYS = Math.max(10, Math.min(5000, Number(process.env.PAYLOAD_MAX_OBJECT_KEYS || 250)));
+const PAYLOAD_MAX_STRING_LENGTH = Math.max(128, Math.min(200_000, Number(process.env.PAYLOAD_MAX_STRING_LENGTH || 8192)));
+const PAYLOAD_MAX_KEY_LENGTH = Math.max(16, Math.min(512, Number(process.env.PAYLOAD_MAX_KEY_LENGTH || 96)));
+const TELEMETRY_BURST_WINDOW_MS = Math.max(1000, Math.min(60_000, Number(process.env.ADMIN_TELEMETRY_BURST_WINDOW_MS || 10_000)));
+const TELEMETRY_BURST_MAX = Math.max(1, Math.min(100, Number(process.env.ADMIN_TELEMETRY_BURST_MAX || 4)));
 const ACCESS_COOKIE_NAME = 'flight_access_token';
 const REFRESH_COOKIE_NAME = 'flight_refresh_token';
+const OAUTH_BINDING_COOKIE_NAME = 'flight_oauth_bind';
 const ACCESS_COOKIE_TTL_MS = 15 * 60 * 1000;
 const REFRESH_COOKIE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const AUTH_COOKIE_DOMAIN = String(process.env.AUTH_COOKIE_DOMAIN || '').trim() || null;
 const DEFAULT_CORS_ALLOWLIST = ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:3000', 'http://127.0.0.1:3000'];
-const ENV_CORS_ALLOWLIST = [process.env.CORS_ORIGIN, process.env.FRONTEND_ORIGIN, process.env.CORS_ALLOWLIST]
-  .filter((value) => String(value || '').trim().length > 0)
-  .join(',')
-  .split(',')
-  .map((entry) => entry.trim())
+
+function splitCsvValues(rawValue) {
+  return String(rawValue || '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function normalizeOriginValue(rawValue) {
+  const value = String(rawValue || '').trim();
+  if (!value) return '';
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+    return parsed.origin;
+  } catch {
+    return '';
+  }
+}
+
+const DERIVED_FRONTEND_ORIGIN = normalizeOriginValue(process.env.FRONTEND_ORIGIN || FRONTEND_URL);
+const ENV_CORS_ALLOWLIST = [
+  ...splitCsvValues(process.env.CORS_ORIGIN),
+  ...splitCsvValues(process.env.FRONTEND_ORIGIN),
+  ...splitCsvValues(process.env.CORS_ALLOWLIST),
+  DERIVED_FRONTEND_ORIGIN
+]
+  .map((entry) => normalizeOriginValue(entry))
   .filter(Boolean);
 const CORS_ALLOWLIST = new Set(ENV_CORS_ALLOWLIST.length > 0 ? ENV_CORS_ALLOWLIST : process.env.NODE_ENV === 'production' ? [] : DEFAULT_CORS_ALLOWLIST);
+const ADMIN_ALLOWLIST_EMAILS = new Set(
+  [process.env.ADMIN_ALLOWLIST_EMAILS, process.env.BACKOFFICE_ADMIN_EMAILS]
+    .filter((value) => String(value || '').trim().length > 0)
+    .join(',')
+    .split(',')
+    .map((entry) => String(entry || '').trim().toLowerCase())
+    .filter(Boolean)
+);
+if (ADMIN_ALLOWLIST_EMAILS.size === 0 && process.env.NODE_ENV !== 'production') {
+  logger.warn('ADMIN_ALLOWLIST_EMAILS not configured — admin endpoints will be inaccessible. Set ADMIN_ALLOWLIST_EMAILS or BACKOFFICE_ADMIN_EMAILS.');
+}
+const ADMIN_DASHBOARD_ENABLED = String(process.env.ADMIN_DASHBOARD_ENABLED || 'true').trim().toLowerCase() !== 'false';
 const RATE_LIMIT_WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW || 60_000);
 const RATE_LIMIT_MAX = Number(process.env.RATE_LIMIT_MAX || process.env.RL_API_PER_MINUTE || 120);
 const RL_AUTH_PER_MINUTE = Number(process.env.RL_AUTH_PER_MINUTE || 15);
+const RL_OUTBOUND_PER_MINUTE = Math.max(10, Number(process.env.RL_OUTBOUND_PER_MINUTE || 120));
+const RL_OUTBOUND_PER_SECOND = Math.max(1, Number(process.env.RL_OUTBOUND_PER_SECOND || 10));
+const RL_TELEMETRY_PER_SECOND = Math.max(1, Number(process.env.RL_TELEMETRY_PER_SECOND || 10));
+const AUTH_REQUIRE_TRUSTED_ORIGIN =
+  String(process.env.AUTH_REQUIRE_TRUSTED_ORIGIN || (process.env.NODE_ENV === 'production' ? 'true' : 'false'))
+    .trim()
+    .toLowerCase() !== 'false';
+const AUTH_RETURN_ACCESS_TOKEN =
+  String(process.env.AUTH_RETURN_ACCESS_TOKEN || (process.env.NODE_ENV === 'production' ? 'false' : 'true'))
+    .trim()
+    .toLowerCase() === 'true';
+const REGISTRATION_ENABLED = String(process.env.AUTH_REGISTRATION_ENABLED || process.env.REGISTRATION_ENABLED || 'true')
+  .trim()
+  .toLowerCase() !== 'false';
+const LEGACY_AUTH_ROUTES_ENABLED = parseFlag(process.env.LEGACY_AUTH_ROUTES_ENABLED, NODE_ENV !== 'production');
+const MOCK_BILLING_UPGRADES_ENABLED = parseFlag(process.env.ALLOW_MOCK_BILLING_UPGRADES, NODE_ENV !== 'production');
 const RUN_STARTUP_TASKS = String(process.env.RUN_STARTUP_TASKS || 'true').trim().toLowerCase() === 'true';
 const CRON_RETRY_ATTEMPTS = Math.max(0, Number(process.env.CRON_RETRY_ATTEMPTS || 1));
 const CRON_RETRY_DELAY_MS = Math.max(0, Number(process.env.CRON_RETRY_DELAY_MS || 1500));
@@ -181,7 +302,11 @@ const LOGIN_DUMMY_PASSWORD_HASH =
   '$2b$10$7EqJtq98hPqEX7fNZaFWoOHiA6fQh6J1M4nA4sIY5Pja/qvpDMAYA'; // bcrypt("password")
 const TRUST_PROXY_RAW = String(process.env.TRUST_PROXY || '').trim().toLowerCase();
 const TRUST_PROXY =
-  TRUST_PROXY_RAW === '' || TRUST_PROXY_RAW === 'false' || TRUST_PROXY_RAW === '0'
+  TRUST_PROXY_RAW === ''
+    ? process.env.NODE_ENV === 'production'
+      ? 1
+      : false
+    : TRUST_PROXY_RAW === 'false' || TRUST_PROXY_RAW === '0'
     ? false
     : TRUST_PROXY_RAW === 'true'
     ? 1
@@ -189,7 +314,49 @@ const TRUST_PROXY =
     ? Number(TRUST_PROXY_RAW)
     : TRUST_PROXY_RAW;
 
+if (NODE_ENV === 'production' && MOCK_BILLING_UPGRADES_ENABLED) {
+  logger.fatal(
+    {
+      envKey: 'ALLOW_MOCK_BILLING_UPGRADES',
+      hint: 'Disable mock billing upgrade routes in production.'
+    },
+    'startup_blocked_insecure_mock_billing_flag'
+  );
+  process.exit(1);
+}
+
+if (process.env.NODE_ENV === 'production' && CORS_ALLOWLIST.size === 0) {
+  if (!INSECURE_STARTUP_BYPASS_ENABLED) {
+    logger.fatal(
+      {
+        corsOriginsConfigured: CORS_ALLOWLIST.size,
+        hint: 'Set CORS_ALLOWLIST, CORS_ORIGIN or FRONTEND_ORIGIN.'
+      },
+      'startup_blocked_missing_cors_allowlist'
+    );
+    process.exit(1);
+  }
+  logger.warn(
+    {
+      corsOriginsConfigured: CORS_ALLOWLIST.size,
+      hint: 'Production CORS allowlist is empty. Startup bypass flag allowed this process to continue.'
+    },
+    'startup_insecure_empty_cors_allowlist'
+  );
+}
+
 app.set('trust proxy', TRUST_PROXY);
+
+// Redirect plain HTTP to HTTPS in production. Must come before all routes.
+if (process.env.NODE_ENV === 'production') {
+  app.use((req, res, next) => {
+    if (req.secure) return next();
+    // x-forwarded-proto is trusted because trust proxy is set above
+    if (req.headers['x-forwarded-proto'] === 'https') return next();
+    return res.redirect(301, `https://${req.hostname}${req.originalUrl}`);
+  });
+}
+
 app.use(requestIdMiddleware);
 app.use(requestLogger);
 app.use((req, res, next) => {
@@ -199,9 +366,9 @@ app.use((req, res, next) => {
       {
         request_id: req.id || null,
         method: req.method,
-        path: req.originalUrl || req.url,
+        path: redactUrlForLogs(req.originalUrl || req.url, { maxLength: 220 }),
         status: res.statusCode,
-        ip: req.ip || req.socket?.remoteAddress || null
+        ip_hash: anonymizeIpForLogs(req.ip || req.socket?.remoteAddress || '')
       },
       'security_event'
     );
@@ -244,6 +411,16 @@ app.use((req, res, next) => {
 app.use(
   helmet({
     crossOriginEmbedderPolicy: process.env.NODE_ENV === 'production',
+    crossOriginResourcePolicy: { policy: 'same-origin' },
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+    hsts:
+      process.env.NODE_ENV === 'production'
+        ? {
+            maxAge: 15552000,
+            includeSubDomains: true,
+            preload: true
+          }
+        : false,
     contentSecurityPolicy:
       process.env.NODE_ENV === 'production'
         ? {
@@ -294,6 +471,65 @@ function sendMachineError(req, res, status, error, extra = {}) {
   });
   return res.status(status).json(payload);
 }
+
+function rejectHardenedPayload(req, res, reason) {
+  if (reason === 'payload_too_large') return sendMachineError(req, res, 413, 'payload_too_large');
+  return sendMachineError(req, res, 400, 'invalid_payload');
+}
+
+const genericApiPayloadGuard = createPayloadHardeningMiddleware({
+  maxBytes: API_MAX_BODY_BYTES,
+  maxDepth: PAYLOAD_MAX_DEPTH,
+  maxNodes: PAYLOAD_MAX_NODES,
+  maxArrayLength: PAYLOAD_MAX_ARRAY_LENGTH,
+  maxObjectKeys: PAYLOAD_MAX_OBJECT_KEYS,
+  maxStringLength: PAYLOAD_MAX_STRING_LENGTH,
+  maxKeyLength: PAYLOAD_MAX_KEY_LENGTH,
+  rejectControlCharacters: true,
+  onReject: rejectHardenedPayload
+});
+
+const authPayloadGuard = createPayloadHardeningMiddleware({
+  maxBytes: AUTH_MAX_BODY_BYTES,
+  maxDepth: Math.min(PAYLOAD_MAX_DEPTH, 8),
+  maxNodes: Math.min(PAYLOAD_MAX_NODES, 500),
+  maxArrayLength: Math.min(PAYLOAD_MAX_ARRAY_LENGTH, 50),
+  maxObjectKeys: Math.min(PAYLOAD_MAX_OBJECT_KEYS, 60),
+  maxStringLength: Math.min(PAYLOAD_MAX_STRING_LENGTH, 2048),
+  maxKeyLength: PAYLOAD_MAX_KEY_LENGTH,
+  rejectControlCharacters: true,
+  onReject: rejectHardenedPayload
+});
+
+const outboundPayloadGuard = createPayloadHardeningMiddleware({
+  maxBytes: OUTBOUND_MAX_BODY_BYTES,
+  maxDepth: Math.min(PAYLOAD_MAX_DEPTH, 8),
+  maxNodes: Math.min(PAYLOAD_MAX_NODES, 600),
+  maxArrayLength: Math.min(PAYLOAD_MAX_ARRAY_LENGTH, 80),
+  maxObjectKeys: Math.min(PAYLOAD_MAX_OBJECT_KEYS, 80),
+  maxStringLength: Math.min(PAYLOAD_MAX_STRING_LENGTH, 4096),
+  maxKeyLength: PAYLOAD_MAX_KEY_LENGTH,
+  rejectControlCharacters: true,
+  onReject: rejectHardenedPayload
+});
+
+app.use('/api', genericApiPayloadGuard);
+app.use('/api/auth', authPayloadGuard);
+app.use('/api/outbound', outboundPayloadGuard);
+app.use(
+  '/api/admin/telemetry',
+  createPayloadHardeningMiddleware({
+    maxBytes: ADMIN_TELEMETRY_MAX_BODY_BYTES,
+    maxDepth: 6,
+    maxNodes: 200,
+    maxArrayLength: 20,
+    maxObjectKeys: 50,
+    maxStringLength: 512,
+    maxKeyLength: 64,
+    rejectControlCharacters: true,
+    onReject: rejectHardenedPayload
+  })
+);
 
 function rateLimitKey(req) {
   if (req.user?.sub || req.user?.id) return `user:${req.user.sub || req.user.id}`;
@@ -410,13 +646,56 @@ app.use('/api', (req, res, next) => {
 app.use('/auth', strictAuthPathLimiter);
 app.use('/demo', moderateDemoLimiter);
 app.use('/api/auth', strictAuthPathLimiter);
+app.use('/api/auth', (req, res, next) => {
+  if (!AUTH_REQUIRE_TRUSTED_ORIGIN) return next();
+  const method = String(req.method || '').toUpperCase();
+  if (method === 'GET' || method === 'OPTIONS') return next();
+  const path = String(req.path || '').trim().toLowerCase();
+  if (path.startsWith('/oauth/')) return next();
+  if (!isTrustedOrigin(req)) return sendMachineError(req, res, 403, 'request_forbidden');
+  return next();
+});
 app.use('/api/auth', (_req, res, next) => {
   res.setHeader('Cache-Control', 'no-store');
   next();
 });
+const outboundBurstLimiter = useDistributedRateLimiting
+  ? createDistributedLimiter({
+      namespace: 'rl:outbound:burst',
+      windowMs: 1000,
+      limit: RL_OUTBOUND_PER_SECOND
+    })
+  : rateLimit({
+  windowMs: 1000,
+  limit: RL_OUTBOUND_PER_SECOND,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => sendMachineError(req, res, 429, 'rate_limited', { reset_at: toIsoFromRateLimit(req) })
+});
+const outboundPathLimiter = useDistributedRateLimiting
+  ? createDistributedLimiter({
+      namespace: 'rl:outbound',
+      windowMs: 60 * 1000,
+      limit: RL_OUTBOUND_PER_MINUTE
+    })
+  : rateLimit({
+  windowMs: 60 * 1000,
+  limit: RL_OUTBOUND_PER_MINUTE,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => sendMachineError(req, res, 429, 'rate_limited', { reset_at: toIsoFromRateLimit(req) })
+});
+app.use('/api/outbound', outboundBurstLimiter, outboundPathLimiter);
 app.use('/api', standardApiLimiter);
 app.use('/api', apiKeyAuth);
-app.use('/', buildFreeFoundationRouter({ corsAllowlist: Array.from(CORS_ALLOWLIST) }));
+app.use(
+  '/',
+  buildFreeFoundationRouter({
+    corsAllowlist: Array.from(CORS_ALLOWLIST),
+    legacyAuthEnabled: LEGACY_AUTH_ROUTES_ENABLED,
+    registrationEnabled: REGISTRATION_ENABLED
+  })
+);
 const authLimiter = useDistributedRateLimiting
   ? createDistributedLimiter({
       namespace: 'rl:auth:login',
@@ -429,6 +708,33 @@ const authLimiter = useDistributedRateLimiting
   standardHeaders: true,
   legacyHeaders: false,
   handler: (req, res) => sendMachineError(req, res, 429, 'limit_exceeded', { reset_at: toIsoFromRateLimit(req) })
+});
+
+const telemetryEventLimiter = useDistributedRateLimiting
+  ? createDistributedLimiter({
+      namespace: 'rl:telemetry',
+      windowMs: 60 * 1000,
+      limit: Number(process.env.RL_TELEMETRY_PER_MINUTE || 80)
+    })
+  : rateLimit({
+  windowMs: 60 * 1000,
+  limit: Number(process.env.RL_TELEMETRY_PER_MINUTE || 80),
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => sendMachineError(req, res, 429, 'limit_exceeded', { reset_at: toIsoFromRateLimit(req) })
+});
+const telemetryBurstLimiter = useDistributedRateLimiting
+  ? createDistributedLimiter({
+      namespace: 'rl:telemetry:burst',
+      windowMs: 1000,
+      limit: RL_TELEMETRY_PER_SECOND
+    })
+  : rateLimit({
+  windowMs: 1000,
+  limit: RL_TELEMETRY_PER_SECOND,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => sendMachineError(req, res, 429, 'rate_limited', { reset_at: toIsoFromRateLimit(req) })
 });
 
 const REGION_ENUM = ['all', 'eu', 'asia', 'america', 'oceania'];
@@ -568,8 +874,56 @@ if (startupReadiness.recommendedFailed.policy.length > 0) {
     'runtime_policy_recommended_values_missing'
   );
 }
-const PARTNER_ENUM = flightProviderRegistry.allowedPartners;
-const OUTBOUND_SURFACE_ENUM = ['results', 'top_picks', 'compare', 'watchlist', 'insights'];
+
+// ── Startup capability warnings ────────────────────────────────────────────
+// Surface explicit structured warnings when optional-but-important integrations
+// are missing, so operators see them immediately on boot rather than discovering
+// silent no-ops in production.
+{
+  const pushUrl = String(process.env.PUSH_WEBHOOK_URL || '').trim();
+  if (!pushUrl) {
+    logger.warn(
+      { capability: 'push_notifications', impact: 'alerts_dead_lettered' },
+      'startup_capability_missing_push_webhook_url: push notifications disabled, triggered alerts will be saved to dead-letter queue only. Set PUSH_WEBHOOK_URL to enable delivery.'
+    );
+  }
+
+  const smtpHost = String(process.env.SMTP_HOST || '').trim();
+  if (!smtpHost) {
+    logger.warn(
+      { capability: 'email_smtp', impact: 'emails_not_sent_accounts_auto_verified' },
+      'startup_capability_missing_smtp: email delivery disabled. Password reset emails will not be sent. New accounts are auto-verified. Set SMTP_HOST/USER/PASS to enable.'
+    );
+  }
+
+  const billingProvider = String(process.env.BILLING_PROVIDER || 'braintree').trim().toLowerCase();
+  const btConfigured = String(process.env.BT_MERCHANT_ID || '').trim() &&
+                       String(process.env.BT_PUBLIC_KEY || '').trim() &&
+                       String(process.env.BT_PRIVATE_KEY || '').trim();
+  const stripeConfigured = String(process.env.STRIPE_SECRET_KEY || '').trim().length >= 16;
+  const billingConfigured = billingProvider === 'stripe' ? stripeConfigured : btConfigured;
+  if (!billingConfigured) {
+    logger.warn(
+      { capability: 'billing', provider: billingProvider, impact: 'upgrades_unavailable' },
+      `startup_capability_missing_billing: billing provider '${billingProvider}' credentials not configured. Subscription upgrades will return 503. Set ${billingProvider === 'stripe' ? 'STRIPE_SECRET_KEY' : 'BT_MERCHANT_ID/BT_PUBLIC_KEY/BT_PRIVATE_KEY'} to enable.`
+    );
+  }
+
+  const flightScanEnabled = String(process.env.FLIGHT_SCAN_ENABLED || '').trim().toLowerCase() === 'true';
+  const liveProviders = String(process.env.ENABLE_PROVIDER_DUFFEL || '').trim().toLowerCase() === 'true' ||
+                        String(process.env.ENABLE_PROVIDER_AMADEUS || '').trim().toLowerCase() === 'true';
+  if (!liveProviders) {
+    logger.warn(
+      { capability: 'live_flight_providers', impact: 'synthetic_data_only' },
+      'startup_capability_disabled_live_providers: no live flight provider enabled. Search results and deals are based on internal synthetic data. Set ENABLE_PROVIDER_DUFFEL=true or ENABLE_PROVIDER_AMADEUS=true with credentials to enable live prices.'
+    );
+  } else if (!flightScanEnabled) {
+    logger.warn(
+      { capability: 'flight_scan', impact: 'providers_configured_but_scan_off' },
+      'startup_capability_missing_flight_scan: live providers are configured but FLIGHT_SCAN_ENABLED=false. Provider data will not be collected. Set FLIGHT_SCAN_ENABLED=true to activate.'
+    );
+  }
+}
 const COUNTRIES = worldCountries
   .map((country) => ({
     name: country?.name?.common || '',
@@ -599,7 +953,7 @@ const PLAN_TOKEN_USAGE = {
 
 const registerSchema = z.object({
   name: z.string().trim().min(2).max(80),
-  email: z.string().email(),
+  email: z.string().trim().toLowerCase().email().max(254),
   password: z
     .string()
     .min(10)
@@ -608,16 +962,16 @@ const registerSchema = z.object({
     .regex(/[A-Z]/, 'Password must include an uppercase letter.')
     .regex(/[0-9]/, 'Password must include a number.')
     .regex(/[^A-Za-z0-9]/, 'Password must include a special character.')
-});
+}).strict();
 
 const loginSchema = z.object({
-  email: z.string().email(),
+  email: z.string().trim().toLowerCase().email().max(254),
   password: z.string().min(8).max(64)
-});
+}).strict();
 
 const passwordResetRequestSchema = z.object({
-  email: z.string().email()
-});
+  email: z.string().trim().toLowerCase().email().max(254)
+}).strict();
 
 const passwordResetConfirmSchema = z.object({
   token: z.string().trim().min(32).max(256),
@@ -629,33 +983,51 @@ const passwordResetConfirmSchema = z.object({
     .regex(/[A-Z]/, 'Password must include an uppercase letter.')
     .regex(/[0-9]/, 'Password must include a number.')
     .regex(/[^A-Za-z0-9]/, 'Password must include a special character.')
-});
+}).strict();
+
+const emailVerifySchema = z.object({
+  token: z.string().trim().min(32).max(256)
+}).strict();
 
 const mfaCodeSchema = z.object({
   code: z.string().trim().min(6).max(8)
-});
+}).strict();
 
 const loginMfaVerifySchema = z.object({
   ticket: z.string().min(10).max(80),
   code: z.string().trim().min(6).max(8)
-});
-
-const oauthLoginSchema = z.object({
-  idToken: z.string().min(20),
-  oauthSessionId: z.string().min(10).max(80),
-  state: z.string().min(10).max(120).optional()
-});
-
-const oauthSessionSchema = z.object({
-  provider: z.enum(['google', 'apple', 'facebook'])
-});
+}).strict();
 
 const onboardingCompleteSchema = z.object({
   intent: z.enum(['deals', 'family', 'business', 'weekend']).optional(),
   budget: z.number().int().positive().max(20000).optional(),
   preferredRegion: z.enum(REGION_ENUM).optional(),
   directOnly: z.boolean().optional()
-});
+}).strict();
+
+const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+function isStrictIsoDate(value) {
+  const text = String(value || '').trim();
+  if (!ISO_DATE_PATTERN.test(text)) return false;
+  const parsed = new Date(`${text}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime())) return false;
+  return parsed.toISOString().slice(0, 10) === text;
+}
+
+const multiCitySegmentSchema = z.object({
+  origin: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-Z]{3}$/, 'Invalid segment origin IATA code.'),
+  destination: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-Z]{3}$/, 'Invalid segment destination IATA code.'),
+  date: z.string().trim().regex(ISO_DATE_PATTERN, 'Invalid segment date format. Use YYYY-MM-DD.')
+}).strict();
 
 const searchSchema = z
   .object({
@@ -684,9 +1056,53 @@ const searchSchema = z
     travelTime: z.enum(TRAVEL_TIME_ENUM),
     minComfortScore: z.number().int().min(1).max(100).optional(),
     travellers: z.number().int().min(1).max(9),
-    cabinClass: z.enum(CABIN_ENUM)
+    cabinClass: z.enum(CABIN_ENUM),
+    mode: z.enum(['single', 'multi_city']).optional(),
+    segments: z.array(multiCitySegmentSchema).min(2).max(6).optional()
   })
+  .strict()
   .superRefine((payload, ctx) => {
+    const mode = payload.mode === 'multi_city' ? 'multi_city' : 'single';
+    if (mode === 'multi_city') {
+      if (!Array.isArray(payload.segments) || payload.segments.length < 2 || payload.segments.length > 6) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Multi-city search requires 2 to 6 segments.'
+        });
+        return;
+      }
+
+      let previousDate = null;
+      for (let index = 0; index < payload.segments.length; index += 1) {
+        const segment = payload.segments[index];
+        if (!isStrictIsoDate(segment.date)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['segments', index, 'date'],
+            message: 'Invalid segment date.'
+          });
+          continue;
+        }
+        const currentDate = new Date(segment.date);
+        if (segment.origin === segment.destination) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['segments', index, 'destination'],
+            message: 'Origin and destination cannot be the same in a segment.'
+          });
+        }
+        if (previousDate && currentDate < previousDate) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['segments', index, 'date'],
+            message: 'Segment dates cannot be in reverse order.'
+          });
+        }
+        previousDate = currentDate;
+      }
+      return;
+    }
+
     const from = new Date(payload.dateFrom);
     const to = payload.dateTo ? new Date(payload.dateTo) : null;
     if (Number.isNaN(from.getTime()) || (to && Number.isNaN(to.getTime()))) {
@@ -722,6 +1138,7 @@ const justGoSchema = z
     packageCount: z.union([z.literal(3), z.literal(4)]).optional(),
     aiProvider: z.enum(['none', 'chatgpt', 'claude', 'auto']).optional()
   })
+  .strict()
   .superRefine((payload, ctx) => {
     const from = new Date(payload.dateFrom);
     const to = new Date(payload.dateTo);
@@ -738,7 +1155,7 @@ const decisionIntakeSchema = z.object({
   prompt: z.string().trim().min(6).max(1200),
   aiProvider: z.enum(['none', 'chatgpt', 'claude', 'auto']).optional(),
   packageCount: z.union([z.literal(3), z.literal(4)]).optional()
-});
+}).strict();
 
 const watchlistSchema = z.object({
   flightId: z.string().min(1),
@@ -748,7 +1165,7 @@ const watchlistSchema = z.object({
   dateFrom: z.string(),
   dateTo: z.string(),
   link: z.string().url()
-});
+}).strict();
 
 const alertSubscriptionSchema = z.object({
   origin: z.string().min(3).max(3),
@@ -778,7 +1195,7 @@ const alertSubscriptionSchema = z.object({
   cabinClass: z.enum(CABIN_ENUM),
   stayDays: z.number().int().min(2).max(30),
   daysFromNow: z.number().int().min(1).max(180).optional()
-});
+}).strict();
 
 const alertSubscriptionUpdateSchema = z
   .object({
@@ -794,6 +1211,7 @@ const alertSubscriptionUpdateSchema = z
     stayDays: z.number().int().min(2).max(30).optional(),
     daysFromNow: z.number().int().min(1).max(180).nullable().optional()
   })
+  .strict()
   .refine((payload) => Object.keys(payload).length > 0, {
     message: 'No update field provided.'
   });
@@ -834,6 +1252,7 @@ const destinationInsightSchema = z
     stayDays: z.number().int().min(2).max(30),
     horizonDays: z.number().int().min(7).max(180).optional()
   })
+  .strict()
   .superRefine((payload, ctx) => {
     if (!payload.destinationQuery && !payload.destinationIata) {
       ctx.addIssue({
@@ -843,146 +1262,82 @@ const destinationInsightSchema = z
     }
   });
 
-const partnerSchema = z.string().refine((value) => PARTNER_ENUM.includes(String(value || '')), {
-  message: `Unsupported outbound partner. Allowed: ${PARTNER_ENUM.join(', ')}`
-});
+const ADMIN_TELEMETRY_EVENT_TYPES = [
+  'result_interaction_clicked',
+  'itinerary_opened',
+  'booking_clicked',
+  'upgrade_cta_clicked',
+  'elite_cta_clicked',
+  'upgrade_modal_opened',
+  'elite_modal_opened',
+  'upgrade_primary_cta_clicked',
+  'radar_activated'
+];
+const ADMIN_TELEMETRY_SOURCE_CONTEXT = ['web_app', 'admin_backoffice', 'api_client'];
 
-const outboundClickSchema = z.object({
-  partner: partnerSchema,
-  url: z.string().url(),
-  surface: z.enum(OUTBOUND_SURFACE_ENUM),
-  origin: z.string().min(3).max(3),
-  destinationIata: z.string().min(3).max(3),
-  destination: z.string().min(1).max(80),
-  stopCount: z.number().int().min(0).max(2).optional(),
-  comfortScore: z.number().int().min(1).max(100).optional(),
-  connectionType: z.enum(CONNECTION_ENUM).optional(),
-  travelTime: z.enum(TRAVEL_TIME_ENUM).optional(),
-  utmSource: z.string().max(80).optional(),
-  utmMedium: z.string().max(80).optional(),
-  utmCampaign: z.string().max(120).optional()
-});
+const adminTelemetryEventSchema = z.object({
+  eventType: z.enum(ADMIN_TELEMETRY_EVENT_TYPES),
+  at: z.string().datetime().optional(),
+  eventId: z.string().regex(/^[a-z0-9_-]{8,80}$/i).optional(),
+  fingerprint: z.string().regex(/^[a-z0-9_-]{12,128}$/i).optional(),
+  eventVersion: z.number().int().min(1).max(10).optional(),
+  schemaVersion: z.number().int().min(1).max(10).optional(),
+  sourceContext: z.enum(ADMIN_TELEMETRY_SOURCE_CONTEXT).optional(),
+  action: z.string().max(80).optional(),
+  surface: z.string().max(80).optional(),
+  itineraryId: z.string().max(120).optional(),
+  correlationId: z.string().max(180).optional(),
+  source: z.string().max(120).optional(),
+  routeSlug: z.string().max(120).optional(),
+  planType: z.enum(['free', 'pro', 'elite']).optional()
+}).strict();
 
-const outboundResolveSchema = z
-  .object({
-    partner: partnerSchema.default('tde_booking'),
-    surface: z.enum(OUTBOUND_SURFACE_ENUM),
-    origin: z.string().min(3).max(3),
-    destinationIata: z.string().min(3).max(3),
-    destination: z.string().min(1).max(80).optional(),
-    dateFrom: z.string(),
-    dateTo: z.string(),
-    travellers: z.preprocess((value) => Number(value), z.number().int().min(1).max(9)).default(1),
-    cabinClass: z.enum(CABIN_ENUM).default('economy'),
-    stopCount: z.preprocess(
-      (value) => {
-        if (value === '' || value === undefined || value === null) return undefined;
-        const parsed = Number(value);
-        return Number.isFinite(parsed) ? parsed : undefined;
-      },
-      z.number().int().min(0).max(2).optional()
-    ),
-    comfortScore: z.preprocess(
-      (value) => {
-        if (value === '' || value === undefined || value === null) return undefined;
-        const parsed = Number(value);
-        return Number.isFinite(parsed) ? parsed : undefined;
-      },
-      z.number().int().min(1).max(100).optional()
-    ),
-    connectionType: z.enum(CONNECTION_ENUM).optional(),
-    travelTime: z.enum(TRAVEL_TIME_ENUM).optional(),
-    utmSource: z.string().max(80).optional(),
-    utmMedium: z.string().max(80).optional(),
-    utmCampaign: z.string().max(120).optional()
-  })
-  .superRefine((payload, ctx) => {
-    const from = parseISO(payload.dateFrom);
-    const to = parseISO(payload.dateTo);
-    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Invalid travel dates.' });
-      return;
-    }
-    if (from.getTime() >= to.getTime()) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'dateTo must be later than dateFrom.' });
-    }
-  });
-
-function getTokenFromHeader(req) {
-  const raw = req.headers.authorization;
-  if (!raw) return null;
-  const [prefix, token] = raw.split(' ');
-  if (prefix !== 'Bearer' || !token) return null;
-  return token;
+function sanitizeTelemetryText(value, maxLength) {
+  return String(value || '')
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .trim()
+    .slice(0, Math.max(1, Number(maxLength) || 120));
 }
 
-function getCookies(req) {
-  const raw = String(req.headers.cookie || '');
-  if (!raw) return {};
-  return raw.split(';').reduce((acc, part) => {
-    const [key, ...rest] = part.trim().split('=');
-    if (!key) return acc;
-    acc[key] = decodeURIComponent(rest.join('=') || '');
-    return acc;
-  }, {});
+function safeTelemetryVersion(value, fallbackValue) {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) return fallbackValue;
+  return parsed;
+}
+
+function resolveTelemetryAt(clientAt) {
+  const nowMs = Date.now();
+  const parsedMs = new Date(clientAt || '').getTime();
+  if (!Number.isFinite(parsedMs)) return new Date(nowMs).toISOString();
+  if (Math.abs(parsedMs - nowMs) > ADMIN_TELEMETRY_ALLOWED_SKEW_MS) return new Date(nowMs).toISOString();
+  return new Date(parsedMs).toISOString();
+}
+
+function buildTelemetryFingerprint(payload, userId) {
+  const base = [
+    String(userId || ''),
+    String(payload.eventType || ''),
+    String(payload.action || ''),
+    String(payload.surface || ''),
+    String(payload.source || ''),
+    String(payload.routeSlug || ''),
+    String(payload.planType || ''),
+    String(payload.correlationId || ''),
+    String(payload.itineraryId || '')
+  ].join('|');
+  return createHash('sha256').update(base).digest('hex').slice(0, 48);
 }
 
 function getAccessTokenFromCookie(req) {
-  const cookies = getCookies(req);
-  return cookies[ACCESS_COOKIE_NAME] || null;
+  return readAccessTokenFromCookie(req, ACCESS_COOKIE_NAME);
 }
 
 function getRefreshTokenFromCookie(req) {
-  const cookies = getCookies(req);
-  return cookies[REFRESH_COOKIE_NAME] || null;
+  return readRefreshTokenFromCookie(req, REFRESH_COOKIE_NAME);
 }
 
 function getAuthToken(req) {
-  const headerToken = getTokenFromHeader(req);
-  if (headerToken) return { token: headerToken, source: 'bearer' };
-  const cookieToken = getAccessTokenFromCookie(req);
-  if (cookieToken) return { token: cookieToken, source: 'cookie' };
-  return { token: null, source: null };
-}
-
-function ensureAllowedOutboundUrl(rawUrl) {
-  return flightProviderRegistry.ensureAllowedUrl(rawUrl);
-}
-
-function resolveOutboundPartnerUrl({
-  partner,
-  origin,
-  destinationIata,
-  dateFrom,
-  dateTo,
-  travellers,
-  cabinClass,
-  utmSource,
-  utmMedium,
-  utmCampaign
-}) {
-  return flightProviderRegistry.resolveOutboundPartnerUrl({
-    partner,
-    origin,
-    destinationIata,
-    dateFrom,
-    dateTo,
-    travellers,
-    cabinClass,
-    utmSource,
-    utmMedium,
-    utmCampaign
-  });
-}
-
-function createOutboundClickToken({ clickId, targetUrl, expiresAt }) {
-  const payload = `${clickId}|${targetUrl}|${expiresAt}`;
-  return createHmac('sha256', OUTBOUND_CLICK_SECRET).update(payload).digest('hex');
-}
-
-function verifyOutboundClickToken({ clickId, targetUrl, expiresAt, clickToken }) {
-  const expected = createOutboundClickToken({ clickId, targetUrl, expiresAt });
-  return expected === clickToken;
+  return resolveRequestAuthToken(req, ACCESS_COOKIE_NAME);
 }
 
 function isSecureRequest(req) {
@@ -1054,10 +1409,20 @@ async function revokeRefreshFamily(family, reason = 'manual') {
 }
 
 async function rotateRefreshSession({ oldJti, newJti, userId, family, exp }) {
-  let oldSession = null;
+  const nowSec = Math.floor(Date.now() / 1000);
+  let result = { ok: false, reason: 'not_found' };
   await withDb(async (db) => {
-    oldSession = (db.refreshSessions || []).find((session) => session.jti === oldJti) || null;
-    if (!oldSession || oldSession.userId !== userId || oldSession.family !== family || oldSession.revokedAt) {
+    const oldSession = (db.refreshSessions || []).find((session) => session.jti === oldJti) || null;
+    if (!oldSession || oldSession.userId !== userId || oldSession.family !== family) {
+      result = { ok: false, reason: 'not_found' };
+      return db;
+    }
+    if (oldSession.revokedAt) {
+      result = { ok: false, reason: 'reused' };
+      return db;
+    }
+    if (Number.isFinite(oldSession.exp) && oldSession.exp <= nowSec) {
+      result = { ok: false, reason: 'expired' };
       return db;
     }
     oldSession.revokedAt = new Date().toISOString();
@@ -1073,9 +1438,10 @@ async function rotateRefreshSession({ oldJti, newJti, userId, family, exp }) {
       rotatedTo: null
     });
     db.refreshSessions = db.refreshSessions.slice(-10000);
+    result = { ok: true, reason: null };
     return db;
   });
-  return oldSession;
+  return result;
 }
 
 function optionalAuth(req) {
@@ -1139,15 +1505,27 @@ function buildPasswordResetUrl(rawToken) {
   return url.toString();
 }
 
+function hashEmailVerifyToken(token) {
+  return createHash('sha256').update(`email_verify:${String(token || '')}`).digest('hex');
+}
+
+function buildEmailVerifyUrl(rawToken) {
+  const base = process.env.EMAIL_VERIFY_URL || `${FRONTEND_URL}/`;
+  const url = new URL(base);
+  url.searchParams.set('verify_token', rawToken);
+  return url.toString();
+}
+
 async function logAuthEvent({ userId = null, email = '', type, success, req, detail = '' }) {
+  const normalizedEmail = String(email || '').toLowerCase().trim();
   const event = {
     id: nanoid(10),
     at: new Date().toISOString(),
     userId,
-    email: String(email || '').toLowerCase(),
+    emailHash: normalizedEmail ? hashValueForLogs(normalizedEmail, { label: 'email', length: 24 }) : null,
     type,
     success: Boolean(success),
-    ip: getClientIp(req),
+    ipHash: anonymizeIpForLogs(getClientIp(req)),
     userAgent: String(req.headers['user-agent'] || '').slice(0, 220),
     detail
   };
@@ -1160,10 +1538,10 @@ async function logAuthEvent({ userId = null, email = '', type, success, req, det
   appendImmutableAudit({
     category: 'auth_event',
     userId,
-    email: String(email || '').toLowerCase(),
+    emailHash: event.emailHash,
     type,
     success: Boolean(success),
-    ip: event.ip,
+    ipHash: event.ipHash,
     detail
   }).catch(() => {});
 }
@@ -1344,7 +1722,7 @@ async function authGuard(req, res, next) {
         {
           request_id: req.id || null,
           method: req.method,
-          path: req.originalUrl || req.url,
+          path: redactUrlForLogs(req.originalUrl || req.url, { maxLength: 220 }),
           status: 401,
           user_id: payload.sub || null
         },
@@ -1359,6 +1737,23 @@ async function authGuard(req, res, next) {
   } catch {
     return sendMachineError(req, res, 401, 'auth_invalid');
   }
+}
+
+function isAdminEmail(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return false;
+  return ADMIN_ALLOWLIST_EMAILS.has(normalized);
+}
+
+function adminGuard(req, res, next) {
+  if (!ADMIN_DASHBOARD_ENABLED) return sendMachineError(req, res, 404, 'admin_not_enabled');
+  if (isAdminEmail(req.user?.email)) return next();
+  return sendMachineError(req, res, 403, 'admin_access_denied');
+}
+
+function requireSessionAuth(req, res, next) {
+  if (req.authSource === 'cookie') return next();
+  return sendMachineError(req, res, 403, 'session_auth_required');
 }
 
 function csrfGuard(req, res, next) {
@@ -1422,6 +1817,11 @@ async function issueSessionTokens({ req, res, user, csrfToken, family }) {
   };
 }
 
+function buildSessionResponsePayload(accessToken, payload) {
+  if (AUTH_RETURN_ACCESS_TOKEN) return { token: accessToken, ...payload };
+  return payload;
+}
+
 function refreshCsrfGuard(req, payload) {
   const origin = String(req.headers.origin || '').trim();
   if (!origin || !isTrustedOrigin(req)) return { ok: false, code: 'request_forbidden' };
@@ -1438,6 +1838,52 @@ function toBase64Url(input) {
     .replace(/=+$/g, '');
 }
 
+function hashOAuthBindingToken(rawToken) {
+  return createHash('sha256').update(String(rawToken || '')).digest('hex');
+}
+
+function getOAuthBindingToken(req) {
+  const cookies = getCookies(req);
+  return String(cookies[OAUTH_BINDING_COOKIE_NAME] || '').trim();
+}
+
+function oauthBindingCookieOptions(req, maxAgeMs) {
+  return {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: Boolean(isSecureRequest(req) || NODE_ENV === 'production'),
+    path: '/api/auth/oauth',
+    maxAge: maxAgeMs,
+    ...(AUTH_COOKIE_DOMAIN ? { domain: AUTH_COOKIE_DOMAIN } : {})
+  };
+}
+
+function ensureOAuthBrowserBinding(req, res) {
+  const safeTtlMs = Math.max(60, Math.min(900, OAUTH_SESSION_TTL_SECONDS)) * 1000;
+  let bindingToken = getOAuthBindingToken(req);
+  if (!bindingToken || bindingToken.length < 24) {
+    bindingToken = toBase64Url(randomBytes(32));
+  }
+  res.cookie(OAUTH_BINDING_COOKIE_NAME, bindingToken, oauthBindingCookieOptions(req, safeTtlMs));
+  return hashOAuthBindingToken(bindingToken);
+}
+
+function resolveOAuthBindingHash(req) {
+  const bindingToken = getOAuthBindingToken(req);
+  if (!bindingToken || bindingToken.length < 24) return null;
+  return hashOAuthBindingToken(bindingToken);
+}
+
+function clearOAuthBrowserBinding(req, res) {
+  res.clearCookie(OAUTH_BINDING_COOKIE_NAME, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: oauthBindingCookieOptions(req, 1).secure,
+    path: '/api/auth/oauth',
+    ...(AUTH_COOKIE_DOMAIN ? { domain: AUTH_COOKIE_DOMAIN } : {})
+  });
+}
+
 function buildPkcePair() {
   const verifier = toBase64Url(randomBytes(32));
   const challenge = createHash('sha256')
@@ -1449,7 +1895,7 @@ function buildPkcePair() {
   return { verifier, challenge };
 }
 
-async function createOAuthSession(provider, redirectUri) {
+async function createOAuthSession(provider, redirectUri, bindingHash) {
   const ttlMs = Math.max(60, Math.min(900, OAUTH_SESSION_TTL_SECONDS)) * 1000;
   const pkce = buildPkcePair();
   const session = {
@@ -1460,6 +1906,7 @@ async function createOAuthSession(provider, redirectUri) {
     codeVerifier: pkce.verifier,
     codeChallenge: pkce.challenge,
     redirectUri,
+    bindingHash: String(bindingHash || ''),
     createdAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + ttlMs).toISOString(),
     consumedAt: null
@@ -1474,33 +1921,37 @@ async function createOAuthSession(provider, redirectUri) {
   return session;
 }
 
-async function consumeOAuthSessionById({ id, provider, state }) {
+async function consumeOAuthSessionById({ id, provider, state, bindingHash }) {
   let session = null;
   await withDb(async (db) => {
     session = (db.oauthSessions || []).find((item) => item.id === id && item.provider === provider && !item.consumedAt) || null;
     if (!session) return db;
     if (new Date(session.expiresAt).getTime() <= Date.now()) return db;
     if (state && session.state !== state) return db;
+    if (String(session.bindingHash || '') !== String(bindingHash || '')) return db;
     session.consumedAt = new Date().toISOString();
     return db;
   });
   if (!session) return null;
   if (new Date(session.expiresAt).getTime() <= Date.now()) return null;
   if (state && session.state !== state) return null;
+  if (String(session.bindingHash || '') !== String(bindingHash || '')) return null;
   return session;
 }
 
-async function consumeOAuthSessionByState({ provider, state }) {
+async function consumeOAuthSessionByState({ provider, state, bindingHash }) {
   let session = null;
   await withDb(async (db) => {
     session = (db.oauthSessions || []).find((item) => item.provider === provider && item.state === state && !item.consumedAt) || null;
     if (!session) return db;
     if (new Date(session.expiresAt).getTime() <= Date.now()) return db;
+    if (String(session.bindingHash || '') !== String(bindingHash || '')) return db;
     session.consumedAt = new Date().toISOString();
     return db;
   });
   if (!session) return null;
   if (new Date(session.expiresAt).getTime() <= Date.now()) return null;
+  if (String(session.bindingHash || '') !== String(bindingHash || '')) return null;
   return session;
 }
 
@@ -1574,8 +2025,7 @@ async function completeOAuthLogin({ req, res, profile }) {
     success: true,
     req
   });
-  return {
-    token: accessToken,
+  return buildSessionResponsePayload(accessToken, {
     session: { cookie: true, expiresInDays: 7, csrfToken },
     user: {
       id: user.id,
@@ -1587,70 +2037,7 @@ async function completeOAuthLogin({ req, res, profile }) {
       planStatus: resolveUserPlan(user).planStatus,
       onboardingDone: Boolean(user.onboardingDone)
     }
-  };
-}
-
-function buildDestinationInsights(params) {
-  const horizonDays = Number.isFinite(params.horizonDays) ? params.horizonDays : 120;
-  const windows = [];
-
-  for (let offset = 1; offset <= horizonDays; offset += 1) {
-    const from = addDays(new Date(), offset);
-    const to = addDays(from, params.stayDays);
-    const dateFrom = format(from, 'yyyy-MM-dd');
-    const dateTo = format(to, 'yyyy-MM-dd');
-
-    const result = searchFlights({
-      origin: params.origin,
-      region: params.region,
-      country: params.country,
-      destinationQuery: params.destinationQuery,
-      dateFrom,
-      dateTo,
-      cheapOnly: params.cheapOnly,
-      maxBudget: params.maxBudget,
-      connectionType: params.connectionType,
-      maxStops: params.maxStops,
-      travelTime: params.travelTime,
-      minComfortScore: params.minComfortScore,
-      travellers: params.travellers,
-      cabinClass: params.cabinClass
-    });
-
-    let flights = result.flights;
-    if (params.destinationIata) {
-      flights = flights.filter((flight) => flight.destinationIata === params.destinationIata);
-    }
-
-    const best = flights[0];
-    if (!best) continue;
-
-    windows.push({
-      dateFrom,
-      dateTo,
-      origin: best.origin,
-      destination: best.destination,
-      destinationIata: best.destinationIata,
-      price: best.price,
-      avg2024: best.avg2024,
-      highSeasonAvg: best.highSeasonAvg,
-      savingVs2024: best.savingVs2024,
-      link: best.link
-    });
-  }
-
-  windows.sort((a, b) => a.price - b.price || b.savingVs2024 - a.savingVs2024);
-
-  const top = windows.slice(0, 12);
-  const prices = top.map((item) => item.price);
-  const stats = {
-    count: top.length,
-    minPrice: prices.length ? Math.min(...prices) : null,
-    maxPrice: prices.length ? Math.max(...prices) : null,
-    avgPrice: prices.length ? Math.round(prices.reduce((acc, value) => acc + value, 0) / prices.length) : null
-  };
-
-  return { stats, windows: top };
+  });
 }
 
 const runFeatureAudit = () =>
@@ -1674,6 +2061,12 @@ const { scanSubscriptionsOnce } = createNotificationScanService({
   scanLockTtlSec: SUBSCRIPTION_SCAN_LOCK_TTL_SEC
 });
 const scanPriceAlertsOnce = async ({ limit = PRICE_ALERTS_WORKER_LIMIT } = {}) => runPriceAlertsWorkerOnce({ limit });
+const { enrichDecisionWithAi, parseIntentWithAi } = createAiIntentService({
+  origins: ORIGINS,
+  extractJsonObject,
+  parseDecisionAiPayload,
+  parseIntentAiPayload
+});
 
 app.use(
   buildSystemRouter({
@@ -1699,6 +2092,8 @@ app.use(
     getRuntimeConfigAudit,
     evaluateStartupReadiness,
     authGuard,
+    requireSessionAuth,
+    adminGuard,
     csrfGuard,
     requireApiScope,
     quotaGuard,
@@ -1712,12 +2107,12 @@ app.use(
     runFlightScanCycleOnce
   })
 );
-app.get('/api/security/audit/verify', authGuard, async (_req, res) => {
+app.get('/api/security/audit/verify', authGuard, requireSessionAuth, adminGuard, async (_req, res) => {
   const result = await verifyImmutableAudit();
   return res.json(result);
 });
 
-app.get('/api/monetization/report', authGuard, async (_req, res) => {
+app.get('/api/monetization/report', authGuard, requireSessionAuth, adminGuard, async (_req, res) => {
   const sql = await getBusinessMetrics();
   let outbound = { searchCount: 0, outboundClicks: 0, clickThroughRatePct: 0 };
   await withDb(async (db) => {
@@ -1742,12 +2137,128 @@ app.get('/api/billing/pricing', async (_req, res, next) => {
   }
 });
 
-app.get('/api/analytics/funnel', authGuard, async (_req, res) => {
+app.get('/api/analytics/funnel', authGuard, requireSessionAuth, adminGuard, async (_req, res) => {
   const sqlFunnel = await getFunnelMetricsByChannel();
   return res.json({
     generatedAt: new Date().toISOString(),
     channels: sqlFunnel.items || []
   });
+});
+
+app.post('/api/admin/telemetry', telemetryBurstLimiter, telemetryEventLimiter, authGuard, requireSessionAuth, csrfGuard, async (req, res) => {
+  const rawBody = req.body;
+  if (!rawBody || typeof rawBody !== 'object' || Array.isArray(rawBody)) {
+    return sendMachineError(req, res, 400, 'invalid_payload');
+  }
+  const bodySize = safeJsonByteLength(rawBody);
+  if (!Number.isFinite(bodySize) || bodySize > ADMIN_TELEMETRY_MAX_BODY_BYTES) {
+    return sendMachineError(req, res, 413, 'payload_too_large');
+  }
+
+  const parsed = adminTelemetryEventSchema.safeParse(rawBody);
+  if (!parsed.success) return sendMachineError(req, res, 400, 'invalid_payload');
+
+  const payload = parsed.data;
+  const userId = String(req.user?.sub || req.user?.id || '').trim() || null;
+  const telemetryUser = userId ? await fetchCurrentUser(userId) : null;
+  const resolvedPlanType = telemetryUser ? resolveUserPlan(telemetryUser).planType : null;
+  if (payload.planType && resolvedPlanType && payload.planType !== resolvedPlanType) {
+    logger.warn(
+      {
+        request_id: req.id || null,
+        user_id: userId,
+        claimed_plan_type: payload.planType,
+        resolved_plan_type: resolvedPlanType
+      },
+      'admin_telemetry_plan_type_overridden'
+    );
+  }
+  const derivedFingerprint = buildTelemetryFingerprint(
+    {
+      ...payload,
+      planType: resolvedPlanType || null
+    },
+    userId || 'anonymous'
+  );
+  const trustedSourceContext = 'web_app';
+  const eventRecord = {
+    id: nanoid(10),
+    at: resolveTelemetryAt(payload.at),
+    userId,
+    email: null,
+    eventId: derivedFingerprint,
+    fingerprint: derivedFingerprint,
+    eventVersion: 1,
+    schemaVersion: 2,
+    sourceContext: trustedSourceContext,
+    eventType: payload.eventType,
+    action: sanitizeTelemetryText(payload.action, 80) || null,
+    surface: sanitizeTelemetryText(payload.surface, 80) || null,
+    itineraryId: sanitizeTelemetryText(payload.itineraryId, 120) || null,
+    correlationId: sanitizeTelemetryText(payload.correlationId, 180) || null,
+    source: sanitizeTelemetryText(payload.source, 120) || null,
+    routeSlug: sanitizeTelemetryText(payload.routeSlug, 120) || null,
+    planType: resolvedPlanType || null,
+    trustLevel: 'session_bound_client'
+  };
+
+  let rejectedForBurst = false;
+  let burstResetAt = null;
+  await withDb(async (db) => {
+    db.clientTelemetryEvents = Array.isArray(db.clientTelemetryEvents) ? db.clientTelemetryEvents : [];
+    const eventAtMs = new Date(eventRecord.at).getTime();
+    const recentSameFingerprintCount = db.clientTelemetryEvents.reduce((count, candidate) => {
+      if (!candidate || typeof candidate !== 'object') return count;
+      if (String(candidate.userId || '') !== String(eventRecord.userId || '')) return count;
+      if (String(candidate.fingerprint || '') !== String(eventRecord.fingerprint || '')) return count;
+      const candidateAt = new Date(candidate.at || '').getTime();
+      if (!Number.isFinite(candidateAt) || !Number.isFinite(eventAtMs)) return count;
+      if (Math.abs(eventAtMs - candidateAt) > TELEMETRY_BURST_WINDOW_MS) return count;
+      return count + 1;
+    }, 0);
+    if (recentSameFingerprintCount >= TELEMETRY_BURST_MAX) {
+      rejectedForBurst = true;
+      burstResetAt = new Date(eventAtMs + TELEMETRY_BURST_WINDOW_MS).toISOString();
+      return db;
+    }
+
+    const hasDuplicate = db.clientTelemetryEvents.some((candidate) => {
+      if (!candidate || typeof candidate !== 'object') return false;
+      if (String(candidate.userId || '') !== String(eventRecord.userId || '')) return false;
+      if (eventRecord.eventId && String(candidate.eventId || '') === String(eventRecord.eventId || '')) return true;
+      if (eventRecord.fingerprint && String(candidate.fingerprint || '') === String(eventRecord.fingerprint || '')) return true;
+      if (String(candidate.eventType || '') !== String(eventRecord.eventType || '')) return false;
+      if (String(candidate.action || '') !== String(eventRecord.action || '')) return false;
+      if (String(candidate.surface || '') !== String(eventRecord.surface || '')) return false;
+      if (String(candidate.source || '') !== String(eventRecord.source || '')) return false;
+      if (String(candidate.planType || '') !== String(eventRecord.planType || '')) return false;
+      if (String(candidate.routeSlug || '') !== String(eventRecord.routeSlug || '')) return false;
+      if (String(candidate.correlationId || '') !== String(eventRecord.correlationId || '')) return false;
+      if (String(candidate.itineraryId || '') !== String(eventRecord.itineraryId || '')) return false;
+      const candidateAt = new Date(candidate.at || '').getTime();
+      if (!Number.isFinite(candidateAt) || !Number.isFinite(eventAtMs)) return false;
+      return Math.abs(eventAtMs - candidateAt) <= ADMIN_TELEMETRY_DEDUPE_WINDOW_MS;
+    });
+    if (hasDuplicate) return db;
+    db.clientTelemetryEvents.push(eventRecord);
+    db.clientTelemetryEvents = db.clientTelemetryEvents.slice(-12000);
+    return db;
+  });
+  if (rejectedForBurst) {
+    return sendMachineError(req, res, 429, 'rate_limited', { reset_at: burstResetAt || toIsoFromRateLimit(req) });
+  }
+
+  return res.status(201).json({ ok: true });
+});
+
+app.get('/api/admin/backoffice/report', authGuard, requireSessionAuth, adminGuard, async (_req, res) => {
+  let report = null;
+  const followSignals = await getFollowSignalsSummary({ limit: 10 }).catch(() => ({ total: 0, topRoutes: [] }));
+  await withDb(async (db) => {
+    report = buildAdminBackofficeReport({ db, followSignals, now: Date.now(), windowDays: 30 });
+    return null;
+  });
+  return res.json(report);
 });
 
 app.use(
@@ -1782,841 +2293,69 @@ app.use(
     cacheClient: getCacheClient()
   })
 );
-app.post('/api/auth/register', authLimiter, async (req, res) => {
-  const parsed = registerSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid payload.' });
-
-  const { name, email, password } = parsed.data;
-  const normalizedEmail = email.toLowerCase();
-  const hashed = await hashPassword(password);
-
-  let createdUser = null;
-
-  await withDb(async (db) => {
-    const exists = db.users.some((u) => u.email === normalizedEmail);
-    if (exists) return db;
-
-    createdUser = {
-      id: nanoid(10),
-      name,
-      email: normalizedEmail,
-      passwordHash: hashed,
-      isPremium: false,
-      planType: 'free',
-      planStatus: 'active',
-      onboardingDone: false,
-      mfaEnabled: false,
-      mfaSecret: null,
-      mfaTempSecret: null,
-      failedLoginCount: 0,
-      lockUntil: null,
-      authChannel: 'email_password',
-      createdAt: new Date().toISOString()
-    };
-    db.users.push(createdUser);
-    return db;
-  });
-
-  if (!createdUser) {
-    await logAuthEvent({
-      email: normalizedEmail,
-      type: 'register_duplicate_email',
-      success: false,
-      req,
-      detail: 'Email already registered.'
-    });
-    return res.status(409).json({ error: 'Email already registered.' });
-  }
-
-  const csrfToken = nanoid(24);
-  const family = nanoid(16);
-  const { accessToken } = await issueSessionTokens({ req, res, user: createdUser, csrfToken, family });
-  await upsertUserLead({ userId: createdUser.id, email: createdUser.email, name: createdUser.name, source: 'register', channel: 'email_password' });
-  await logAuthEvent({
-    userId: createdUser.id,
-    email: createdUser.email,
-    type: 'register_success',
-    success: true,
-    req
-  });
-  return res.status(201).json({
-    token: accessToken,
-    session: { cookie: true, expiresInDays: 7, csrfToken },
-    user: {
-      id: createdUser.id,
-      name: createdUser.name,
-      email: createdUser.email,
-      mfaEnabled: Boolean(createdUser.mfaEnabled),
-      isPremium: Boolean(createdUser.isPremium),
-      planType: resolveUserPlan(createdUser).planType,
-      planStatus: resolveUserPlan(createdUser).planStatus,
-      onboardingDone: Boolean(createdUser.onboardingDone)
-    }
-  });
-});
-
-app.post('/api/auth/login', authLimiter, async (req, res) => {
-  const parsed = loginSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid payload.' });
-
-  const email = parsed.data.email.toLowerCase();
-
-  let user = null;
-  await withDb(async (db) => {
-    user = db.users.find((u) => u.email === email) ?? null;
-    return null;
-  });
-
-  if (!user) {
-    await verifyPassword(parsed.data.password, LOGIN_DUMMY_PASSWORD_HASH).catch(() => false);
-    await logAuthEvent({
-      email,
-      type: 'login_user_not_found',
-      success: false,
-      req
-    });
-    return res.status(401).json({ error: 'Wrong credentials.' });
-  }
-
-  if (userIsLocked(user)) {
-    await logAuthEvent({
-      userId: user.id,
-      email: user.email,
-      type: 'login_blocked_locked',
-      success: false,
-      req,
-      detail: `Locked until ${user.lockUntil}`
-    });
-    return sendMachineError(req, res, 429, 'limit_exceeded', { reset_at: user.lockUntil });
-  }
-
-  if (!user.passwordHash) {
-    await verifyPassword(parsed.data.password, LOGIN_DUMMY_PASSWORD_HASH).catch(() => false);
-    await logAuthEvent({
-      userId: user.id,
-      email: user.email,
-      type: 'login_password_not_available',
-      success: false,
-      req
-    });
-    return res.status(401).json({ error: 'Wrong credentials.' });
-  }
-
-  const ok = await verifyPassword(parsed.data.password, user.passwordHash);
-  if (!ok) {
-    await withDb(async (db) => {
-      const hit = db.users.find((u) => u.id === user.id);
-      if (hit) registerFailedLogin(hit);
-      return db;
-    });
-    await logAuthEvent({
-      userId: user.id,
-      email: user.email,
-      type: 'login_wrong_password',
-      success: false,
-      req
-    });
-    return res.status(401).json({ error: 'Wrong credentials.' });
-  }
-
-  if (user.mfaEnabled) {
-    const ticket = nanoid(32);
-    const expiresAt = addDays(new Date(), 1 / (24 * 12)).toISOString();
-    await withDb(async (db) => {
-      db.mfaChallenges = (db.mfaChallenges || [])
-        .filter((item) => new Date(item.expiresAt).getTime() > Date.now())
-        .filter((item) => !(item.userId === user.id && !item.consumedAt));
-      db.mfaChallenges.push({
-        id: nanoid(10),
-        ticket,
-        userId: user.id,
-        email: user.email,
-        createdAt: new Date().toISOString(),
-        expiresAt,
-        consumedAt: null,
-        attempts: 0
-      });
-      db.mfaChallenges = db.mfaChallenges.slice(-4000);
-      return db;
-    });
-    await logAuthEvent({
-      userId: user.id,
-      email: user.email,
-      type: 'login_mfa_challenge_issued',
-      success: true,
-      req
-    });
-    return res.status(202).json({ mfaRequired: true, ticket, expiresAt });
-  }
-
-  if (Number.isFinite(user.failedLoginCount) && user.failedLoginCount > 0) {
-    await withDb(async (db) => {
-      const hit = db.users.find((u) => u.id === user.id);
-      if (hit) resetUserLoginFailures(hit);
-      return db;
-    });
-  }
-
-  const csrfToken = nanoid(24);
-  const family = nanoid(16);
-  user.authChannel = 'email_password';
-  const { accessToken } = await issueSessionTokens({ req, res, user, csrfToken, family });
-  await upsertUserLead({ userId: user.id, email: user.email, name: user.name, source: 'login', channel: 'email_password' });
-  await logAuthEvent({
-    userId: user.id,
-    email: user.email,
-    type: 'login_success',
-    success: true,
-    req
-  });
-  return res.json({
-    token: accessToken,
-    session: { cookie: true, expiresInDays: 7, csrfToken },
-    user: {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      mfaEnabled: Boolean(user.mfaEnabled),
-      isPremium: Boolean(user.isPremium),
-      planType: resolveUserPlan(user).planType,
-      planStatus: resolveUserPlan(user).planStatus,
-      onboardingDone: Boolean(user.onboardingDone)
-    }
-  });
-});
-
-app.post('/api/auth/login/mfa', authLimiter, async (req, res) => {
-  const parsed = loginMfaVerifySchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid MFA verify payload.' });
-
-  const { ticket, code } = parsed.data;
-  let challenge = null;
-  let user = null;
-  await withDb(async (db) => {
-    challenge = (db.mfaChallenges || []).find((item) => item.ticket === ticket && !item.consumedAt) || null;
-    if (!challenge) return db;
-    if (new Date(challenge.expiresAt).getTime() <= Date.now()) return db;
-    user = db.users.find((item) => item.id === challenge.userId) || null;
-    if (!user || !user.mfaEnabled || !user.mfaSecret) return db;
-
-    const valid = speakeasy.totp.verify({
-      secret: String(user.mfaSecret || ''),
-      encoding: 'base32',
-      token: code,
-      window: 1
-    });
-    if (!valid) {
-      challenge.attempts = (challenge.attempts || 0) + 1;
-      if (challenge.attempts >= 5) {
-        challenge.consumedAt = new Date().toISOString();
-      }
-      return db;
-    }
-
-    challenge.consumedAt = new Date().toISOString();
-    return db;
-  });
-
-  if (!challenge || !user) {
-    return res.status(401).json({ error: 'Invalid or expired MFA ticket.' });
-  }
-  if (challenge.consumedAt && (challenge.attempts || 0) >= 5) {
-    await logAuthEvent({ userId: user.id, email: user.email, type: 'login_mfa_ticket_locked', success: false, req });
-    return res.status(401).json({ error: 'Too many MFA attempts. Start login again.' });
-  }
-  const valid = challenge.consumedAt && (challenge.attempts || 0) < 5;
-  if (!valid) {
-    await logAuthEvent({ userId: user.id, email: user.email, type: 'login_mfa_failed', success: false, req });
-    return res.status(401).json({ error: 'Invalid MFA code.' });
-  }
-
-  if (Number.isFinite(user.failedLoginCount) && user.failedLoginCount > 0) {
-    await withDb(async (db) => {
-      const hit = db.users.find((u) => u.id === user.id);
-      if (hit) resetUserLoginFailures(hit);
-      return db;
-    });
-  }
-
-  const csrfToken = nanoid(24);
-  const family = nanoid(16);
-  user.authChannel = 'email_mfa';
-  const { accessToken } = await issueSessionTokens({ req, res, user, csrfToken, family });
-  await upsertUserLead({ userId: user.id, email: user.email, name: user.name, source: 'login_mfa', channel: 'email_mfa' });
-  await logAuthEvent({ userId: user.id, email: user.email, type: 'login_success_mfa', success: true, req });
-  return res.json({
-    token: accessToken,
-    session: { cookie: true, expiresInDays: 7, csrfToken },
-    user: {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      mfaEnabled: Boolean(user.mfaEnabled),
-      isPremium: Boolean(user.isPremium),
-      planType: resolveUserPlan(user).planType,
-      planStatus: resolveUserPlan(user).planStatus,
-      onboardingDone: Boolean(user.onboardingDone)
-    }
-  });
-});
-
-app.post('/api/auth/password-reset/request', authLimiter, async (req, res) => {
-  const parsed = passwordResetRequestSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'validation_failed', message: parsed.error.issues[0]?.message ?? 'Invalid payload.' });
-
-  const normalizedEmail = parsed.data.email.toLowerCase();
-  let user = null;
-  await withDb(async (db) => {
-    user = db.users.find((item) => item.email === normalizedEmail) || null;
-    db.passwordResetTokens = (db.passwordResetTokens || []).filter((entry) => !entry.usedAt && new Date(entry.expiresAt).getTime() > Date.now());
-    return db;
-  });
-
-  if (user) {
-    const rawToken = randomBytes(32).toString('hex');
-    const tokenHash = hashPasswordResetToken(rawToken);
-    const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
-
-    await withDb(async (db) => {
-      db.passwordResetTokens = db.passwordResetTokens || [];
-      db.passwordResetTokens.push({
-        id: nanoid(12),
-        userId: user.id,
-        tokenHash,
-        expiresAt,
-        usedAt: null,
-        createdAt: new Date().toISOString()
-      });
-      db.passwordResetTokens = db.passwordResetTokens.slice(-5000);
-      return db;
-    });
-
-    sendMail({
-      to: user.email,
-      subject: 'Password reset request',
-      text: `Use this secure link to reset your password: ${buildPasswordResetUrl(rawToken)}`,
-      html: `<p>Use this secure link to reset your password:</p><p><a href="${buildPasswordResetUrl(rawToken)}">${buildPasswordResetUrl(rawToken)}</a></p>`
-    }).catch(() => {});
-
-    await logAuthEvent({
-      userId: user.id,
-      email: user.email,
-      type: 'password_reset_requested',
-      success: true,
-      req
-    });
-  }
-
-  return res.json({ ok: true });
-});
-
-app.post('/api/auth/password-reset/confirm', authLimiter, async (req, res) => {
-  const parsed = passwordResetConfirmSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'validation_failed', message: parsed.error.issues[0]?.message ?? 'Invalid payload.' });
-
-  const tokenHash = hashPasswordResetToken(parsed.data.token);
-  const snapshot = await readDb();
-  const tokenRow = (snapshot.passwordResetTokens || []).find((entry) => entry.tokenHash === tokenHash);
-  const tokenIsValid = Boolean(tokenRow && !tokenRow.usedAt && new Date(tokenRow.expiresAt).getTime() > Date.now());
-  if (!tokenIsValid) {
-    return res.status(400).json({ error: 'invalid_or_expired_token', message: 'Invalid or expired reset token.' });
-  }
-  const user = snapshot.users.find((entry) => entry.id === tokenRow.userId);
-  if (!user) return res.status(400).json({ error: 'invalid_or_expired_token', message: 'Invalid or expired reset token.' });
-
-  const hashed = await hashPassword(parsed.data.password);
-  await withDb(async (db) => {
-    const nowIso = new Date().toISOString();
-    const dbUser = db.users.find((entry) => entry.id === user.id);
-    if (dbUser) {
-      dbUser.passwordHash = hashed;
-      resetUserLoginFailures(dbUser);
-    }
-    db.passwordResetTokens = (db.passwordResetTokens || []).map((entry) => {
-      if (entry.userId !== user.id) return entry;
-      return { ...entry, usedAt: entry.usedAt || nowIso };
-    });
-    return db;
-  });
-
-  await logAuthEvent({
-    userId: user.id,
-    email: user.email,
-    type: 'password_reset_confirmed',
-    success: true,
-    req
-  });
-
-  return res.json({ ok: true });
-});
-
-function firstCsvValue(value) {
-  return String(value || '')
-    .split(',')
-    .map((x) => x.trim())
-    .find(Boolean);
-}
-
-function redirectToFrontend(res, params = {}) {
-  const url = new URL(FRONTEND_URL);
-  for (const [k, v] of Object.entries(params)) {
-    if (v == null) continue;
-    url.searchParams.set(k, String(v));
-  }
-  return res.redirect(url.toString());
-}
-
-function extractJsonObject(text) {
-  const raw = String(text || '').trim();
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw);
-  } catch {}
-  const start = raw.indexOf('{');
-  const end = raw.lastIndexOf('}');
-  if (start === -1 || end === -1 || end <= start) return null;
-  try {
-    return JSON.parse(raw.slice(start, end + 1));
-  } catch {
-    return null;
-  }
-}
-
-async function enrichDecisionWithAi({ aiProvider = 'none', requestPayload, decisionResult }) {
-  const provider = String(aiProvider || 'none').toLowerCase();
-  if (provider === 'none') return { provider: 'none', enhanced: false };
-
-  const openaiKey = String(process.env.OPENAI_API_KEY || '').trim();
-  const claudeKey = String(process.env.CLAUDE_API_KEY || process.env.ANTHROPIC_API_KEY || '').trim();
-
-  const selected =
-    provider === 'chatgpt'
-      ? 'chatgpt'
-      : provider === 'claude'
-      ? 'claude'
-      : openaiKey
-      ? 'chatgpt'
-      : claudeKey
-      ? 'claude'
-      : 'none';
-
-  if (selected === 'none') return { provider: 'none', enhanced: false };
-
-  const compact = (decisionResult.recommendations || []).map((item) => ({
-    destination: item.destination,
-    iata: item.destinationIata,
-    score: item.travelScore,
-    total: item.costBreakdown?.total,
-    climate: item.climateInPeriod,
-    crowding: item.crowding
-  }));
-
-  const systemPrompt =
-    'You are a travel decision co-pilot. Return strict JSON only: {"items":[{"destinationIata":"XXX","whyNow":"...","riskNote":"..."}]}';
-  const userPrompt = JSON.stringify({
-    request: requestPayload,
-    recommendations: compact
-  });
-
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 9000);
-    let aiJson = null;
-    try {
-      if (selected === 'chatgpt' && openaiKey) {
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${openaiKey}`
-          },
-          body: JSON.stringify({
-            model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-            temperature: 0.2,
-            response_format: { type: 'json_object' },
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: userPrompt }
-            ]
-          }),
-          signal: controller.signal
-        });
-        const payload = await response.json().catch(() => ({}));
-        const content = payload?.choices?.[0]?.message?.content || '';
-        aiJson = extractJsonObject(content);
-      } else if (selected === 'claude' && claudeKey) {
-        const response = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': claudeKey,
-            'anthropic-version': '2023-06-01'
-          },
-          body: JSON.stringify({
-            model: process.env.ANTHROPIC_MODEL || 'claude-3-5-sonnet-20241022',
-            max_tokens: 400,
-            temperature: 0.2,
-            system: systemPrompt,
-            messages: [{ role: 'user', content: userPrompt }]
-          }),
-          signal: controller.signal
-        });
-        const payload = await response.json().catch(() => ({}));
-        const content = Array.isArray(payload?.content) ? payload.content.map((x) => x?.text || '').join('\n') : '';
-        aiJson = extractJsonObject(content);
-      }
-    } finally {
-      clearTimeout(timer);
-    }
-    const items = Array.isArray(aiJson?.items) ? aiJson.items : [];
-    if (!items.length) return { provider: selected, enhanced: false };
-
-    const byIata = new Map(items.map((x) => [String(x.destinationIata || '').toUpperCase(), x]));
-    for (const rec of decisionResult.recommendations || []) {
-      const aiItem = byIata.get(String(rec.destinationIata || '').toUpperCase());
-      if (!aiItem) continue;
-      rec.aiWhyNow = String(aiItem.whyNow || '').slice(0, 220);
-      rec.aiRiskNote = String(aiItem.riskNote || '').slice(0, 180);
-    }
-    return { provider: selected, enhanced: true };
-  } catch {
-    return { provider: selected, enhanced: false };
-  }
-}
-
-function parseIntentHeuristics(prompt, packageCount) {
-  const raw = String(prompt || '').trim();
-  const text = raw.toLowerCase();
-  const preferences = {
-    mood: 'relax',
-    climatePreference: 'indifferent',
-    pace: 'normal',
-    avoidOvertourism: false,
-    packageCount: packageCount === 4 ? 4 : 3
-  };
-
-  const budgetMatch = raw.match(/(\d{2,5})\s*(€|eur|euro)/i) || raw.match(/budget[^0-9]*(\d{2,5})/i);
-  if (budgetMatch) preferences.budgetMax = Number(budgetMatch[1]);
-
-  const daysMatch = raw.match(/(\d{1,2})\s*(giorni|giorno|days|day|notti|notte|nights|night)/i);
-  if (daysMatch) preferences.tripLengthDays = Math.max(2, Math.min(21, Number(daysMatch[1])));
-
-  const iataMatch = raw.match(/\b[A-Z]{3}\b/g);
-  if (Array.isArray(iataMatch) && iataMatch.length > 0) {
-    const known = new Set((ORIGINS || []).map((o) => String(o.code || '').toUpperCase()));
-    const picked = iataMatch.map((x) => x.toUpperCase()).find((x) => known.has(x));
-    if (picked) preferences.origin = picked;
-  }
-
-  if (text.includes('party') || text.includes('vita notturna') || text.includes('nightlife')) preferences.mood = 'party';
-  else if (text.includes('natura') || text.includes('trek') || text.includes('hiking')) preferences.mood = 'natura';
-  else if (text.includes('cultura') || text.includes('musei') || text.includes('museum')) preferences.mood = 'cultura';
-  else if (text.includes('avventura') || text.includes('adventure')) preferences.mood = 'avventura';
-
-  if (text.includes('caldo') || text.includes('warm') || text.includes('hot')) preferences.climatePreference = 'warm';
-  else if (text.includes('freddo') || text.includes('cold')) preferences.climatePreference = 'cold';
-  else if (text.includes('temperato') || text.includes('mild')) preferences.climatePreference = 'mild';
-
-  if (text.includes('slow') || text.includes('rilassato') || text.includes('lento')) preferences.pace = 'slow';
-  else if (text.includes('fast') || text.includes('veloce') || text.includes('ritmo alto')) preferences.pace = 'fast';
-
-  if (text.includes('overtourism') || text.includes('no affollamento') || text.includes('poco affollat')) {
-    preferences.avoidOvertourism = true;
-  }
-
-  if (text.includes('europa') || text.includes('europe')) preferences.region = 'eu';
-  else if (text.includes('asia')) preferences.region = 'asia';
-  else if (text.includes('america')) preferences.region = 'america';
-  else if (text.includes('oceania')) preferences.region = 'oceania';
-
-  const summaryParts = [];
-  if (preferences.budgetMax) summaryParts.push(`budget ${preferences.budgetMax} EUR`);
-  if (preferences.tripLengthDays) summaryParts.push(`${preferences.tripLengthDays} giorni`);
-  summaryParts.push(`mood ${preferences.mood}`);
-  summaryParts.push(`clima ${preferences.climatePreference}`);
-  if (preferences.origin) summaryParts.push(`partenza ${preferences.origin}`);
-  summaryParts.push(`${preferences.packageCount} pacchetti`);
-  if (preferences.avoidOvertourism) summaryParts.push('filtro no overtourism');
-
-  return {
-    provider: 'heuristic',
-    enhanced: false,
-    preferences,
-    summary: `Preferenze rilevate: ${summaryParts.join(', ')}.`
-  };
-}
-
-async function parseIntentWithAi({ prompt, aiProvider = 'none', packageCount = 3 }) {
-  const heuristic = parseIntentHeuristics(prompt, packageCount);
-  const provider = String(aiProvider || 'none').toLowerCase();
-  if (provider === 'none') return heuristic;
-
-  const openaiKey = String(process.env.OPENAI_API_KEY || '').trim();
-  const claudeKey = String(process.env.CLAUDE_API_KEY || process.env.ANTHROPIC_API_KEY || '').trim();
-  const selected =
-    provider === 'chatgpt'
-      ? 'chatgpt'
-      : provider === 'claude'
-      ? 'claude'
-      : openaiKey
-      ? 'chatgpt'
-      : claudeKey
-      ? 'claude'
-      : 'none';
-  if (selected === 'none') return heuristic;
-
-  const systemPrompt =
-    'Extract travel intent as strict JSON only: {"preferences":{"origin":"IATA?","budgetMax":number?,"tripLengthDays":number?,"mood":"relax|natura|party|cultura|avventura","climatePreference":"warm|mild|cold|indifferent","pace":"slow|normal|fast","avoidOvertourism":boolean,"region":"all|eu|asia|america|oceania","packageCount":3|4},"summary":"..."}';
-
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 9000);
-    let aiJson = null;
-    try {
-      if (selected === 'chatgpt' && openaiKey) {
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${openaiKey}`
-          },
-          body: JSON.stringify({
-            model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-            temperature: 0.1,
-            response_format: { type: 'json_object' },
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: String(prompt || '') }
-            ]
-          }),
-          signal: controller.signal
-        });
-        const payload = await response.json().catch(() => ({}));
-        aiJson = extractJsonObject(payload?.choices?.[0]?.message?.content || '');
-      } else if (selected === 'claude' && claudeKey) {
-        const response = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': claudeKey,
-            'anthropic-version': '2023-06-01'
-          },
-          body: JSON.stringify({
-            model: process.env.ANTHROPIC_MODEL || 'claude-3-5-sonnet-20241022',
-            max_tokens: 300,
-            temperature: 0.1,
-            system: systemPrompt,
-            messages: [{ role: 'user', content: String(prompt || '') }]
-          }),
-          signal: controller.signal
-        });
-        const payload = await response.json().catch(() => ({}));
-        const content = Array.isArray(payload?.content) ? payload.content.map((x) => x?.text || '').join('\n') : '';
-        aiJson = extractJsonObject(content);
-      }
-    } finally {
-      clearTimeout(timer);
-    }
-    const prefs = aiJson?.preferences || {};
-    const merged = {
-      ...heuristic.preferences,
-      ...prefs,
-      packageCount: prefs?.packageCount === 4 ? 4 : heuristic.preferences.packageCount
-    };
-    return {
-      provider: selected,
-      enhanced: true,
-      preferences: merged,
-      summary: String(aiJson?.summary || heuristic.summary).slice(0, 320)
-    };
-  } catch {
-    return heuristic;
-  }
-}
-
-app.get('/api/auth/oauth/google/start', authLimiter, async (_req, res) => {
-  const clientId = firstCsvValue(process.env.GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENT_IDS);
-  if (!clientId) return res.status(503).json({ error: 'Google OAuth not configured.' });
-  const oauth = await createOAuthSession('google', GOOGLE_OAUTH_REDIRECT_URI);
-  const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-  url.searchParams.set('client_id', clientId);
-  url.searchParams.set('redirect_uri', oauth.redirectUri);
-  url.searchParams.set('response_type', 'code');
-  url.searchParams.set('scope', 'openid email profile');
-  url.searchParams.set('state', oauth.state);
-  url.searchParams.set('nonce', oauth.nonce);
-  url.searchParams.set('code_challenge', oauth.codeChallenge);
-  url.searchParams.set('code_challenge_method', 'S256');
-  url.searchParams.set('access_type', 'offline');
-  return res.redirect(url.toString());
-});
-
-app.get('/api/auth/oauth/google/callback', authLimiter, async (req, res) => {
-  const state = String(req.query.state || '');
-  const code = String(req.query.code || '');
-  if (!state || !code) return redirectToFrontend(res, { oauth: 'error', reason: 'google_missing_code' });
-
-  const oauthSession = await consumeOAuthSessionByState({ provider: 'google', state });
-  if (!oauthSession) return redirectToFrontend(res, { oauth: 'error', reason: 'google_invalid_state' });
-
-  try {
-    const tokenPayload = await exchangeGoogleCodeForTokens({
-      code,
-      codeVerifier: oauthSession.codeVerifier,
-      redirectUri: oauthSession.redirectUri || GOOGLE_OAUTH_REDIRECT_URI
-    });
-    const profile = await verifyGoogleIdToken(tokenPayload.id_token);
-    if (!profile.nonce || profile.nonce !== oauthSession.nonce) {
-      return redirectToFrontend(res, { oauth: 'error', reason: 'google_nonce_mismatch' });
-    }
-    await completeOAuthLogin({ req, res, profile });
-    return redirectToFrontend(res, { oauth: 'success', provider: 'google' });
-  } catch (error) {
-    return redirectToFrontend(res, { oauth: 'error', reason: 'google_exchange_failed' });
-  }
-});
-
-app.get('/api/auth/oauth/apple/start', authLimiter, async (_req, res) => {
-  const clientId = firstCsvValue(process.env.APPLE_CLIENT_ID || process.env.APPLE_CLIENT_IDS);
-  if (!clientId) return res.status(503).json({ error: 'Apple OAuth not configured.' });
-  const oauth = await createOAuthSession('apple', APPLE_OAUTH_REDIRECT_URI);
-  const url = new URL('https://appleid.apple.com/auth/authorize');
-  url.searchParams.set('client_id', clientId);
-  url.searchParams.set('redirect_uri', oauth.redirectUri);
-  url.searchParams.set('response_type', 'code');
-  url.searchParams.set('response_mode', 'query');
-  url.searchParams.set('scope', 'name email');
-  url.searchParams.set('state', oauth.state);
-  url.searchParams.set('nonce', oauth.nonce);
-  url.searchParams.set('code_challenge', oauth.codeChallenge);
-  url.searchParams.set('code_challenge_method', 'S256');
-  return res.redirect(url.toString());
-});
-
-app.get('/api/auth/oauth/facebook/start', authLimiter, async (_req, res) => {
-  const clientId = firstCsvValue(process.env.FACEBOOK_CLIENT_ID || process.env.FACEBOOK_CLIENT_IDS);
-  if (!clientId) return res.status(503).json({ error: 'Facebook OAuth not configured.' });
-  const oauth = await createOAuthSession('facebook', FACEBOOK_OAUTH_REDIRECT_URI);
-  const url = new URL('https://www.facebook.com/v20.0/dialog/oauth');
-  url.searchParams.set('client_id', clientId);
-  url.searchParams.set('redirect_uri', oauth.redirectUri);
-  url.searchParams.set('response_type', 'code');
-  url.searchParams.set('state', oauth.state);
-  url.searchParams.set('scope', 'email,public_profile');
-  return res.redirect(url.toString());
-});
-
-async function handleAppleCallback(req, res) {
-  const state = String(req.body?.state || req.query?.state || '');
-  const code = String(req.body?.code || req.query?.code || '');
-  if (!state || !code) return redirectToFrontend(res, { oauth: 'error', reason: 'apple_missing_code' });
-
-  const oauthSession = await consumeOAuthSessionByState({ provider: 'apple', state });
-  if (!oauthSession) return redirectToFrontend(res, { oauth: 'error', reason: 'apple_invalid_state' });
-
-  try {
-    const tokenPayload = await exchangeAppleCodeForTokens({
-      code,
-      codeVerifier: oauthSession.codeVerifier,
-      redirectUri: oauthSession.redirectUri || APPLE_OAUTH_REDIRECT_URI
-    });
-    const profile = await verifyAppleIdToken(tokenPayload.id_token);
-    if (!profile.nonce || profile.nonce !== oauthSession.nonce) {
-      return redirectToFrontend(res, { oauth: 'error', reason: 'apple_nonce_mismatch' });
-    }
-    await completeOAuthLogin({ req, res, profile });
-    return redirectToFrontend(res, { oauth: 'success', provider: 'apple' });
-  } catch {
-    return redirectToFrontend(res, { oauth: 'error', reason: 'apple_exchange_failed' });
-  }
-}
-
-app.get('/api/auth/oauth/apple/callback', authLimiter, handleAppleCallback);
-app.post('/api/auth/oauth/apple/callback', authLimiter, handleAppleCallback);
-
-app.get('/api/auth/oauth/facebook/callback', authLimiter, async (req, res) => {
-  const state = String(req.query.state || '');
-  const code = String(req.query.code || '');
-  if (!state || !code) return redirectToFrontend(res, { oauth: 'error', reason: 'facebook_missing_code' });
-
-  const oauthSession = await consumeOAuthSessionByState({ provider: 'facebook', state });
-  if (!oauthSession) return redirectToFrontend(res, { oauth: 'error', reason: 'facebook_invalid_state' });
-
-  try {
-    const profile = await exchangeFacebookCodeForProfile({
-      code,
-      redirectUri: oauthSession.redirectUri || FACEBOOK_OAUTH_REDIRECT_URI
-    });
-    await completeOAuthLogin({ req, res, profile });
-    return redirectToFrontend(res, { oauth: 'success', provider: 'facebook' });
-  } catch {
-    return redirectToFrontend(res, { oauth: 'error', reason: 'facebook_exchange_failed' });
-  }
-});
-
-app.post('/api/auth/oauth/session', authLimiter, async (req, res) => {
-  const parsed = oauthSessionSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid oauth session payload.' });
-  const redirectUri =
-    parsed.data.provider === 'google'
-      ? GOOGLE_OAUTH_REDIRECT_URI
-      : parsed.data.provider === 'apple'
-      ? APPLE_OAUTH_REDIRECT_URI
-      : FACEBOOK_OAUTH_REDIRECT_URI;
-  const session = await createOAuthSession(parsed.data.provider, redirectUri);
-  return res.json({
-    oauthSessionId: session.id,
-    provider: session.provider,
-    state: session.state,
-    nonce: session.nonce,
-    expiresAt: session.expiresAt
-  });
-});
-
-app.post('/api/auth/oauth/google', authLimiter, async (req, res) => {
-  const parsed = oauthLoginSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid OAuth payload.' });
-
-  const oauthSession = await consumeOAuthSessionById({ id: parsed.data.oauthSessionId, provider: 'google', state: parsed.data.state });
-  if (!oauthSession) return res.status(401).json({ error: 'Invalid or expired OAuth session.' });
-
-  let profile = null;
-  try {
-    profile = await verifyGoogleIdToken(parsed.data.idToken);
-  } catch (error) {
-    return res.status(401).json({ error: error?.message || 'Google token validation failed.' });
-  }
-  if (!profile.nonce || profile.nonce !== oauthSession.nonce) {
-    return res.status(401).json({ error: 'Google nonce mismatch.' });
-  }
-  const payload = await completeOAuthLogin({ req, res, profile });
-  return res.json(payload);
-});
-
-app.post('/api/auth/oauth/apple', authLimiter, async (req, res) => {
-  const parsed = oauthLoginSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid OAuth payload.' });
-
-  const oauthSession = await consumeOAuthSessionById({ id: parsed.data.oauthSessionId, provider: 'apple', state: parsed.data.state });
-  if (!oauthSession) return res.status(401).json({ error: 'Invalid or expired OAuth session.' });
-
-  let profile = null;
-  try {
-    profile = await verifyAppleIdToken(parsed.data.idToken);
-  } catch (error) {
-    return res.status(401).json({ error: error?.message || 'Apple token validation failed.' });
-  }
-  if (!profile.nonce || profile.nonce !== oauthSession.nonce) {
-    return res.status(401).json({ error: 'Apple nonce mismatch.' });
-  }
-  const payload = await completeOAuthLogin({ req, res, profile });
-  return res.json(payload);
-});
-
+app.use(
+  '/api',
+  buildAuthLocalRouter({
+    authLimiter,
+    registrationEnabled: REGISTRATION_ENABLED,
+    registerSchema,
+    loginSchema,
+    loginMfaVerifySchema,
+    passwordResetRequestSchema,
+    passwordResetConfirmSchema,
+    emailVerifySchema,
+    sendMachineError,
+    withDb,
+    readDb,
+    hashPassword,
+    verifyPassword,
+    logAuthEvent,
+    upsertUserLead,
+    issueSessionTokens,
+    buildSessionResponsePayload,
+    resolveUserPlan,
+    userIsLocked,
+    registerFailedLogin,
+    resetUserLoginFailures,
+    hashPasswordResetToken,
+    buildPasswordResetUrl,
+    hashEmailVerifyToken,
+    buildEmailVerifyUrl,
+    sendMail,
+    nanoid,
+    randomBytes,
+    addDays,
+    logger,
+    speakeasy,
+    loginDummyPasswordHash: LOGIN_DUMMY_PASSWORD_HASH
+  })
+);
+app.use(
+  buildAuthOAuthRouter({
+    authLimiter,
+    frontendUrl: FRONTEND_URL,
+    googleOAuthRedirectUri: GOOGLE_OAUTH_REDIRECT_URI,
+    appleOAuthRedirectUri: APPLE_OAUTH_REDIRECT_URI,
+    facebookOAuthRedirectUri: FACEBOOK_OAUTH_REDIRECT_URI,
+    ensureOAuthBrowserBinding,
+    createOAuthSession,
+    clearOAuthBrowserBinding,
+    resolveOAuthBindingHash,
+    consumeOAuthSessionByState,
+    consumeOAuthSessionById,
+    exchangeGoogleCodeForTokens,
+    exchangeAppleCodeForTokens,
+    exchangeFacebookCodeForProfile,
+    verifyGoogleIdToken,
+    verifyAppleIdToken,
+    completeOAuthLogin
+  })
+);
 app.use(
   '/api',
   buildAuthSessionRouter({
     authGuard,
+    requireSessionAuth,
     csrfGuard,
     withDb,
     readDb,
@@ -2641,165 +2380,54 @@ app.use(
     signAccessToken,
     speakeasy,
     QRCode,
-    mfaCodeSchema
+    mfaCodeSchema,
+    includeAccessTokenInResponse: AUTH_RETURN_ACCESS_TOKEN
   })
 );
-app.get('/api/outbound/resolve', async (req, res) => {
-  const parsed = outboundResolveSchema.safeParse(req.query);
-  if (!parsed.success) {
-    return sendMachineError(req, res, 400, 'invalid_payload', {
-      message: parsed.error.issues[0]?.message ?? 'Controlla i dati inseriti e riprova.'
-    });
-  }
+app.use(
+  buildOutboundRouter({
+    authGuard,
+    requireSessionAuth,
+    adminGuard,
+    requireApiScope,
+    quotaGuard,
+    optionalAuth,
+    withDb,
+    sendMachineError,
+    resolveOutboundPartnerUrl: (payload) => flightProviderRegistry.resolveOutboundPartnerUrl(payload),
+    ensureAllowedOutboundUrl: (rawUrl) => flightProviderRegistry.ensureAllowedUrl(rawUrl),
+    allowedPartners: flightProviderRegistry.allowedPartners,
+    outboundClickSecret: OUTBOUND_CLICK_SECRET,
+    outboundClickTtlSeconds: OUTBOUND_CLICK_TTL_SECONDS,
+    outboundMaxQueryChars: OUTBOUND_MAX_QUERY_CHARS
+  })
+);
 
-  const payload = parsed.data;
-  let resolvedUrl;
-  try {
-    resolvedUrl = resolveOutboundPartnerUrl(payload);
-  } catch (error) {
-    return sendMachineError(req, res, 400, 'invalid_payload', { message: error?.message || 'Outbound URL non valida.' });
+/**
+ * Returns affiliate booking links for all configured partners for a given itinerary.
+ * Used by the frontend to show "Book on Kiwi / Skyscanner / etc." CTAs.
+ */
+app.get('/api/affiliate/links', async (req, res) => {
+  const { origin, destination, dateFrom, dateTo, travellers = '1', cabin = 'economy' } = req.query;
+  if (!origin || !destination || !dateFrom) {
+    return res.status(400).json({ error: 'origin, destination and dateFrom are required.' });
   }
-
-  const clickId = nanoid(12);
-  const issuedAt = new Date().toISOString();
-  const expiresAt = new Date(Date.now() + OUTBOUND_CLICK_TTL_SECONDS * 1000).toISOString();
-  const clickToken = createOutboundClickToken({ clickId, targetUrl: resolvedUrl, expiresAt });
-  const auth = optionalAuth(req);
-  await withDb(async (db) => {
-    db.outboundRedirects = db.outboundRedirects || [];
-    db.outboundRedirects.push({
-      id: clickId,
-      clickId,
-      issuedAt,
-      expiresAt,
-      clickToken,
-      userId: auth?.sub || null,
-      partner: payload.partner,
-      url: resolvedUrl,
-      surface: payload.surface,
-      origin: payload.origin,
-      destinationIata: payload.destinationIata,
-      destination: payload.destination || payload.destinationIata,
-      stopCount: payload.stopCount,
-      comfortScore: payload.comfortScore,
-      connectionType: payload.connectionType,
-      travelTime: payload.travelTime,
-      utmSource: payload.utmSource,
-      utmMedium: payload.utmMedium,
-      utmCampaign: payload.utmCampaign
-    });
-    db.outboundRedirects = db.outboundRedirects
-      .filter((entry) => new Date(entry.expiresAt).getTime() > Date.now())
-      .slice(-10000);
-    return db;
+  const links = buildAllAffiliateLinks({
+    origin: String(origin).toUpperCase().slice(0, 3),
+    destinationIata: String(destination).toUpperCase().slice(0, 3),
+    dateFrom: String(dateFrom).slice(0, 10),
+    dateTo: dateTo ? String(dateTo).slice(0, 10) : null,
+    travellers: Math.min(9, Math.max(1, Number(travellers) || 1)),
+    cabinClass: ['economy', 'premium', 'business'].includes(String(cabin)) ? cabin : 'economy'
   });
-
-  res.setHeader('Cache-Control', 'no-store');
-  return res.redirect(302, `/go/${clickId}`);
-});
-
-app.get('/go/:clickId', async (req, res) => {
-  const clickId = String(req.params.clickId || '').trim();
-  const auth = optionalAuth(req);
-  if (!/^[A-Za-z0-9_-]{8,40}$/.test(clickId)) {
-    return sendMachineError(req, res, 400, 'invalid_payload', { message: 'Link non valido.' });
-  }
-
-  let redirectEntry = null;
-  await withDb(async (db) => {
-    db.outboundRedirects = (db.outboundRedirects || []).filter((entry) => new Date(entry.expiresAt).getTime() > Date.now());
-    redirectEntry = db.outboundRedirects.find((entry) => entry.clickId === clickId) || null;
-    if (!redirectEntry) return db;
-    db.outboundRedirects = db.outboundRedirects.filter((entry) => entry.clickId !== clickId);
-    db.outboundClicks.push({
-      id: nanoid(10),
-      at: new Date().toISOString(),
-      clickId: redirectEntry.clickId,
-      userId: redirectEntry.userId || auth?.sub || null,
-      partner: redirectEntry.partner,
-      url: redirectEntry.url,
-      surface: redirectEntry.surface,
-      origin: redirectEntry.origin,
-      destinationIata: redirectEntry.destinationIata,
-      destination: redirectEntry.destination,
-      stopCount: redirectEntry.stopCount,
-      comfortScore: redirectEntry.comfortScore,
-      connectionType: redirectEntry.connectionType,
-      travelTime: redirectEntry.travelTime,
-      utmSource: redirectEntry.utmSource,
-      utmMedium: redirectEntry.utmMedium,
-      utmCampaign: redirectEntry.utmCampaign
-    });
-    db.outboundClicks = db.outboundClicks.slice(-5000);
-    return db;
-  });
-
-  if (!redirectEntry) {
-    return sendMachineError(req, res, 400, 'request_failed', { message: 'Il link è scaduto o non più valido.' });
-  }
-  if (!verifyOutboundClickToken({ clickId: redirectEntry.clickId, targetUrl: redirectEntry.url, expiresAt: redirectEntry.expiresAt, clickToken: redirectEntry.clickToken })) {
-    return sendMachineError(req, res, 400, 'request_failed', { message: 'Impossibile verificare il link di uscita.' });
-  }
-  if (new Date(redirectEntry.expiresAt).getTime() <= Date.now()) {
-    return sendMachineError(req, res, 400, 'request_failed', { message: 'Il link è scaduto. Riprova dalla ricerca.' });
-  }
-  try {
-    ensureAllowedOutboundUrl(redirectEntry.url);
-  } catch {
-    return sendMachineError(req, res, 400, 'request_failed', { message: 'Destinazione partner non consentita.' });
-  }
-
-  res.setHeader('Cache-Control', 'no-store');
-  return res.redirect(302, redirectEntry.url);
-});
-
-app.post('/api/outbound/click', async (req, res) => {
-  const parsed = outboundClickSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid outbound payload.' });
-
-  const auth = optionalAuth(req);
-  const payload = parsed.data;
-
-  await withDb(async (db) => {
-    db.outboundClicks.push({
-      id: nanoid(10),
-      at: new Date().toISOString(),
-      userId: auth?.sub || null,
-      ...payload
-    });
-    db.outboundClicks = db.outboundClicks.slice(-5000);
-    return db;
-  });
-
-  return res.status(201).json({ ok: true });
-});
-
-app.get('/api/outbound/report', authGuard, requireApiScope('read'), quotaGuard({ counter: 'read', amount: 1 }), async (req, res) => {
-  let report = null;
-  await withDb(async (db) => {
-    report = buildOutboundReport(db, 30);
-    return null;
-  });
-  return res.json(report);
-});
-
-app.get('/api/outbound/report.csv', authGuard, requireApiScope('export'), quotaGuard({ counter: 'export', amount: 1 }), async (req, res) => {
-  let report = null;
-  await withDb(async (db) => {
-    report = buildOutboundReport(db, 30);
-    return null;
-  });
-  const csv = outboundReportToCsv(report);
-  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.setHeader('Content-Disposition', `attachment; filename="outbound-report-${format(new Date(), 'yyyyMMdd-HHmm')}.csv"`);
-  return res.status(200).send(csv);
+  return res.json({ links });
 });
 
 app.post('/api/insights/destination', authGuard, csrfGuard, premiumGuard, requireApiScope('search'), quotaGuard({ counter: 'decision', amount: 1 }), async (req, res) => {
   const parsed = destinationInsightSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid payload.' });
 
-  const result = buildDestinationInsights(parsed.data);
+  const result = buildDestinationInsights(parsed.data, { searchFlights });
   return res.json(result);
 });
 
@@ -2823,14 +2451,33 @@ app.use(
 );
 // ── SaaS routes ───────────────────────────────────────────────────
 // Mount routers (they receive authGuard/csrfGuard from closure)
+app.use('/api/push',    buildPushRouter({ authGuard, csrfGuard }));
 app.use('/api/keys',    buildApiKeysRouter({ authGuard, csrfGuard }));
-app.use('/api/billing', buildBillingRouter({ authGuard, csrfGuard }));
+app.use('/api/billing', buildBillingRouter({ authGuard, requireSessionAuth, csrfGuard }));
 app.use('/api/usage',   buildUsageRouter({ authGuard }));
+app.use('/api',         buildUserExportRouter({ authGuard, requireSessionAuth, quotaGuard, withDb, readDb }));
 app.use('/', buildDealEngineRouter());
 app.use('/api/discovery', buildDiscoveryRouter({ authGuard, csrfGuard, quotaGuard, requireApiScope }));
-app.use('/api/opportunities', buildOpportunitiesRouter({ authGuard, csrfGuard, requireApiScope, quotaGuard, withDb, optionalAuth }));
+app.use('/api/opportunities', buildOpportunitiesRouter({ authGuard, requireSessionAuth, adminGuard, csrfGuard, requireApiScope, quotaGuard, withDb, optionalAuth }));
 
 app.use(errorHandler);
+
+// Legal pages — served before the SPA catch-all
+app.get('/privacy-policy', (_req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  return res.status(200).send(renderPrivacyPolicy());
+});
+app.get('/cookie-policy', (_req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  return res.status(200).send(renderCookiePolicy());
+});
+app.get('/terms', (_req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  return res.status(200).send(renderTermsOfService());
+});
 
 const distPath = resolve(process.cwd(), 'dist');
 if (existsSync(distPath)) {
@@ -2847,271 +2494,88 @@ if (existsSync(distPath)) {
   });
 }
 
-const httpServer = app.listen(PORT, () => {
-  logger.info({ port: PORT, version: BUILD_VERSION }, 'server_started');
+startRuntimeLifecycle({
+  app,
+  port: PORT,
+  buildVersion: BUILD_VERSION,
+  logger,
+  pgPool,
+  closeCacheClient,
+  shutdownTimeoutMs: SHUTDOWN_TIMEOUT_MS,
+  cronRetryAttempts: CRON_RETRY_ATTEMPTS,
+  cronRetryDelayMs: CRON_RETRY_DELAY_MS,
+  cronAllowOverlapJobsCsv: process.env.CRON_ALLOW_OVERLAP_JOBS,
+  runStartupTasks: RUN_STARTUP_TASKS,
+  bootstrapSeedImportFile: BOOTSTRAP_SEED_IMPORT_FILE,
+  bootstrapSeedImportDryRun: BOOTSTRAP_SEED_IMPORT_DRY_RUN,
+  schedules: {
+    cronSchedule: CRON_SCHEDULE,
+    aiPricingCron: AI_PRICING_CRON,
+    aiPricingTimezone: AI_PRICING_CRON_TIMEZONE,
+    freePrecomputeCron: FREE_PRECOMPUTE_CRON,
+    freeAlertWorkerCron: FREE_ALERT_WORKER_CRON,
+    freeJobsTimezone: FREE_JOBS_TIMEZONE,
+    dealBaselineCron: DEAL_BASELINE_CRON,
+    dealBaselineTimezone: DEAL_BASELINE_CRON_TIMEZONE,
+    discoveryAlertWorkerCron: DISCOVERY_ALERT_WORKER_CRON,
+    discoveryAlertWorkerTimezone: DISCOVERY_ALERT_WORKER_TIMEZONE,
+    priceIngestWorkerCron: PRICE_INGEST_WORKER_CRON,
+    priceIngestWorkerTimezone: PRICE_INGEST_WORKER_TIMEZONE,
+    opportunityPipelineCron: OPPORTUNITY_PIPELINE_CRON,
+    opportunityPipelineTimezone: OPPORTUNITY_PIPELINE_TIMEZONE,
+    ingestionJobsMaintenanceCron: INGESTION_JOBS_MAINTENANCE_CRON,
+    ingestionJobsMaintenanceTimezone: INGESTION_JOBS_MAINTENANCE_TIMEZONE,
+    routePriceStatsCron: ROUTE_PRICE_STATS_CRON,
+    routePriceStatsTimezone: ROUTE_PRICE_STATS_TIMEZONE,
+    detectedDealsCron: DETECTED_DEALS_CRON,
+    detectedDealsTimezone: DETECTED_DEALS_TIMEZONE,
+    dealsContentCron: DEALS_CONTENT_CRON,
+    dealsContentTimezone: DEALS_CONTENT_TIMEZONE,
+    priceAlertsCron: PRICE_ALERTS_CRON,
+    priceAlertsTimezone: PRICE_ALERTS_TIMEZONE,
+    radarMatchPrecomputeCron: RADAR_MATCH_PRECOMPUTE_CRON,
+    radarMatchPrecomputeTimezone: RADAR_MATCH_PRECOMPUTE_TIMEZONE,
+    flightScanSchedulerCron: FLIGHT_SCAN_SCHEDULER_CRON,
+    flightScanWorkerCron: FLIGHT_SCAN_WORKER_CRON,
+    flightScanTimezone: FLIGHT_SCAN_TIMEZONE,
+    providerCollectionCron: PROVIDER_COLLECTION_CRON,
+    providerCollectionTimezone: PROVIDER_COLLECTION_TIMEZONE
+  },
+  flags: {
+    routePriceStatsEnabled: ROUTE_PRICE_STATS_ENABLED,
+    detectedDealsEnabled: DETECTED_DEALS_ENABLED,
+    dealsContentEnabled: DEALS_CONTENT_ENABLED,
+    dealsContentRunOnStartup: DEALS_CONTENT_RUN_ON_STARTUP,
+    priceAlertsEnabled: PRICE_ALERTS_ENABLED,
+    flightScanEnabled: FLIGHT_SCAN_ENABLED,
+    providerCollectionEffectiveEnabled: PROVIDER_COLLECTION_EFFECTIVE_ENABLED
+  },
+  limits: {
+    priceAlertsWorkerLimit: PRICE_ALERTS_WORKER_LIMIT
+  },
+  jobs: {
+    scanSubscriptionsOnce,
+    monitorAndUpdateSubscriptionPricing,
+    runNightlyFreePrecompute,
+    runFreeAlertWorkerOnce,
+    runNightlyRouteBaselineJob,
+    runBaselineRecomputeOnce,
+    runDiscoveryAlertWorkerOnce,
+    runPriceIngestionWorkerOnce,
+    runOpportunityPipelineOnce,
+    runIngestionJobsMaintenance,
+    runRoutePriceStatsWorkerOnce,
+    runDetectedDealsWorkerOnce,
+    runDealsContentWorkerOnce,
+    runPriceAlertsWorkerOnce,
+    runRadarMatchPrecomputeOnce,
+    runFlightScanSchedulerOnce,
+    runFlightScanWorkerOnce,
+    runProviderCollectionOnce,
+    runSeedImportOnce
+  },
+  getDataFoundationStatus
 });
-const cronTasks = [];
-const cronRunningJobs = new Set();
-const CRON_ALLOW_OVERLAP_JOBS = new Set(
-  String(process.env.CRON_ALLOW_OVERLAP_JOBS || '')
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean)
-);
-
-function scheduleCronJob(name, expression, jobFn, options = {}) {
-  const task = cron.schedule(
-    expression,
-    async () => {
-      const overlapAllowed = CRON_ALLOW_OVERLAP_JOBS.has(name);
-      if (!overlapAllowed && cronRunningJobs.has(name)) {
-        logger.warn(
-          {
-            job: name,
-            schedule: expression,
-            timezone: options?.timezone || 'system'
-          },
-          'cron_job_skipped_overlap'
-        );
-        return;
-      }
-      if (!overlapAllowed) cronRunningJobs.add(name);
-      const startedAt = Date.now();
-      try {
-        let attempt = 0;
-        while (true) {
-          try {
-            await jobFn();
-            if (attempt > 0) {
-              logger.info({ job: name, retries: attempt }, 'cron_job_recovered_after_retry');
-            }
-            break;
-          } catch (error) {
-            if (attempt >= CRON_RETRY_ATTEMPTS) throw error;
-            attempt += 1;
-            logger.warn({ job: name, attempt, retryDelayMs: CRON_RETRY_DELAY_MS, err: error }, 'cron_job_retry_scheduled');
-            await new Promise((resolveDelay) => setTimeout(resolveDelay, CRON_RETRY_DELAY_MS));
-          }
-        }
-        logger.info(
-          {
-            job: name,
-            schedule: expression,
-            timezone: options?.timezone || 'system',
-            durationMs: Date.now() - startedAt
-          },
-          'cron_job_completed'
-        );
-      } catch (error) {
-        logger.error(
-          {
-            job: name,
-            schedule: expression,
-            timezone: options?.timezone || 'system',
-            durationMs: Date.now() - startedAt,
-            err: error
-          },
-          'cron_job_failed'
-        );
-      } finally {
-        if (!overlapAllowed) cronRunningJobs.delete(name);
-      }
-    },
-    options
-  );
-  cronTasks.push({ name, task });
-  return task;
-}
-
-async function runStartupTask(name, taskFn) {
-  const startedAt = Date.now();
-  try {
-    await taskFn();
-    logger.info({ task: name, durationMs: Date.now() - startedAt }, 'startup_task_completed');
-  } catch (error) {
-    logger.error({ task: name, durationMs: Date.now() - startedAt, err: error }, 'startup_task_failed');
-  }
-}
-
-async function bootstrapOpportunitySeedIfEmpty() {
-  const status = await getDataFoundationStatus();
-  const priceObservations = Number(status?.totals?.priceObservations || 0);
-  if (priceObservations > 0) {
-    logger.info({ priceObservations }, 'opportunity_seed_bootstrap_skipped_existing_data');
-    return { skipped: true, reason: 'existing_data', priceObservations };
-  }
-
-  const defaultSeedFile = resolve(process.cwd(), 'data', 'price-observations.template.csv');
-  if (!existsSync(defaultSeedFile)) {
-    logger.warn({ defaultSeedFile }, 'opportunity_seed_bootstrap_skipped_missing_seed_file');
-    return { skipped: true, reason: 'missing_seed_file' };
-  }
-
-  const seeded = await runSeedImportOnce({ filePath: defaultSeedFile, dryRun: false });
-  await runNightlyRouteBaselineJob({ reason: 'opportunity_seed_bootstrap' });
-  await runOpportunityPipelineOnce();
-  logger.info({ seeded }, 'opportunity_seed_bootstrap_completed');
-  return { skipped: false, seeded };
-}
-
-scheduleCronJob('notifications_scan', CRON_SCHEDULE, () => scanSubscriptionsOnce());
-scheduleCronJob('ai_pricing', AI_PRICING_CRON, () => monitorAndUpdateSubscriptionPricing({ reason: 'scheduled' }), { timezone: AI_PRICING_CRON_TIMEZONE });
-scheduleCronJob('free_precompute', FREE_PRECOMPUTE_CRON, () => runNightlyFreePrecompute({ reason: 'scheduled' }), { timezone: FREE_JOBS_TIMEZONE });
-scheduleCronJob('free_alert_worker', FREE_ALERT_WORKER_CRON, () => runFreeAlertWorkerOnce(), { timezone: FREE_JOBS_TIMEZONE });
-scheduleCronJob('route_baseline', DEAL_BASELINE_CRON, () => runNightlyRouteBaselineJob({ reason: 'scheduled' }), { timezone: DEAL_BASELINE_CRON_TIMEZONE });
-scheduleCronJob('baseline_recompute_worker', DEAL_BASELINE_CRON, () => runBaselineRecomputeOnce(), { timezone: DEAL_BASELINE_CRON_TIMEZONE });
-scheduleCronJob('discovery_alert_worker', DISCOVERY_ALERT_WORKER_CRON, () => runDiscoveryAlertWorkerOnce(), { timezone: DISCOVERY_ALERT_WORKER_TIMEZONE });
-scheduleCronJob('price_ingestion_worker', PRICE_INGEST_WORKER_CRON, () => runPriceIngestionWorkerOnce({ maxJobs: 500 }), { timezone: PRICE_INGEST_WORKER_TIMEZONE });
-scheduleCronJob('opportunity_pipeline_worker', OPPORTUNITY_PIPELINE_CRON, () => runOpportunityPipelineOnce(), { timezone: OPPORTUNITY_PIPELINE_TIMEZONE });
-scheduleCronJob('ingestion_jobs_maintenance', INGESTION_JOBS_MAINTENANCE_CRON, () => runIngestionJobsMaintenance({ force: true }), {
-  timezone: INGESTION_JOBS_MAINTENANCE_TIMEZONE
-});
-if (ROUTE_PRICE_STATS_ENABLED) {
-  scheduleCronJob('route_price_stats_worker', ROUTE_PRICE_STATS_CRON, () => runRoutePriceStatsWorkerOnce(), { timezone: ROUTE_PRICE_STATS_TIMEZONE });
-}
-if (DETECTED_DEALS_ENABLED) {
-  scheduleCronJob('detected_deals_worker', DETECTED_DEALS_CRON, () => runDetectedDealsWorkerOnce(), { timezone: DETECTED_DEALS_TIMEZONE });
-}
-if (DEALS_CONTENT_ENABLED) {
-  scheduleCronJob('deals_content_worker', DEALS_CONTENT_CRON, () => runDealsContentWorkerOnce(), { timezone: DEALS_CONTENT_TIMEZONE });
-}
-if (PRICE_ALERTS_ENABLED) {
-  scheduleCronJob('price_alerts_worker', PRICE_ALERTS_CRON, () => runPriceAlertsWorkerOnce({ limit: PRICE_ALERTS_WORKER_LIMIT }), {
-    timezone: PRICE_ALERTS_TIMEZONE
-  });
-}
-scheduleCronJob('radar_match_precompute_worker', RADAR_MATCH_PRECOMPUTE_CRON, () => runRadarMatchPrecomputeOnce(), { timezone: RADAR_MATCH_PRECOMPUTE_TIMEZONE });
-if (FLIGHT_SCAN_ENABLED) {
-  scheduleCronJob('flight_scan_scheduler', FLIGHT_SCAN_SCHEDULER_CRON, () => runFlightScanSchedulerOnce({ enabled: true }), { timezone: FLIGHT_SCAN_TIMEZONE });
-  scheduleCronJob('flight_scan_worker', FLIGHT_SCAN_WORKER_CRON, () => runFlightScanWorkerOnce({ enabled: true }), { timezone: FLIGHT_SCAN_TIMEZONE });
-}
-if (PROVIDER_COLLECTION_EFFECTIVE_ENABLED) {
-  scheduleCronJob('provider_collection_worker', PROVIDER_COLLECTION_CRON, () => runProviderCollectionOnce(), { timezone: PROVIDER_COLLECTION_TIMEZONE });
-}
-
-if (RUN_STARTUP_TASKS) {
-  runStartupTask('ai_pricing_startup_check', () => monitorAndUpdateSubscriptionPricing({ reason: 'startup' }));
-  runStartupTask('free_precompute_startup', () => runNightlyFreePrecompute({ reason: 'startup' }));
-  runStartupTask('route_baseline_startup', () => runNightlyRouteBaselineJob({ reason: 'startup' }));
-  runStartupTask('baseline_recompute_startup', () => runBaselineRecomputeOnce());
-  runStartupTask('discovery_alert_worker_startup', () => runDiscoveryAlertWorkerOnce({ limit: 200 }));
-  runStartupTask('price_ingestion_worker_startup', () => runPriceIngestionWorkerOnce({ maxJobs: 500 }));
-  runStartupTask('ingestion_jobs_maintenance_startup', () => runIngestionJobsMaintenance({ force: true }));
-  runStartupTask('opportunity_seed_bootstrap_startup', () => bootstrapOpportunitySeedIfEmpty());
-  runStartupTask('opportunity_pipeline_startup', () => runOpportunityPipelineOnce());
-  if (ROUTE_PRICE_STATS_ENABLED) {
-    runStartupTask('route_price_stats_startup', () => runRoutePriceStatsWorkerOnce());
-  }
-  if (DETECTED_DEALS_ENABLED) {
-    runStartupTask('detected_deals_startup', () => runDetectedDealsWorkerOnce());
-  }
-  if (DEALS_CONTENT_ENABLED && DEALS_CONTENT_RUN_ON_STARTUP) {
-    runStartupTask('deals_content_startup', () => runDealsContentWorkerOnce());
-  }
-  if (PRICE_ALERTS_ENABLED) {
-    runStartupTask('price_alerts_startup', () => runPriceAlertsWorkerOnce({ limit: PRICE_ALERTS_WORKER_LIMIT }));
-  }
-  runStartupTask('radar_match_precompute_startup', () => runRadarMatchPrecomputeOnce());
-  if (FLIGHT_SCAN_ENABLED) {
-    runStartupTask('flight_scan_scheduler_startup', () => runFlightScanSchedulerOnce({ enabled: true }));
-    runStartupTask('flight_scan_worker_startup', () => runFlightScanWorkerOnce({ enabled: true }));
-  }
-  if (PROVIDER_COLLECTION_EFFECTIVE_ENABLED) {
-    runStartupTask('provider_collection_startup', () => runProviderCollectionOnce());
-  }
-  if (BOOTSTRAP_SEED_IMPORT_FILE) {
-    runStartupTask('seed_import_startup', () => runSeedImportOnce({ filePath: BOOTSTRAP_SEED_IMPORT_FILE, dryRun: BOOTSTRAP_SEED_IMPORT_DRY_RUN }));
-  }
-} else {
-  logger.info({ runStartupTasks: false }, 'startup_tasks_skipped_disabled');
-}
-
-let shuttingDown = false;
-async function gracefulShutdown(signal, { exitCode = 0 } = {}) {
-  if (shuttingDown) return;
-  shuttingDown = true;
-  logger.warn({ signal }, 'shutdown_started');
-
-  for (const entry of cronTasks) {
-    try {
-      entry.task.stop();
-    } catch (error) {
-      logger.warn({ err: error, job: entry.name }, 'cron_job_stop_failed');
-    }
-  }
-
-  await Promise.race([
-    new Promise((resolveClose) => {
-      httpServer.close((error) => {
-        if (error) logger.error({ err: error }, 'http_server_close_failed');
-        else logger.info({}, 'http_server_closed');
-        resolveClose();
-      });
-    }),
-    new Promise((resolveTimeout) => {
-      setTimeout(() => {
-        logger.warn({ timeoutMs: SHUTDOWN_TIMEOUT_MS }, 'http_server_close_timeout');
-        resolveTimeout();
-      }, SHUTDOWN_TIMEOUT_MS);
-    })
-  ]);
-
-  if (pgPool) {
-    try {
-      await pgPool.end();
-      logger.info({}, 'pg_pool_closed');
-    } catch (error) {
-      logger.error({ err: error }, 'pg_pool_close_failed');
-    }
-  }
-  try {
-    await closeCacheClient();
-  } catch (error) {
-    logger.warn({ err: error }, 'cache_client_close_failed');
-  }
-
-  logger.info({ signal }, 'shutdown_completed');
-  process.exit(exitCode);
-}
-
-process.on('SIGINT', () => {
-  gracefulShutdown('SIGINT').catch((error) => {
-    logger.fatal({ err: error }, 'shutdown_failed');
-    process.exit(1);
-  });
-});
-
-process.on('SIGTERM', () => {
-  gracefulShutdown('SIGTERM').catch((error) => {
-    logger.fatal({ err: error }, 'shutdown_failed');
-    process.exit(1);
-  });
-});
-
-process.on('unhandledRejection', (reason) => {
-  logger.error({ err: reason }, 'unhandled_rejection');
-  if (process.env.NODE_ENV === 'production') {
-    gracefulShutdown('UNHANDLED_REJECTION', { exitCode: 1 }).catch((error) => {
-      logger.fatal({ err: error }, 'shutdown_failed_after_unhandled_rejection');
-      process.exit(1);
-    });
-  }
-});
-
-process.on('uncaughtException', (error) => {
-  logger.fatal({ err: error }, 'uncaught_exception');
-  gracefulShutdown('UNCAUGHT_EXCEPTION', { exitCode: 1 }).catch((shutdownError) => {
-    logger.fatal({ err: shutdownError }, 'shutdown_failed_after_uncaught_exception');
-    process.exit(1);
-  });
-});
-
-
-
-
-
-
-
 
 
 

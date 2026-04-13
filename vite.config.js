@@ -28,6 +28,18 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:3000',
         changeOrigin: true
+      },
+      '/privacy-policy': {
+        target: 'http://localhost:3000',
+        changeOrigin: true
+      },
+      '/cookie-policy': {
+        target: 'http://localhost:3000',
+        changeOrigin: true
+      },
+      '/terms': {
+        target: 'http://localhost:3000',
+        changeOrigin: true
       }
     }
   }

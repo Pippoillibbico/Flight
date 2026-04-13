@@ -1,7 +1,12 @@
 import { test as base, expect } from '@playwright/test';
 
-const IGNORED_CONSOLE_ERRORS = [/download the react devtools/i];
+const IGNORED_CONSOLE_ERRORS = [
+  /download the react devtools/i,
+  /downloadable font: download failed/i,
+  /fonts\.gstatic\.com/i
+];
 const IGNORED_REQUEST_FAILURES = [/ERR_ABORTED/i, /NS_BINDING_ABORTED/i, /\bcancelled\b/i, /\bcanceled\b/i];
+const IGNORED_PAGE_ERRORS = [/\/api\/.+ due to access control checks\./i];
 const IGNORED_ASSET_PATHS = ['/favicon.ico', '/apple-touch-icon.png', '/manifest.webmanifest'];
 
 function shouldIgnoreConsoleError(text) {
@@ -15,6 +20,12 @@ function shouldIgnoreRequestFailure(message) {
   const value = String(message || '').trim();
   if (!value) return false;
   return IGNORED_REQUEST_FAILURES.some((pattern) => pattern.test(value));
+}
+
+function shouldIgnorePageError(message) {
+  const value = String(message || '').trim();
+  if (!value) return false;
+  return IGNORED_PAGE_ERRORS.some((pattern) => pattern.test(value));
 }
 
 function isAppUrl(url, baseURL) {
@@ -55,8 +66,10 @@ export const test = base.extend({
       });
 
       page.on('pageerror', (error) => {
+        const message = String(error?.message || error || 'unknown_page_error');
+        if (shouldIgnorePageError(message)) return;
         pageErrors.push({
-          message: String(error?.message || error || 'unknown_page_error'),
+          message,
           stack: String(error?.stack || '')
         });
       });

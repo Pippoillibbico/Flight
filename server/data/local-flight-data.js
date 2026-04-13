@@ -1,9 +1,9 @@
 export const ORIGINS = [
-  { code: 'MXP', label: 'Milano Malpensa (MXP)' },
-  { code: 'FCO', label: 'Roma Fiumicino (FCO)' },
-  { code: 'BLQ', label: 'Bologna (BLQ)' },
-  { code: 'VCE', label: 'Venezia (VCE)' },
-  { code: 'NAP', label: 'Napoli (NAP)' }
+  { code: 'MXP', city: 'Milano', label: 'Milano Malpensa (MXP)' },
+  { code: 'FCO', city: 'Roma', label: 'Roma Fiumicino (FCO)' },
+  { code: 'BLQ', city: 'Bologna', label: 'Bologna (BLQ)' },
+  { code: 'VCE', city: 'Venezia', label: 'Venezia (VCE)' },
+  { code: 'NAP', city: 'Napoli', label: 'Napoli (NAP)' }
 ];
 
 function bands(base, swing = 0.16) {

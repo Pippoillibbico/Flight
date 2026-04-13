@@ -21,7 +21,7 @@ function getTransporter() {
 }
 
 export async function sendMail({ to, subject, text, html }) {
-  const from = process.env.SMTP_FROM || 'Flight Suite <no-reply@flightsuite.local>';
+  const from = process.env.SMTP_FROM || 'Flight Suite <no-reply@mg.flight.clariter.cloud>';
   const tx = getTransporter();
   if (!tx) {
     return { sent: false, skipped: true, reason: 'smtp_not_configured' };

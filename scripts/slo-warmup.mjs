@@ -19,7 +19,7 @@ const excludedEndpointPrefixes = includeHealthEndpoints
       .filter(Boolean);
 
 const baseUrl = String(process.env.SLO_WARMUP_BASE_URL || defaultBaseUrl()).trim();
-const warmupEndpoint = normalizeEndpointPath(process.env.SLO_WARMUP_ENDPOINT || '/api/system/data-status');
+const warmupEndpoint = normalizeEndpointPath(process.env.SLO_WARMUP_ENDPOINT || '/api/health');
 const requestTimeoutMs = Math.max(250, Number(process.env.SLO_WARMUP_REQUEST_TIMEOUT_MS || 1500));
 const warmupMaxAttempts = Math.max(1, Number(process.env.SLO_WARMUP_MAX_ATTEMPTS || Math.max(120, SLO_MIN_REQUESTS * 2)));
 const warmupConcurrency = Math.max(1, Math.min(20, Number(process.env.SLO_WARMUP_CONCURRENCY || 5)));
@@ -29,7 +29,7 @@ const warmupReadEvery = Math.max(1, Number(process.env.SLO_WARMUP_READ_EVERY || 
 const autoStartServer = parseBoolean(process.env.SLO_WARMUP_AUTO_START_SERVER, true);
 const localProfile = parseBoolean(process.env.SLO_WARMUP_LOCAL_PROFILE, true);
 const allowSyntheticBackfill = parseBoolean(process.env.SLO_WARMUP_ALLOW_SYNTHETIC_BACKFILL, true);
-const syntheticEndpoint = normalizeEndpointPath(process.env.SLO_WARMUP_SYNTHETIC_ENDPOINT || '/api/system/data-status');
+const syntheticEndpoint = normalizeEndpointPath(process.env.SLO_WARMUP_SYNTHETIC_ENDPOINT || '/api/health');
 const syntheticMaxRows = Math.max(0, Number(process.env.SLO_WARMUP_MAX_SYNTHETIC_ROWS || 2000));
 const serverStartCmd = String(process.env.SLO_WARMUP_SERVER_CMD || 'node').trim();
 const serverStartArgs = parseArgs(process.env.SLO_WARMUP_SERVER_ARGS, ['server/index.js']);
@@ -58,7 +58,7 @@ function defaultBaseUrl() {
 
 function normalizeEndpointPath(rawValue) {
   const value = String(rawValue || '').trim();
-  if (!value) return '/api/system/data-status';
+  if (!value) return '/api/health';
   return value.startsWith('/') ? value : `/${value}`;
 }
 

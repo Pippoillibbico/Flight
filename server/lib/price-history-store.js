@@ -8,8 +8,12 @@ import { nanoid } from 'nanoid';
 import { getCacheClient } from './free-cache.js';
 import { logger } from './logger.js';
 
-const DB_FILE_URL = new URL('../../data/app.db', import.meta.url);
-const DB_FILE_PATH = fileURLToPath(DB_FILE_URL);
+const DEFAULT_DB_FILE_PATH = fileURLToPath(new URL('../../data/app.db', import.meta.url));
+// PRICE_HISTORY_DB_FILE lets tests point to an isolated temp file so multiple
+// test processes never write to the same SQLite database concurrently.
+function resolveDbFilePath() {
+  return process.env.PRICE_HISTORY_DB_FILE || DEFAULT_DB_FILE_PATH;
+}
 
 let initialized = false;
 let sqliteDb = null;
@@ -111,9 +115,10 @@ async function ensurePostgres() {
 
 async function ensureSqlite() {
   if (sqliteDb) return;
-  await mkdir(dirname(DB_FILE_PATH), { recursive: true });
+  const dbFilePath = resolveDbFilePath();
+  await mkdir(dirname(dbFilePath), { recursive: true });
   const sqlite = await import('node:sqlite');
-  sqliteDb = new sqlite.DatabaseSync(DB_FILE_PATH);
+  sqliteDb = new sqlite.DatabaseSync(dbFilePath);
   sqliteDb.exec(`
     PRAGMA journal_mode = WAL;
     CREATE TABLE IF NOT EXISTS routes (
@@ -547,6 +552,21 @@ export async function getPriceDatasetStatus() {
     routes: Number(routesRow.c || 0),
     lastIngestionAt: obsRow.ts || null
   };
+}
+
+/**
+ * Closes the SQLite connection and resets all module-level state.
+ * Call this in test teardown when using an isolated PRICE_HISTORY_DB_FILE
+ * so the next test run opens a fresh connection to the correct path.
+ * No-op when running against PostgreSQL.
+ */
+export function resetForTesting() {
+  if (sqliteDb) {
+    try { sqliteDb.close(); } catch {}
+    sqliteDb = null;
+  }
+  pgPool = null;
+  initialized = false;
 }
 
 export function buildSyntheticObservationFromCsvRow(row) {

@@ -1,16 +1,11 @@
 import { createIngestionJob, updateIngestionJob } from '../deal-engine-store.js';
+import { parseFlag } from '../env-flags.js';
 import { getCacheClient } from '../free-cache.js';
 import { logger } from '../logger.js';
 import { createScanQueue } from './scan-queue.js';
 import { createScanProviderAdapter } from './provider-adapter.js';
 import { normalizeProviderQuotes } from './quote-normalizer.js';
 import { createQuoteStorage } from './quote-storage.js';
-
-function parseFlag(value, fallback = false) {
-  const text = String(value ?? '').trim().toLowerCase();
-  if (!text) return fallback;
-  return ['1', 'true', 'yes', 'on'].includes(text);
-}
 
 function safeInt(value, fallback, min, max) {
   const out = Number(value);

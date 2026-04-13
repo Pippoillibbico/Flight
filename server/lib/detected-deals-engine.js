@@ -3,6 +3,7 @@ import { mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
+import { parseBoolean } from './env-flags.js';
 import { logger as rootLogger } from './logger.js';
 
 const SQLITE_DB_PATH = fileURLToPath(new URL('../../data/app.db', import.meta.url));
@@ -21,15 +22,6 @@ function clamp(value, min, max) {
 function toNumber(value, fallback = 0) {
   const out = Number(value);
   return Number.isFinite(out) ? out : fallback;
-}
-
-function toBoolean(value, fallback = false) {
-  if (value == null || value === '') return fallback;
-  if (typeof value === 'boolean') return value;
-  const normalized = String(value).trim().toLowerCase();
-  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
-  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
-  return fallback;
 }
 
 function round2(value) {
@@ -350,7 +342,7 @@ export function createDetectedDealsEngine(options = {}) {
       ),
       minScore: Math.max(0, Math.min(100, Number(runtimeOptions.minScore ?? options.minScore ?? process.env.DETECTED_DEALS_MIN_SCORE ?? 55))),
       publishScore: Math.max(0, Math.min(100, Number(runtimeOptions.publishScore ?? options.publishScore ?? process.env.DETECTED_DEALS_PUBLISH_SCORE ?? 68))),
-      publishFallbackEnabled: toBoolean(
+      publishFallbackEnabled: parseBoolean(
         runtimeOptions.publishFallbackEnabled ??
           options.publishFallbackEnabled ??
           process.env.DETECTED_DEALS_PUBLISH_FALLBACK_ENABLED,

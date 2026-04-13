@@ -17,6 +17,7 @@ import {
 import { runOpportunityPipelineOnce } from '../jobs/opportunity-pipeline-worker.js';
 import { canUseAITravel, canViewRareOpportunities, canViewUnlimitedOpportunities, resolveUserPlan } from '../lib/plan-access.js';
 import { getCacheClient } from '../lib/free-cache.js';
+import { followMetadataSchema } from '../lib/follow-metadata.js';
 
 const ORIGIN_COORDS = {
   FCO: { lat: 41.8003, lng: 12.2389 },
@@ -50,18 +51,18 @@ const feedQuerySchema = z.object({
   budget_bucket: z.string().trim().min(2).max(40).optional(),
   entity: z.string().trim().min(3).max(120).optional(),
   limit: z.coerce.number().int().min(1).max(60).optional().default(20)
-});
+}).strict();
 const clustersQuerySchema = z.object({
   region: z.string().trim().min(2).max(40).optional(),
   limit: z.coerce.number().int().min(1).max(40).optional().default(12)
-});
+}).strict();
 const followEntitySchema = z.object({
   entityType: z.enum(['city', 'country', 'region', 'airport', 'budget_bucket', 'season', 'theme', 'destination_cluster']),
   slug: z.string().trim().min(2).max(80),
   displayName: z.string().trim().min(2).max(120).optional(),
   followType: z.enum(['radar', 'destination', 'theme']).optional().default('radar'),
-  metadata: z.record(z.any()).optional().default({})
-});
+  metadata: followMetadataSchema.optional().default({})
+}).strict();
 
 const radarPreferenceSchema = z.object({
   originAirports: z.array(z.string().trim().length(3)).max(8).default([]),
@@ -69,18 +70,18 @@ const radarPreferenceSchema = z.object({
   favoriteCountries: z.array(z.string().trim().min(2).max(60)).max(12).default([]),
   budgetCeiling: z.coerce.number().positive().max(20000).nullable().optional(),
   preferredTravelMonths: z.array(z.number().int().min(1).max(12)).max(12).default([])
-});
+}).strict();
 
 const aiQuerySchema = z.object({
   prompt: z.string().trim().min(4).max(500),
   limit: z.coerce.number().int().min(1).max(30).optional().default(12)
-});
+}).strict();
 
 const budgetExploreSchema = z.object({
   origin: z.string().trim().length(3),
   budget_max: z.coerce.number().positive(),
   limit: z.coerce.number().int().min(1).max(80).optional().default(20)
-});
+}).strict();
 
 const OPPORTUNITY_FEED_SOURCE = 'travel_opportunities';
 
@@ -132,7 +133,16 @@ function findCountryCoords(countryName) {
   return countryCoords.get(key) || null;
 }
 
-export function buildOpportunitiesRouter({ authGuard, csrfGuard, requireApiScope, quotaGuard, withDb, optionalAuth }) {
+export function buildOpportunitiesRouter({
+  authGuard,
+  requireSessionAuth = (_req, _res, next) => next(),
+  adminGuard = (_req, _res, next) => next(),
+  csrfGuard,
+  requireApiScope,
+  quotaGuard,
+  withDb,
+  optionalAuth
+}) {
   const router = express.Router();
   const cache = getCacheClient();
   const exploreCacheTtlSec = Math.max(5, Math.min(300, Number(process.env.OPPORTUNITY_EXPLORE_CACHE_TTL_SEC || 60)));
@@ -315,23 +325,40 @@ export function buildOpportunitiesRouter({ authGuard, csrfGuard, requireApiScope
     }
   });
 
-  router.get('/pipeline/status', authGuard, requireApiScope('read'), quotaGuard({ counter: 'read', amount: 1 }), async (_req, res, next) => {
+  router.get(
+    '/pipeline/status',
+    authGuard,
+    requireSessionAuth,
+    adminGuard,
+    requireApiScope('read'),
+    quotaGuard({ counter: 'read', amount: 1 }),
+    async (_req, res, next) => {
     try {
       const status = await getOpportunityPipelineStats();
       return res.json({ status });
     } catch (error) {
       next(error);
     }
-  });
+    }
+  );
 
-  router.post('/pipeline/run', authGuard, csrfGuard, requireApiScope('alerts'), quotaGuard({ counter: 'alerts', amount: 1 }), async (_req, res, next) => {
+  router.post(
+    '/pipeline/run',
+    authGuard,
+    requireSessionAuth,
+    adminGuard,
+    csrfGuard,
+    requireApiScope('alerts'),
+    quotaGuard({ counter: 'alerts', amount: 1 }),
+    async (_req, res, next) => {
     try {
       const summary = await runOpportunityPipelineOnce();
       return res.json({ ok: true, summary });
     } catch (error) {
       next(error);
     }
-  });
+    }
+  );
 
   router.get('/radar/preferences', authGuard, requireApiScope('read'), quotaGuard({ counter: 'read', amount: 1 }), async (req, res) => {
     const userId = req.user?.sub || req.user?.id;
@@ -417,7 +444,7 @@ export function buildOpportunitiesRouter({ authGuard, csrfGuard, requireApiScope
         return null;
       });
       if (!user) return res.status(404).json({ error: 'User not found.' });
-      if (!canUseAITravel(user)) return res.status(402).json({ error: 'premium_required', message: 'AI Travel disponibile su ELITE.' });
+      if (!canUseAITravel(user)) return res.status(402).json({ error: 'premium_required', message: 'AI Travel is available on the ELITE plan.' });
 
       const result = await queryOpportunitiesByPrompt({
         prompt: parsed.data.prompt,

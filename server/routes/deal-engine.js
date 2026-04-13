@@ -1,4 +1,5 @@
 import express from 'express';
+import { timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import { ingestPriceObservation, initDealEngineStore, recomputeRouteBaselines, scoreDeal } from '../lib/deal-engine-store.js';
 import { findCheapestWindows } from '../lib/window-finder-engine.js';
@@ -20,15 +21,18 @@ const ingestSchema = z.object({
   observed_at: z.string().trim().optional(),
   source: z.string().trim().min(2).max(40).optional(),
   fingerprint: z.string().trim().min(20).max(128).optional(),
-  metadata: z.record(z.string(), z.any()).optional()
-});
+  metadata: z.record(
+    z.string().max(64),
+    z.union([z.string().max(200), z.number(), z.boolean(), z.null()])
+  ).optional()
+}).strict();
 
 const dealScoreSchema = z.object({
   origin: z.string().trim().length(3),
   destination: z.string().trim().length(3),
   departure_date: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/),
   price: z.coerce.number().positive()
-});
+}).strict();
 
 const engineWindowSchema = z.object({
   origin: z.string().trim().length(3),
@@ -41,7 +45,7 @@ const engineWindowSchema = z.object({
   travellers: z.coerce.number().int().min(1).max(9).optional().default(1),
   cabinClass: z.enum(['economy', 'premium', 'business']).optional().default('economy'),
   topN: z.coerce.number().int().min(1).max(50).optional().default(20)
-});
+}).strict();
 
 const engineDealsSchema = z.object({
   origin: z.string().trim().length(3),
@@ -54,7 +58,7 @@ const engineDealsSchema = z.object({
   travellers: z.coerce.number().int().min(1).max(9).optional().default(1),
   cabinClass: z.enum(['economy', 'premium', 'business']).optional().default('economy'),
   topN: z.coerce.number().int().min(1).max(30).optional().default(12)
-});
+}).strict();
 
 const alertSimSchema = z.object({
   origin: z.string().trim().length(3),
@@ -62,7 +66,14 @@ const alertSimSchema = z.object({
   date: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/),
   price: z.coerce.number().positive(),
   targetPrice: z.coerce.number().positive().optional()
-});
+}).strict();
+
+function secureEquals(left, right) {
+  const a = Buffer.from(String(left || ''), 'utf8');
+  const b = Buffer.from(String(right || ''), 'utf8');
+  if (a.length === 0 || b.length === 0 || a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
 
 function extractToken(req) {
   const auth = String(req.headers.authorization || '').trim();
@@ -74,7 +85,7 @@ function internalIngestGuard(req, res, next) {
   const expected = String(process.env.INTERNAL_INGEST_TOKEN || '').trim();
   if (!expected) return res.status(503).json({ error: 'ingest_token_not_configured' });
   const provided = extractToken(req);
-  if (!provided || provided !== expected) return res.status(401).json({ error: 'unauthorized' });
+  if (!provided || !secureEquals(provided, expected)) return res.status(401).json({ error: 'unauthorized' });
   return next();
 }
 
@@ -82,7 +93,7 @@ function adminOrDevGuard(req, res, next) {
   if (process.env.NODE_ENV !== 'production') return next();
   const adminKey = String(process.env.ENGINE_ADMIN_KEY || '').trim();
   const provided = String(req.headers['x-engine-admin-key'] || '').trim();
-  if (adminKey && provided && adminKey === provided) return next();
+  if (adminKey && provided && secureEquals(provided, adminKey)) return next();
   return res.status(403).json({ error: 'request_forbidden' });
 }
 
@@ -109,7 +120,11 @@ export function buildDealEngineRouter() {
         dataset,
         mode: {
           externalFlightProviders: String(process.env.ENABLE_EXTERNAL_FLIGHT_PARTNERS || 'false').toLowerCase() === 'true',
-          proprietaryLocalDefault: true
+          proprietaryLocalDefault: true,
+          // data_source is 'live' only when flight scan is enabled AND a provider is configured.
+          data_source: (process.env.FLIGHT_SCAN_ENABLED === 'true' &&
+            (process.env.ENABLE_PROVIDER_DUFFEL === 'true' || process.env.ENABLE_PROVIDER_AMADEUS === 'true'))
+            ? 'live' : 'internal'
         }
       });
     } catch (error) {

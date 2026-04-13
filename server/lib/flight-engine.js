@@ -2,6 +2,7 @@ import { differenceInCalendarDays, getDay, parseISO } from 'date-fns';
 import { ROUTES } from '../data/local-flight-data.js';
 import { detectDeal } from './deal-detector.js';
 import { logger } from './logger.js';
+import { buildAffiliateLink } from './affiliate-links.js';
 
 function normalizeText(text) {
   return String(text || '')
@@ -139,16 +140,9 @@ function buildRouteVariants(route, origin, dateFrom, dateTo, travellers, cabinCl
   });
 }
 
-export function buildBookingLink({ origin, destinationIata, dateFrom, dateTo, travellers, cabinClass }) {
-  const base = String(process.env.BOOKING_BASE_URL || 'https://booking.travel-decision-engine.com/search');
-  const url = new URL(base);
-  url.searchParams.set('origin', origin);
-  url.searchParams.set('destination', destinationIata);
-  url.searchParams.set('dateFrom', dateFrom);
-  if (dateTo) url.searchParams.set('dateTo', dateTo);
-  url.searchParams.set('travellers', String(travellers));
-  url.searchParams.set('cabin', cabinClass);
-  return url.toString();
+export function buildBookingLink({ origin, destinationIata, dateFrom, dateTo, travellers, cabinClass, partner }) {
+  const { url } = buildAffiliateLink({ origin, destinationIata, dateFrom, dateTo, travellers, cabinClass, partner });
+  return url;
 }
 
 export function searchFlights({

@@ -1,6 +1,7 @@
 import pino from 'pino';
 import { mkdirSync, readdirSync, renameSync, statSync, unlinkSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
+import { anonymizeIpForLogs, hashValueForLogs, redactUrlForLogs, sanitizeHeaderLikeValue } from './log-redaction.js';
 
 const isProd = process.env.NODE_ENV === 'production';
 const logDir = resolve(process.cwd(), 'data', 'logs');
@@ -124,15 +125,16 @@ export function requestLogger(req, res, next) {
 
   res.on('finish', () => {
     const durationMs = Number(process.hrtime.bigint() - start) / 1_000_000;
+    const endpoint = redactUrlForLogs(req.originalUrl || req.url, { preserveOrigin: false, maxLength: 260 });
     const payload = {
       user_id: req.user?.sub || req.user?.id || null,
       request_id: req.id || null,
       method: req.method,
-      endpoint: req.originalUrl || req.url,
+      endpoint,
       status_code: res.statusCode,
-      ip: req.ip || req.socket?.remoteAddress || null,
-      user_agent: String(req.headers['user-agent'] || ''),
-      referer: String(req.headers.referer || ''),
+      ip_hash: anonymizeIpForLogs(req.ip || req.socket?.remoteAddress || ''),
+      user_agent: sanitizeHeaderLikeValue(req.headers['user-agent'] || '', { maxLength: 220 }),
+      referer: redactUrlForLogs(req.headers.referer || '', { preserveOrigin: true, maxLength: 240 }),
       durationMs: Number(durationMs.toFixed(2))
     };
     const endpointPath = normalizeEndpointPath(payload.endpoint);
@@ -159,7 +161,12 @@ export function requestLogger(req, res, next) {
 }
 
 export function logAuthEvent(payload, event = 'auth_event') {
-  logger.info({ category: 'auth', ...payload }, event);
+  const safePayload = { ...payload };
+  if (safePayload.email) {
+    safePayload.email_hash = hashValueForLogs(String(safePayload.email || '').toLowerCase(), { label: 'email', length: 16 });
+  }
+  delete safePayload.email;
+  logger.info({ category: 'auth', ...safePayload }, event);
 }
 
 export function logSecurityEvent(payload, event = 'security_event') {

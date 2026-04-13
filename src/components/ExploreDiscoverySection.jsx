@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { validateProps } from '../utils/validateProps';
+import { localizeCityName, localizeCountryName } from '../utils/localizePlace';
 
 const WORLD_MAP_WIDTH = 840;
 const WORLD_MAP_HEIGHT = 380;
@@ -8,6 +9,7 @@ const ExploreDiscoverySectionPropsSchema = z
   .object({
     t: z.function().optional(),
     language: z.string().optional().default('it'),
+    dataSource: z.enum(['live', 'synthetic', 'internal']).optional().default('synthetic'),
     origins: z.array(z.any()),
     value: z
       .object({
@@ -93,6 +95,19 @@ function formatStops(stops, labels) {
   return `${parsed} ${labels.stops}`;
 }
 
+function formatAirlineLabel(value, fallback = 'unknown') {
+  const raw = String(value || '').trim();
+  if (!raw) return fallback;
+  if (raw === 'seed_demo_partner') return 'Partner demo';
+  if (raw === 'unknown') return fallback;
+  if (!raw.includes('_')) return raw;
+  return raw
+    .split('_')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(' ');
+}
+
 function formatTravelWindow(item, labels) {
   if (item?.depart_date && item?.return_date) return `${item.depart_date} - ${item.return_date}`;
   if (item?.depart_date) return `${labels.departure} ${item.depart_date}`;
@@ -103,6 +118,7 @@ function ExploreDiscoverySection(props) {
   const {
     t,
     language,
+    dataSource,
     origins,
     value,
     onChange,
@@ -120,17 +136,26 @@ function ExploreDiscoverySection(props) {
 
   const tt = (key, fallback) => (typeof t === 'function' ? t(key) : fallback) || fallback;
   const locale = String(language || 'it').toLowerCase().startsWith('en') ? 'en-US' : 'it-IT';
+  const isLiveData = dataSource === 'live';
   const labels = {
     title: tt('exploreDiscoveryTitle', 'Dove puoi andare spendendo poco'),
     subtitle: tt('exploreDiscoverySubtitle', 'Inserisci aeroporto e budget massimo per trovare subito le destinazioni migliori.'),
+    dataSourceLive: tt(
+      'exploreDiscoveryDataSourceLive',
+      'Dati live dai provider attivi. Le tariffe possono cambiare in tempo reale.'
+    ),
+    dataSourceSynthetic: tt(
+      'exploreDiscoveryDataSourceSynthetic',
+      'Modalita storico/demo: usa i risultati per orientarti e verifica sempre la tariffa finale prima di prenotare.'
+    ),
     origin: tt('exploreDiscoveryOriginLabel', 'Partenza'),
     budget: tt('exploreDiscoveryBudgetLabel', 'Budget massimo (EUR)'),
     cta: tt('exploreDiscoveryCta', 'Trova destinazioni'),
-    loading: tt('exploreDiscoveryLoading', 'Ricerca opportunita in corso...'),
+    loading: tt('exploreDiscoveryLoading', 'Ricerca opportunità in corso...'),
     noItems: tt('exploreDiscoveryNoItems', 'Nessuna destinazione trovata con questi criteri.'),
     budgetResults: tt('exploreDiscoveryResultsTitle', 'Migliori destinazioni nel budget'),
-    mapTitle: tt('exploreDiscoveryMapTitle', 'Mappa opportunita'),
-    mapLoading: tt('exploreDiscoveryMapLoading', 'Caricamento mappa opportunita...'),
+    mapTitle: tt('exploreDiscoveryMapTitle', 'Mappa opportunità'),
+    mapLoading: tt('exploreDiscoveryMapLoading', 'Caricamento mappa opportunità...'),
     noMap: tt('exploreDiscoveryNoMap', 'Coordinate non disponibili per i risultati correnti.'),
     direct: tt('opportunityFeedDirect', 'Diretto'),
     stops: tt('opportunityFeedStopsSuffix', 'scali'),
@@ -140,7 +165,7 @@ function ExploreDiscoverySection(props) {
     flexible: tt('opportunityFeedFlexibleDates', 'Date flessibili'),
     apply: tt('exploreDiscoveryApplyCta', 'Usa questa destinazione'),
     unknownAirline: tt('radarUnknownLabel', 'sconosciuto'),
-    mapHint: tt('exploreDiscoveryMapHint', 'Clicca un punto per selezionare la destinazione piu interessante.')
+    mapHint: tt('exploreDiscoveryMapHint', 'Clicca un punto per selezionare la destinazione più interessante.')
   };
 
   const normalizedPoints = mapPoints.map(normalizeMapPoint).filter(Boolean);
@@ -153,6 +178,9 @@ function ExploreDiscoverySection(props) {
         <h2>{labels.title}</h2>
       </div>
       <p className="muted">{labels.subtitle}</p>
+      <p className={`explore-data-source-note${isLiveData ? ' live' : ' synthetic'}`}>
+        {isLiveData ? labels.dataSourceLive : labels.dataSourceSynthetic}
+      </p>
       <form
         className="explore-discovery-form"
         onSubmit={(event) => {
@@ -177,6 +205,7 @@ function ExploreDiscoverySection(props) {
           {labels.budget}
           <input
             type="number"
+            inputMode="numeric"
             min={50}
             step={10}
             value={value?.budgetMax ?? ''}
@@ -202,6 +231,7 @@ function ExploreDiscoverySection(props) {
             {budgetItems.map((item) => {
               const destinationCode = String(item.destination_airport || '').toUpperCase();
               const active = destinationCode === String(selectedDestination || '').toUpperCase();
+              const localizedCountry = localizeCountryName(item.destination_country, language);
               return (
                 <article
                   key={`${destinationCode}-${item.min_price}`}
@@ -213,14 +243,14 @@ function ExploreDiscoverySection(props) {
                     onClick={() => onSelectDestination(destinationCode)}
                   >
                     <strong>
-                      {item.destination_city || destinationCode}
-                      {item.destination_country ? ` (${item.destination_country})` : ''}
+                      {localizeCityName(item.destination_city, language) || destinationCode}
+                      {localizedCountry ? ` (${localizedCountry})` : ''}
                     </strong>
                     <p>
                       {formatPrice(item.min_price, locale)} | {formatTripType(item.trip_type, labels)} | {formatStops(item.stops, labels)}
                     </p>
                     <p>
-                      {formatTravelWindow(item, labels)} | {item.airline || labels.unknownAirline}
+                      {formatTravelWindow(item, labels)} | {formatAirlineLabel(item.airline, labels.unknownAirline)}
                     </p>
                   </button>
                   <button type="button" className="ghost" onClick={() => onApplyDestination(item)}>
@@ -270,6 +300,23 @@ function ExploreDiscoverySection(props) {
                   />
                 ))}
 
+                {/* Equator and tropics reference lines */}
+                <line x1="0" x2={WORLD_MAP_WIDTH} y1="190" y2="190" className="explore-map-equator-line" />
+                <line x1="0" x2={WORLD_MAP_WIDTH} y1="140" y2="140" className="explore-map-tropic-line" />
+                <line x1="0" x2={WORLD_MAP_WIDTH} y1="240" y2="240" className="explore-map-tropic-line" />
+
+                {/* Continent labels for geographic context */}
+                {[
+                  { label: 'N. America', x: 148, y: 108 },
+                  { label: 'S. America', x: 228, y: 228 },
+                  { label: 'Europe', x: 422, y: 80 },
+                  { label: 'Africa', x: 442, y: 196 },
+                  { label: 'Asia', x: 618, y: 86 },
+                  { label: 'Oceania', x: 700, y: 252 }
+                ].map(({ label, x, y }) => (
+                  <text key={label} x={x} y={y} className="explore-map-continent-label">{label}</text>
+                ))}
+
                 {normalizedPoints.map((point) =>
                   point.origin ? (
                     <line
@@ -304,7 +351,7 @@ function ExploreDiscoverySection(props) {
                         onClick={() => onSelectDestination(point.id)}
                       >
                         <title>
-                          {point.city} - {formatPrice(point.price, locale)}
+                          {localizeCityName(point.city, language)} - {formatPrice(point.price, locale)}
                         </title>
                       </circle>
                     </g>

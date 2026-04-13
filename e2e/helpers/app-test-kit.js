@@ -10,6 +10,8 @@ const DEFAULT_USER = {
   onboardingDone: true
 };
 
+const DEFAULT_ADMIN_ALLOWLIST_EMAILS = ['giustinistefano9@gmail.com'];
+
 const DEFAULT_RADAR = {
   id: 'r1',
   originAirports: ['FCO'],
@@ -90,6 +92,84 @@ function createDefaultOpportunities(count = 6) {
   return Array.from({ length: count }, (_, idx) => createOpportunity(idx));
 }
 
+function normalizeEmail(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase();
+}
+
+function isAdminEmail(state, email) {
+  const allowlist = Array.isArray(state?.adminAllowlistEmails) && state.adminAllowlistEmails.length > 0
+    ? state.adminAllowlistEmails
+    : DEFAULT_ADMIN_ALLOWLIST_EMAILS;
+  const normalized = normalizeEmail(email);
+  if (!normalized) return false;
+  return allowlist.map((item) => normalizeEmail(item)).includes(normalized);
+}
+
+function buildAdminBackofficeMockReport(state) {
+  const telemetryEvents = Array.isArray(state.adminTelemetryEvents) ? state.adminTelemetryEvents : [];
+  const follows = Array.isArray(state.follows) ? state.follows : [];
+  const itineraryOpened = telemetryEvents.filter((event) => event?.eventType === 'itinerary_opened').length;
+  const bookingClicked = telemetryEvents.filter((event) => event?.eventType === 'booking_clicked').length;
+  const trackedRouteActions = telemetryEvents.filter(
+    (event) => event?.eventType === 'result_interaction_clicked' && event?.action === 'track_route'
+  ).length;
+  const upgradeClicked = telemetryEvents.filter(
+    (event) => event?.eventType === 'upgrade_cta_clicked' || event?.eventType === 'elite_cta_clicked'
+  ).length;
+
+  return {
+    generatedAt: new Date().toISOString(),
+    windowDays: 30,
+    overview: {
+      totalUsers: 1,
+      loginSessions: Number(state.isLoggedIn ? 1 : 0),
+      activeUsers24h: Number(state.isLoggedIn ? 1 : 0),
+      activeUsers7d: Number(state.isLoggedIn ? 1 : 0),
+      trackedRouteActions,
+      trackedRoutesTotal: follows.length,
+      itineraryOpens: itineraryOpened,
+      bookingClicks: bookingClicked,
+      upgradeClicks: upgradeClicked
+    },
+    funnel: {
+      steps: [
+        { key: 'login_completed', label: 'Login completed', count: Number(state.isLoggedIn ? 1 : 0), conversionPct: 100, dropOffPct: 0 },
+        { key: 'track_route_clicked', label: 'Track route clicked', count: trackedRouteActions, conversionPct: 100, dropOffPct: 0 },
+        { key: 'itinerary_opened', label: 'Itinerary opened', count: itineraryOpened, conversionPct: 100, dropOffPct: 0 },
+        { key: 'booking_clicked', label: 'Booking clicked', count: bookingClicked, conversionPct: 100, dropOffPct: 0 }
+      ]
+    },
+    behavior: {
+      topTrackedRoutes: [{ key: 'japan', label: 'Japan', count: trackedRouteActions }],
+      topViewedItineraries: [{ key: 'opp-1', label: 'opp-1', count: itineraryOpened }],
+      topBookingRoutes: [{ key: 'MXP-LIS', label: 'MXP-LIS', count: bookingClicked }],
+      topUpgradeSurfaces: [{ key: 'opportunity_feed_prompt', label: 'opportunity_feed_prompt', count: upgradeClicked }]
+    },
+    monetization: {
+      upgradeClicked,
+      planDistribution: [{ key: normalizePlan(state.user?.planType || 'free'), label: String(state.user?.planType || 'free').toUpperCase(), count: 1 }],
+      proInterestCount: telemetryEvents.filter((event) => event?.eventType === 'upgrade_primary_cta_clicked' && event?.planType === 'pro').length,
+      eliteInterestCount: telemetryEvents.filter((event) => event?.eventType === 'upgrade_primary_cta_clicked' && event?.planType === 'elite').length,
+      triggerSurfaces: [{ key: 'opportunity_feed_prompt', label: 'opportunity_feed_prompt', count: upgradeClicked }]
+    },
+    operations: {
+      authFailures24h: 0,
+      outboundRedirectFailures24h: 0,
+      rateLimitEvents24h: 0,
+      recentErrors: []
+    },
+    recentActivity: telemetryEvents.slice(-6).map((event, index) => ({
+      id: `act-${index + 1}`,
+      at: event?.at || new Date().toISOString(),
+      type: String(event?.eventType || 'unknown'),
+      label: String(event?.eventType || 'Unknown event'),
+      meta: event?.source ? `source: ${event.source}` : undefined
+    }))
+  };
+}
+
 export function createDefaultState(overrides = {}) {
   const baseState = {
     isLoggedIn: false,
@@ -110,6 +190,8 @@ export function createDefaultState(overrides = {}) {
       remainingToday: null,
       upgradeMessage: 'Sblocca tutte le opportunita con PRO'
     },
+    adminAllowlistEmails: [...DEFAULT_ADMIN_ALLOWLIST_EMAILS],
+    adminTelemetryEvents: [],
     billingProvider: 'braintree',
     radarPreferences: { ...DEFAULT_RADAR },
     opportunities: createDefaultOpportunities(6),
@@ -165,6 +247,12 @@ export function createDefaultState(overrides = {}) {
     ...baseState.feedAccess,
     ...(overrides.feedAccess || {})
   };
+  state.adminAllowlistEmails = Array.isArray(overrides.adminAllowlistEmails)
+    ? overrides.adminAllowlistEmails
+    : [...baseState.adminAllowlistEmails];
+  state.adminTelemetryEvents = Array.isArray(overrides.adminTelemetryEvents)
+    ? overrides.adminTelemetryEvents
+    : [...baseState.adminTelemetryEvents];
   state.notifications = Array.isArray(overrides.notifications) ? overrides.notifications : [...baseState.notifications];
   state.subscriptions = Array.isArray(overrides.subscriptions) ? overrides.subscriptions : [...baseState.subscriptions];
   state.follows = Array.isArray(overrides.follows) ? overrides.follows : [...baseState.follows];
@@ -223,14 +311,27 @@ export async function setupApiMocks(page, state) {
     if (path === '/api/config') {
       return json({
         origins: [
-          { code: 'FCO', label: 'Roma Fiumicino (FCO)' },
-          { code: 'MXP', label: 'Milano Malpensa (MXP)' }
+          { code: 'FCO', city: 'Roma', label: 'Roma Fiumicino (FCO)' },
+          { code: 'MXP', city: 'Milano', label: 'Milano Malpensa (MXP)' }
         ],
         regions: ['all', 'eu', 'asia', 'america', 'oceania'],
         cabins: ['economy', 'premium', 'business'],
         connectionTypes: ['all', 'direct', 'with_stops'],
         travelTimes: ['all', 'day', 'night'],
         countriesByRegion: {}
+      });
+    }
+
+    if (path === '/api/system/capabilities' && method === 'GET') {
+      return json({
+        capabilities: {
+          data_source: 'live',
+          providers: {
+            amadeus: true,
+            kiwi: true,
+            skyscanner: true
+          }
+        }
       });
     }
 
@@ -369,6 +470,21 @@ export async function setupApiMocks(page, state) {
     }
 
     if (path === '/api/auth/refresh') return json({ token: 'test-token' });
+    if (path === '/api/admin/telemetry' && method === 'POST') {
+      if (!state.isLoggedIn) return json({ error: 'auth_required' }, 401);
+      const body = parseRequestBody(request);
+      state.adminTelemetryEvents.push({
+        ...body,
+        at: body?.at || new Date().toISOString()
+      });
+      state.adminTelemetryEvents = state.adminTelemetryEvents.slice(-200);
+      return json({ ok: true }, 201);
+    }
+    if (path === '/api/admin/backoffice/report' && method === 'GET') {
+      if (!state.isLoggedIn) return json({ error: 'auth_required' }, 401);
+      if (!isAdminEmail(state, state.user?.email)) return json({ error: 'admin_access_denied' }, 403);
+      return json(buildAdminBackofficeMockReport(state));
+    }
     if (path === '/api/search/history') return json({ items: [] });
     if (path === '/api/watchlist') return json({ items: [] });
     if (path === '/api/security/activity') return json({ items: [] });
@@ -521,31 +637,206 @@ export async function setupApiMocks(page, state) {
   });
 }
 
-export async function bootLanding(page, state, { language = 'it' } = {}) {
+export async function bootLanding(page, state, { language = 'it', seedConsent = true } = {}) {
   await setupApiMocks(page, state);
-  await page.addInitScript(({ initialLanguage }) => {
-    window.localStorage.clear();
-    window.sessionStorage.clear();
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.addInitScript(({ initialLanguage, shouldSeedConsent }) => {
+    const bootstrapMarker = '__flight_e2e_bootstrap_done__';
+    const windowName = String(window.name || '');
+    const alreadyBootstrapped = windowName.includes(bootstrapMarker);
+    if (!alreadyBootstrapped) {
+      window.localStorage.clear();
+      window.sessionStorage.clear();
+      window.name = windowName ? `${windowName}|${bootstrapMarker}` : bootstrapMarker;
+    }
     if (initialLanguage) window.localStorage.setItem('flight_language', String(initialLanguage));
-  }, { initialLanguage: language });
-  await page.goto('/');
+    if (shouldSeedConsent) {
+      window.localStorage.setItem(
+        'flight_cookie_consent_v1',
+        JSON.stringify({
+          functional: true,
+          analytics: true,
+          version: 1,
+          ts: Date.now()
+        })
+      );
+    }
+  }, { initialLanguage: language, shouldSeedConsent: Boolean(seedConsent) });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page.locator('main.landing-shell')).toBeVisible();
+  await page.addStyleTag({
+    content: `
+      *,
+      *::before,
+      *::after {
+        animation: none !important;
+        transition: none !important;
+        scroll-behavior: auto !important;
+      }
+    `
+  });
+}
+
+const SIGN_IN_BUTTON_TEXTS = new Set([
+  'sign in',
+  'accedi',
+  'anmelden',
+  'connexion',
+  'iniciar sesión',
+  'iniciar sessao'
+]);
+
+async function isAuthenticatedUi(page) {
+  const headerButton = page.getByTestId('header-account-button');
+  const count = await headerButton.count().catch(() => 0);
+  if (count === 0) return false;
+  const text = String((await headerButton.textContent()) || '')
+    .trim()
+    .toLowerCase();
+  if (!text) return false;
+  return !SIGN_IN_BUTTON_TEXTS.has(text);
+}
+
+async function isLocatorVisible(locator) {
+  return locator.isVisible().catch(() => false);
+}
+
+async function clickLocatorIfVisible(locator) {
+  if (!(await isLocatorVisible(locator))) return false;
+  await locator.click({ force: true });
+  return true;
+}
+
+async function waitForAuthSurface(page, { timeoutMs = 5000, requireEmailForm = false } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (page.isClosed()) return false;
+    if (await isAuthenticatedUi(page)) return true;
+    const authShellVisible = await isLocatorVisible(page.locator('.auth-shell'));
+    const emailFormVisible = await isLocatorVisible(page.locator('.auth-email-form'));
+    if (requireEmailForm ? emailFormVisible : authShellVisible || emailFormVisible) return true;
+    await page.waitForTimeout(120).catch(() => {});
+  }
+  return false;
+}
+
+async function waitForLoggedInState(page, timeoutMs = 10000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (page.isClosed()) return false;
+    if (await isAuthenticatedUi(page)) return true;
+    const appShellVisible = await isLocatorVisible(page.locator('main.page.app-shell'));
+    const authShellStillOpen = await isLocatorVisible(page.locator('.auth-shell'));
+    if (appShellVisible && !authShellStillOpen) return true;
+    await page.waitForTimeout(120).catch(() => {});
+  }
+  return false;
 }
 
 export async function openEmailAuth(page) {
-  await page.locator('.landing-accedi-btn').first().click();
-  await expect(page.locator('.auth-shell')).toBeVisible();
-  if ((await page.locator('.auth-email-form').count()) === 0) {
-    await page.locator('.auth-provider-btn').first().click();
+  if (await isAuthenticatedUi(page)) return;
+  const authShell = page.locator('.auth-shell');
+  const authShellVisible = await isLocatorVisible(authShell);
+  if (!authShellVisible) {
+    const openers = [
+      async () => clickLocatorIfVisible(page.getByTestId('header-account-button')),
+      async () => clickLocatorIfVisible(page.getByTestId('landing-signin-button').first()),
+      async () => {
+        const mobileLoginButton = page.getByTestId('landing-signin-button-mobile').first();
+        if (!(await isLocatorVisible(mobileLoginButton))) {
+          const hamburger = page.locator('.landing-hamburger').first();
+          if (await isLocatorVisible(hamburger)) {
+            await hamburger.click({ force: true }).catch(() => {});
+          }
+        }
+        return clickLocatorIfVisible(mobileLoginButton);
+      }
+    ];
+    for (const openAuth of openers) {
+      if (await isAuthenticatedUi(page)) return;
+      if (await isLocatorVisible(authShell)) break;
+      const clicked = await openAuth();
+      if (!clicked) continue;
+      const opened = await waitForAuthSurface(page, { timeoutMs: 2500 });
+      if (opened) break;
+    }
   }
-  await expect(page.locator('.auth-email-form')).toBeVisible();
+  if (await isAuthenticatedUi(page)) return;
+  const authVisible = await waitForAuthSurface(page, { timeoutMs: 5000 });
+  if (!authVisible) {
+    throw new Error('Unable to open authentication modal from current UI state');
+  }
+  const backToOptionsButton = page.getByTestId('auth-back-to-options');
+  const hasEmailBackButton = await isLocatorVisible(backToOptionsButton);
+  if (!hasEmailBackButton) {
+    const emailButton = page.getByRole('button', { name: /email/i }).first();
+    await clickLocatorIfVisible(emailButton);
+  }
+  const emailReady = await waitForAuthSurface(page, { timeoutMs: 5000, requireEmailForm: true });
+  if (!emailReady) {
+    throw new Error('Unable to open email authentication form');
+  }
 }
 
-export async function loginFromUi(page, email = 'test@example.com', password = 'StrongPass!123') {
-  await openEmailAuth(page);
-  await page.locator('.auth-email-form input[type="email"]').fill(email);
-  await page.locator('.auth-email-form input[type="password"]').first().fill(password);
-  await page.locator('.auth-email-form button[type="submit"]').click();
+export async function loginFromUi(
+  page,
+  email = 'test@example.com',
+  password = 'StrongPass!123',
+  { targetSection = 'home' } = {}
+) {
+  if (await isAuthenticatedUi(page)) return;
+  let openEmailAttempts = 0;
+  while (openEmailAttempts < 2) {
+    try {
+      await openEmailAuth(page);
+      break;
+    } catch (error) {
+      openEmailAttempts += 1;
+      if (page.isClosed() || openEmailAttempts >= 2) throw error;
+      await page.waitForTimeout(150).catch(() => {});
+    }
+  }
+  if (await isAuthenticatedUi(page)) return;
+  await expect(page.getByTestId('auth-email-input')).toBeVisible();
+  await expect(page.getByTestId('auth-password-input')).toBeVisible();
+  await page.getByTestId('auth-email-input').fill(email);
+  await page.getByTestId('auth-password-input').fill(password);
+  const submitButton = page.getByTestId('auth-submit');
+  await submitButton.click({ force: true });
+  const loggedIn = await waitForLoggedInState(page, 10000);
+  if (!loggedIn) {
+    const authStillVisible = await isLocatorVisible(page.locator('.auth-email-form'));
+    if (authStillVisible) {
+      await submitButton.click({ force: true }).catch(() => {});
+    }
+    const loggedInAfterRetry = await waitForLoggedInState(page, 5000);
+    if (!loggedInAfterRetry) {
+      throw new Error('Login did not transition to authenticated app shell');
+    }
+  }
   await expect(page.locator('main.page.app-shell')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Test User' })).toBeVisible();
+  await expect(page.locator('.auth-shell')).toHaveCount(0);
+  const normalizedSection = String(targetSection || '').trim().toLowerCase();
+  if (normalizedSection === 'home') {
+    await ensureHomeSection(page);
+  }
+}
+
+export async function ensureHomeSection(page) {
+  await expect(page.locator('main.page.app-shell')).toBeVisible();
+  const feedPanel = page.getByTestId('opportunity-feed-panel');
+  const isFeedVisible = await feedPanel.isVisible().catch(() => false);
+  if (!isFeedVisible) {
+    const homeByTestId = page.getByTestId('app-nav-home');
+    const hasStableHomeSelector = (await homeByTestId.count().catch(() => 0)) > 0;
+    if (hasStableHomeSelector) {
+      await expect(homeByTestId).toBeVisible();
+      await homeByTestId.click({ force: true });
+    } else {
+      const homeButton = page.locator('.app-main-nav').getByRole('button', { name: /home/i });
+      await expect(homeButton.first()).toBeVisible();
+      await homeButton.first().click({ force: true });
+    }
+  }
+  await expect(page.getByTestId('opportunity-feed-panel')).toBeVisible();
 }

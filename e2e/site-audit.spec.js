@@ -1,5 +1,5 @@
 import { expect, test } from './helpers/guarded-test';
-import { bootLanding, createDefaultState, loginFromUi, openEmailAuth } from './helpers/app-test-kit';
+import { bootLanding, createDefaultState, ensureHomeSection, loginFromUi, openEmailAuth } from './helpers/app-test-kit';
 
 test.beforeEach(async ({ page }) => {
   await bootLanding(page, createDefaultState());
@@ -38,32 +38,39 @@ test('login enters app shell and main navigation is available', async ({ page })
 
 test('feed, detail, radar, ai travel and premium are navigable', async ({ page }) => {
   await loginFromUi(page);
+  await ensureHomeSection(page);
 
-  await expect(page.getByText('Le opportunita di oggi')).toBeVisible();
-  await page.getByRole('button', { name: /Vedi itinerario/i }).first().click();
+  await expect(page.locator('.opportunity-feed-panel')).toBeVisible();
+  await expect(page.locator('.opportunity-card').first()).toBeVisible();
+  await page.locator('[data-testid^="opportunity-view-"]').first().click();
   await expect(page.locator('.opportunity-detail-panel')).toBeVisible();
-  await expect(page.getByText('Dettaglio opportunita')).toBeVisible();
+  await expect(page.locator('.opportunity-detail-panel .panel-head h2')).toBeVisible();
 
-  await page.locator('.app-main-nav').getByRole('button', { name: 'Radar', exact: true }).click();
-  await expect(page.getByText('Attiva il radar delle opportunita')).toBeVisible();
-  await page.getByRole('button', { name: 'Attiva radar' }).click();
-  await expect(page.getByText('Radar aggiornato con successo.')).toBeVisible();
+  await page.getByTestId('app-nav-radar').click({ force: true });
+  await expect(page.locator('.radar-panel')).toBeVisible();
+  const saveResponse = page.waitForResponse((response) => {
+    return (
+      response.url().includes('/api/opportunities/radar/preferences') &&
+      response.request().method() === 'PUT' &&
+      response.status() === 200
+    );
+  });
+  await page.getByTestId('radar-save-preferences').click({ force: true });
+  await saveResponse;
 
-  await page.locator('.app-main-nav').getByRole('button', { name: 'AI Travel', exact: true }).click();
-  await expect(page.getByText("Trova il prossimo viaggio con l'AI")).toBeVisible();
-  await page.locator('.ai-intake-box').fill('Tokyo da Roma con 500 euro a novembre');
-  await page.getByRole('button', { name: "Chiedi all'AI" }).click();
-  await expect(page.getByText(/Trovate \d+ opportunita reali\./)).toBeVisible();
+  await page.getByTestId('app-nav-ai-travel').click({ force: true });
+  await expect(page.getByTestId('ai-travel-run')).toBeVisible();
+  await page.getByTestId('ai-travel-prompt-input').fill('Tokyo da Roma con 500 euro a novembre');
+  await page.getByTestId('ai-travel-run').click();
+  await expect(page.getByTestId('ai-travel-summary')).toBeVisible();
 
-  await page.locator('.app-main-nav').getByRole('button', { name: 'Premium', exact: true }).click();
-  await expect(page.getByText('Sblocca tutte le opportunita')).toBeVisible();
+  await page.getByTestId('app-nav-premium').click({ force: true });
   await expect(page.locator('.premium-card')).toHaveCount(3);
   await expect(page.locator('.premium-card-featured')).toHaveCount(1);
 });
 
 test('mobile viewport has no horizontal overflow on landing', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.waitForTimeout(80);
   const dimensions = await page.evaluate(() => ({
     width: window.innerWidth,
     scrollWidth: document.documentElement.scrollWidth

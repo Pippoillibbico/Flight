@@ -4,6 +4,8 @@ import { logger as rootLogger } from './logger.js';
 import { sendMail } from './mailer.js';
 import { insertEmailDeliveryLog } from './sql-db.js';
 import { getPriceAlertsStore } from './price-alerts-store.js';
+import { sendVapidPush, isVapidConfigured } from './vapid-sender.js';
+import { listPushSubscriptionsForUser, removePushSubscriptionById } from './push-subscriptions-store.js';
 
 const PUSH_WEBHOOK_URL = String(process.env.PUSH_WEBHOOK_URL || '').trim();
 const PUSH_TIMEOUT_MS = Math.max(2000, Number(process.env.PUSH_TIMEOUT_MS || 8000));
@@ -82,7 +84,36 @@ async function pushToDeadLetter({ withDbImpl, userId, message, metadata, reason 
   });
 }
 
+async function sendVapidPushToUser({ userId, title, message, metadata, logger }) {
+  const subs = await listPushSubscriptionsForUser(userId);
+  if (!subs.length) return { sent: false, skipped: true, reason: 'no_subscriptions' };
+
+  let sentCount = 0;
+  for (const sub of subs) {
+    const result = await sendVapidPush(
+      { endpoint: sub.endpoint, keys: sub.keys },
+      { title, body: message, data: metadata || {} },
+      { logger }
+    );
+    if (result.sent) {
+      sentCount += 1;
+    } else if (result.expired) {
+      await removePushSubscriptionById(sub.id);
+    }
+  }
+  return sentCount > 0
+    ? { sent: true, reason: null, count: sentCount }
+    : { sent: false, reason: 'all_subscriptions_failed' };
+}
+
 async function sendPush({ withDbImpl, userId, title, message, metadata, logger }) {
+  // Prefer VAPID (native browser push) if configured and user has subscriptions
+  if (isVapidConfigured()) {
+    const vapidResult = await sendVapidPushToUser({ userId, title, message, metadata, logger });
+    if (vapidResult.sent || vapidResult.skipped) return vapidResult;
+  }
+
+  // Fallback: webhook relay
   if (!PUSH_WEBHOOK_URL) return { sent: false, skipped: true, reason: 'push_not_configured' };
 
   const payload = {

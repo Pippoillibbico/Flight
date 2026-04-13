@@ -26,11 +26,34 @@ test('runtime config audit passes when blocking keys are present', () => {
   assert.equal(audit.summary.blockingFailed, 0);
 });
 
+test('runtime config audit blocks production when outbound click secret is weak or reused', () => {
+  const jwtSecret = 'x'.repeat(48);
+  const audit = getRuntimeConfigAudit({
+    NODE_ENV: 'production',
+    BILLING_PROVIDER: 'braintree',
+    JWT_SECRET: jwtSecret,
+    OUTBOUND_CLICK_SECRET: jwtSecret,
+    AUDIT_LOG_HMAC_KEY: 'b'.repeat(32),
+    INTERNAL_INGEST_TOKEN: 'c'.repeat(32),
+    FRONTEND_ORIGIN: 'https://app.flightsuite.test',
+    DATABASE_URL: 'postgresql://user:pass@db.flightsuite.internal:5432/flight',
+    REDIS_URL: 'redis://cache.flightsuite.internal:6379',
+    BT_MERCHANT_ID: 'merchant_123456',
+    BT_PUBLIC_KEY: 'public_123456',
+    BT_PRIVATE_KEY: 'private_1234567890',
+    BT_ENVIRONMENT: 'sandbox'
+  });
+
+  assert.equal(audit.ok, false);
+  assert.ok(audit.blockingFailedKeys.includes('OUTBOUND_CLICK_SECRET'));
+});
+
 test('runtime config audit enforces braintree billing lock in production', () => {
   const audit = getRuntimeConfigAudit({
     NODE_ENV: 'production',
     BILLING_PROVIDER: 'stripe',
     JWT_SECRET: 'a'.repeat(48),
+    OUTBOUND_CLICK_SECRET: 'z'.repeat(32),
     AUDIT_LOG_HMAC_KEY: 'b'.repeat(32),
     INTERNAL_INGEST_TOKEN: 'c'.repeat(32),
     FRONTEND_ORIGIN: 'https://app.flightsuite.test',
@@ -40,6 +63,28 @@ test('runtime config audit enforces braintree billing lock in production', () =>
 
   assert.equal(audit.ok, false);
   assert.ok(audit.blockingFailedKeys.includes('BILLING_PROVIDER_PRODUCTION_LOCK'));
+});
+
+test('runtime config audit blocks production when mock billing upgrades are enabled', () => {
+  const audit = getRuntimeConfigAudit({
+    NODE_ENV: 'production',
+    BILLING_PROVIDER: 'braintree',
+    ALLOW_MOCK_BILLING_UPGRADES: 'true',
+    JWT_SECRET: 'a'.repeat(48),
+    OUTBOUND_CLICK_SECRET: 'z'.repeat(32),
+    AUDIT_LOG_HMAC_KEY: 'b'.repeat(32),
+    INTERNAL_INGEST_TOKEN: 'c'.repeat(32),
+    FRONTEND_ORIGIN: 'https://app.flightsuite.test',
+    DATABASE_URL: 'postgresql://user:pass@db.flightsuite.internal:5432/flight',
+    REDIS_URL: 'redis://cache.flightsuite.internal:6379',
+    BT_MERCHANT_ID: 'merchant_123456',
+    BT_PUBLIC_KEY: 'public_123456',
+    BT_PRIVATE_KEY: 'private_1234567890',
+    BT_ENVIRONMENT: 'sandbox'
+  });
+
+  assert.equal(audit.ok, false);
+  assert.ok(audit.blockingFailedKeys.includes('ALLOW_MOCK_BILLING_UPGRADES'));
 });
 
 test('runtime config audit fails when Duffel is enabled without API key', () => {
@@ -98,6 +143,7 @@ test('runtime config audit fails in production when deals content has no deliver
     NODE_ENV: 'production',
     BILLING_PROVIDER: 'braintree',
     JWT_SECRET: 'a'.repeat(48),
+    OUTBOUND_CLICK_SECRET: 'z'.repeat(32),
     AUDIT_LOG_HMAC_KEY: 'b'.repeat(32),
     INTERNAL_INGEST_TOKEN: 'c'.repeat(32),
     FRONTEND_ORIGIN: 'https://app.flightsuite.test',
@@ -123,6 +169,7 @@ test('runtime config audit passes deals content channel check with in-app delive
     NODE_ENV: 'production',
     BILLING_PROVIDER: 'braintree',
     JWT_SECRET: 'a'.repeat(48),
+    OUTBOUND_CLICK_SECRET: 'z'.repeat(32),
     AUDIT_LOG_HMAC_KEY: 'b'.repeat(32),
     INTERNAL_INGEST_TOKEN: 'c'.repeat(32),
     FRONTEND_ORIGIN: 'https://app.flightsuite.test',
@@ -132,6 +179,8 @@ test('runtime config audit passes deals content channel check with in-app delive
     BT_PUBLIC_KEY: 'public_123456',
     BT_PRIVATE_KEY: 'private_1234567890',
     BT_ENVIRONMENT: 'sandbox',
+    BT_PLAN_PRO_ID: 'plan_pro_test',
+    BT_PLAN_CREATOR_ID: 'plan_elite_test',
     DEALS_CONTENT_ENABLED: 'true',
     DEALS_CONTENT_INAPP_ENABLED: 'true'
   });

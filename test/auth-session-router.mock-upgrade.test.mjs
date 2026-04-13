@@ -15,11 +15,12 @@ async function withServer(app, fn) {
   }
 }
 
-function createApp({ db, authEvents }) {
+function createApp({ db, authEvents, authSource = 'cookie' }) {
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
     req.user = { sub: 'u1', email: 'user@example.com' };
+    req.authSource = authSource;
     next();
   });
 
@@ -27,6 +28,8 @@ function createApp({ db, authEvents }) {
     '/api',
     buildAuthSessionRouter({
       authGuard: (_req, _res, next) => next(),
+      requireSessionAuth: (req, res, next) =>
+        req.authSource === 'cookie' ? next() : res.status(403).json({ error: 'session_auth_required' }),
       csrfGuard: (_req, _res, next) => next(),
       withDb: async (fn) => fn(db),
       readDb: async () => db,
@@ -122,6 +125,36 @@ test('upgrade mock endpoints can be enabled explicitly for non-production enviro
     assert.equal(authEvents.length, 1);
     assert.equal(authEvents[0].type, 'billing_upgrade_elite_mock');
     assert.equal(authEvents[0].success, true);
+  } finally {
+    process.env.NODE_ENV = previousNodeEnv;
+    if (previousMockFlag == null) delete process.env.ALLOW_MOCK_BILLING_UPGRADES;
+    else process.env.ALLOW_MOCK_BILLING_UPGRADES = previousMockFlag;
+  }
+});
+
+test('upgrade mock endpoints reject non-session auth sources', async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousMockFlag = process.env.ALLOW_MOCK_BILLING_UPGRADES;
+  process.env.NODE_ENV = 'development';
+  process.env.ALLOW_MOCK_BILLING_UPGRADES = 'true';
+
+  try {
+    const db = {
+      users: [{ id: 'u1', email: 'user@example.com', isPremium: false, planType: 'free', planStatus: 'active' }]
+    };
+    const authEvents = [];
+    const app = createApp({ db, authEvents, authSource: 'api_key' });
+
+    await withServer(app, async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/upgrade/pro`, { method: 'POST' });
+      assert.equal(response.status, 403);
+      const body = await response.json();
+      assert.equal(body.error, 'session_auth_required');
+    });
+
+    assert.equal(db.users[0].planType, 'free');
+    assert.equal(db.users[0].isPremium, false);
+    assert.equal(authEvents.length, 0);
   } finally {
     process.env.NODE_ENV = previousNodeEnv;
     if (previousMockFlag == null) delete process.env.ALLOW_MOCK_BILLING_UPGRADES;

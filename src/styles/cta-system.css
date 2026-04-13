@@ -1,0 +1,533 @@
+/*
+  CTA State System (single source of truth)
+  - Unifies default/hover/focus/active/disabled behavior
+  - Keeps variant consistency across landing + app shell
+  - Loaded last from src/main.jsx
+*/
+
+:root {
+  --cta-primary-hover-bg: linear-gradient(180deg, #4d9cff, #2678ee);
+  --cta-primary-hover-border: rgba(221, 237, 255, 0.92);
+  --cta-primary-hover-color: #ffffff;
+  --cta-primary-hover-shadow:
+    0 0 0 2px rgba(139, 191, 255, 0.34),
+    0 0 22px rgba(96, 160, 249, 0.3),
+    0 10px 24px rgba(15, 111, 255, 0.3);
+
+  --cta-primary-active-bg: linear-gradient(180deg, #2f87ff, #1667da);
+  --cta-primary-active-border: rgba(190, 220, 255, 0.96);
+  --cta-primary-active-color: #ffffff;
+  --cta-primary-active-shadow:
+    0 0 0 2px rgba(117, 176, 255, 0.3),
+    0 8px 18px rgba(15, 111, 255, 0.24);
+
+  --cta-secondary-hover-bg: #eaf3ff;
+  --cta-secondary-hover-border: #9fc0f6;
+  --cta-secondary-hover-color: #184784;
+  --cta-secondary-hover-shadow:
+    0 0 0 1px rgba(129, 170, 236, 0.45),
+    0 8px 18px rgba(33, 76, 143, 0.16);
+
+  --cta-secondary-active-bg: #deebff;
+  --cta-secondary-active-border: #8cb4ef;
+  --cta-secondary-active-color: #163f84;
+  --cta-secondary-active-shadow:
+    0 0 0 1px rgba(106, 154, 231, 0.4),
+    0 6px 14px rgba(33, 76, 143, 0.12);
+
+  --cta-danger-hover-bg: #ffe9e9;
+  --cta-danger-hover-border: #f2b9b6;
+  --cta-danger-hover-color: #a32a23;
+  --cta-danger-hover-shadow:
+    0 0 0 1px rgba(228, 112, 106, 0.25),
+    0 8px 16px rgba(160, 43, 36, 0.08);
+
+  --cta-danger-active-bg: #ffdede;
+  --cta-danger-active-border: #e89a96;
+  --cta-danger-active-color: #8f241f;
+  --cta-danger-active-shadow:
+    0 0 0 1px rgba(219, 95, 89, 0.24),
+    0 6px 12px rgba(160, 43, 36, 0.06);
+
+  --cta-focus-ring-primary: 0 0 0 3px rgba(15, 111, 255, 0.28);
+  --cta-focus-ring-secondary: 0 0 0 3px rgba(15, 111, 255, 0.22);
+}
+
+.landing-shell.landing-dark,
+.page.app-shell.app-dark,
+.cookie-banner {
+  --cta-primary-hover-bg: linear-gradient(180deg, #5ca9ff, #2f7ee8);
+  --cta-primary-hover-border: rgba(216, 233, 255, 0.86);
+  --cta-primary-hover-color: #ffffff;
+  --cta-primary-hover-shadow:
+    0 0 0 2px rgba(174, 208, 255, 0.28),
+    0 0 22px rgba(144, 188, 247, 0.24),
+    0 10px 24px rgba(20, 47, 90, 0.4);
+
+  --cta-primary-active-bg: linear-gradient(180deg, #4b98fb, #2a72db);
+  --cta-primary-active-border: rgba(195, 221, 255, 0.9);
+  --cta-primary-active-color: #ffffff;
+  --cta-primary-active-shadow:
+    0 0 0 2px rgba(164, 197, 243, 0.24),
+    0 8px 18px rgba(16, 38, 74, 0.38);
+
+  --cta-secondary-hover-bg: rgba(255, 255, 255, 0.14);
+  --cta-secondary-hover-border: rgba(182, 209, 247, 0.55);
+  --cta-secondary-hover-color: #f3f8ff;
+  --cta-secondary-hover-shadow:
+    0 0 0 1px rgba(182, 209, 247, 0.22),
+    0 8px 18px rgba(9, 24, 45, 0.38);
+
+  --cta-secondary-active-bg: rgba(255, 255, 255, 0.2);
+  --cta-secondary-active-border: rgba(201, 224, 255, 0.66);
+  --cta-secondary-active-color: #ffffff;
+  --cta-secondary-active-shadow:
+    0 0 0 1px rgba(182, 209, 247, 0.22),
+    0 6px 14px rgba(9, 24, 45, 0.28);
+
+  --cta-danger-hover-bg: rgba(166, 53, 62, 0.34);
+  --cta-danger-hover-border: rgba(244, 165, 170, 0.52);
+  --cta-danger-hover-color: #ffd9dd;
+  --cta-danger-hover-shadow:
+    0 0 0 1px rgba(245, 166, 170, 0.2),
+    0 8px 16px rgba(0, 0, 0, 0.32);
+
+  --cta-danger-active-bg: rgba(192, 64, 73, 0.34);
+  --cta-danger-active-border: rgba(249, 183, 187, 0.6);
+  --cta-danger-active-color: #ffe7ea;
+  --cta-danger-active-shadow:
+    0 0 0 1px rgba(245, 166, 170, 0.22),
+    0 6px 12px rgba(0, 0, 0, 0.24);
+
+  --cta-focus-ring-primary: 0 0 0 3px rgba(195, 222, 255, 0.26);
+  --cta-focus-ring-secondary: 0 0 0 3px rgba(178, 207, 246, 0.2);
+}
+
+/* Base transition alignment for all CTA families. */
+:is(.page, .landing-shell) :is(
+    button:not(.ghost):not(.tab):not(.landing-nav-link):not(.landing-cta-ghost):not(.landing-ctrl-btn):not(.landing-theme-btn):not(.landing-lang-btn):not(.landing-lang-trigger):not(.landing-lang-option):not(.landing-hamburger):not(.landing-mobile-nav-link):not(.auth-provider-btn):not(.auth-close-btn):not(.account-close-btn):not(.auth-inline-link):not(.landing-hero-card-btn):not(.landing-plan-cta-primary),
+    button.search-upgrade-cta,
+    .tab,
+    .ghost,
+    .landing-nav-link,
+    .landing-cta-ghost,
+    .landing-ctrl-btn,
+    .landing-mobile-nav-link,
+    .auth-provider-btn,
+    .premium-cta,
+    .upgrade-prompt-cta-pro,
+    .upgrade-prompt-cta-elite
+  ),
+.cookie-btn {
+  transition: background-color 0.18s ease, background-image 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, color 0.18s ease, transform 0.18s ease !important;
+}
+
+/* Primary CTA hover (single unified behavior). */
+/* .landing-accedi-btn and .landing-cta-primary are excluded here — they have
+   dedicated dark/light rules below. Including them here inflates specificity
+   to ~0,21,1 via the :not() chain, which beats every canonical override. */
+:is(.page, .landing-shell) :is(
+    button:not(.ghost):not(.tab):not(.landing-nav-link):not(.landing-cta-ghost):not(.landing-ctrl-btn):not(.landing-theme-btn):not(.landing-lang-btn):not(.landing-lang-trigger):not(.landing-lang-option):not(.landing-hamburger):not(.landing-mobile-nav-link):not(.auth-provider-btn):not(.auth-close-btn):not(.account-close-btn):not(.auth-inline-link):not(.landing-hero-card-btn):not(.landing-plan-cta-primary):not(.landing-accedi-btn):not(.landing-cta-primary),
+    button.search-upgrade-cta,
+    .tab.active,
+    .premium-cta:not(.premium-cta-light):not(.premium-cta-dark),
+    .opportunity-discover-cta,
+    .opportunity-view-itinerary-cta,
+    .upgrade-prompt-cta-pro
+  ):not(:disabled):not([aria-disabled='true']):hover,
+.cookie-btn--accept-all:not(:disabled):hover {
+  background: var(--cta-primary-hover-bg) !important;
+  border-color: var(--cta-primary-hover-border) !important;
+  color: var(--cta-primary-hover-color) !important;
+  box-shadow: var(--cta-primary-hover-shadow) !important;
+  opacity: 1 !important;
+  transform: none !important;
+}
+
+/* Secondary CTA hover (single unified behavior). */
+:is(.page, .landing-shell) :is(
+    .ghost:not(.danger):not(.search-upgrade-cta),
+    .tab:not(.active),
+    .landing-nav-link,
+    .landing-cta-ghost,
+    .landing-ctrl-btn,
+    .landing-mobile-nav-link,
+    .auth-provider-btn,
+    .premium-cta-light,
+    .premium-cta-dark,
+    .upgrade-prompt-cta-elite
+  ):not(:disabled):not([aria-disabled='true']):hover,
+:is(.page, .landing-shell) .landing-lang-btn:has(.landing-lang-trigger:hover),
+.cookie-btn--functional:not(:disabled):hover,
+.cookie-btn--reject:not(:disabled):hover,
+.cookie-btn--manage:not(:disabled):hover {
+  background: var(--cta-secondary-hover-bg) !important;
+  border-color: var(--cta-secondary-hover-border) !important;
+  color: var(--cta-secondary-hover-color) !important;
+  box-shadow: var(--cta-secondary-hover-shadow) !important;
+  opacity: 1 !important;
+  transform: none !important;
+}
+
+/* Destructive hover. */
+:is(.page, .landing-shell) .ghost.danger:not(:disabled):not([aria-disabled='true']):hover {
+  background: var(--cta-danger-hover-bg) !important;
+  border-color: var(--cta-danger-hover-border) !important;
+  color: var(--cta-danger-hover-color) !important;
+  box-shadow: var(--cta-danger-hover-shadow) !important;
+  transform: none !important;
+}
+
+/* Focus-visible consistency. */
+:is(.page, .landing-shell) :is(
+    button:not(.ghost):not(.tab):not(.landing-nav-link):not(.landing-cta-ghost):not(.landing-ctrl-btn):not(.landing-theme-btn):not(.landing-lang-btn):not(.landing-lang-trigger):not(.landing-lang-option):not(.landing-hamburger):not(.landing-mobile-nav-link):not(.auth-provider-btn):not(.auth-close-btn):not(.account-close-btn):not(.auth-inline-link):not(.landing-hero-card-btn):not(.landing-plan-cta-primary):not(.landing-accedi-btn):not(.landing-cta-primary),
+    button.search-upgrade-cta,
+    .tab.active,
+    .premium-cta:not(.premium-cta-light):not(.premium-cta-dark),
+    .opportunity-discover-cta,
+    .opportunity-view-itinerary-cta,
+    .upgrade-prompt-cta-pro
+  ):focus-visible,
+.cookie-btn--accept-all:focus-visible {
+  outline: none !important;
+  box-shadow: var(--cta-focus-ring-primary), var(--cta-primary-hover-shadow) !important;
+}
+
+:is(.page, .landing-shell) :is(
+    .ghost:not(.danger):not(.search-upgrade-cta),
+    .tab:not(.active),
+    .landing-nav-link,
+    .landing-cta-ghost,
+    .landing-ctrl-btn,
+    .landing-mobile-nav-link,
+    .auth-provider-btn,
+    .premium-cta-light,
+    .premium-cta-dark,
+    .upgrade-prompt-cta-elite
+  ):focus-visible,
+:is(.page, .landing-shell) .landing-lang-btn:has(.landing-lang-trigger:focus-visible),
+.cookie-btn--functional:focus-visible,
+.cookie-btn--reject:focus-visible,
+.cookie-btn--manage:focus-visible {
+  outline: none !important;
+  box-shadow: var(--cta-focus-ring-secondary), var(--cta-secondary-hover-shadow) !important;
+}
+
+:is(.page, .landing-shell) .ghost.danger:focus-visible {
+  outline: none !important;
+  box-shadow: var(--cta-focus-ring-secondary), var(--cta-danger-hover-shadow) !important;
+}
+
+/* Active consistency. */
+:is(.page, .landing-shell) :is(
+    button:not(.ghost):not(.tab):not(.landing-nav-link):not(.landing-cta-ghost):not(.landing-ctrl-btn):not(.landing-theme-btn):not(.landing-lang-btn):not(.landing-lang-trigger):not(.landing-lang-option):not(.landing-hamburger):not(.landing-mobile-nav-link):not(.auth-provider-btn):not(.auth-close-btn):not(.account-close-btn):not(.auth-inline-link):not(.landing-hero-card-btn):not(.landing-accedi-btn):not(.landing-cta-primary),
+    button.search-upgrade-cta,
+    .tab.active,
+    .premium-cta:not(.premium-cta-light):not(.premium-cta-dark),
+    .opportunity-discover-cta,
+    .opportunity-view-itinerary-cta,
+    .upgrade-prompt-cta-pro
+  ):not(:disabled):not([aria-disabled='true']):active,
+.cookie-btn--accept-all:not(:disabled):active {
+  background: var(--cta-primary-active-bg) !important;
+  border-color: var(--cta-primary-active-border) !important;
+  color: var(--cta-primary-active-color) !important;
+  box-shadow: var(--cta-primary-active-shadow) !important;
+  transform: none !important;
+}
+
+:is(.page, .landing-shell) :is(
+    .ghost:not(.danger):not(.search-upgrade-cta),
+    .tab:not(.active),
+    .landing-nav-link,
+    .landing-cta-ghost,
+    .landing-ctrl-btn,
+    .landing-mobile-nav-link,
+    .auth-provider-btn,
+    .premium-cta-light,
+    .premium-cta-dark,
+    .upgrade-prompt-cta-elite
+  ):not(:disabled):not([aria-disabled='true']):active,
+.cookie-btn--functional:not(:disabled):active,
+.cookie-btn--reject:not(:disabled):active,
+.cookie-btn--manage:not(:disabled):active {
+  background: var(--cta-secondary-active-bg) !important;
+  border-color: var(--cta-secondary-active-border) !important;
+  color: var(--cta-secondary-active-color) !important;
+  box-shadow: var(--cta-secondary-active-shadow) !important;
+  transform: none !important;
+}
+
+:is(.page, .landing-shell) .ghost.danger:not(:disabled):not([aria-disabled='true']):active {
+  background: var(--cta-danger-active-bg) !important;
+  border-color: var(--cta-danger-active-border) !important;
+  color: var(--cta-danger-active-color) !important;
+  box-shadow: var(--cta-danger-active-shadow) !important;
+  transform: none !important;
+}
+
+/* Disabled: no hover effects, no active effects. */
+:is(.page, .landing-shell) :is(
+    button:not(.landing-lang-trigger):not(.landing-hero-card-btn),
+    .tab,
+    .ghost,
+    .landing-nav-link,
+    .landing-cta-primary,
+    .landing-cta-ghost,
+    .landing-plan-cta,
+    .landing-ctrl-btn,
+    .auth-provider-btn,
+    .premium-cta,
+    .upgrade-prompt-cta-pro,
+    .upgrade-prompt-cta-elite
+  ):is(:disabled, [aria-disabled='true']),
+.cookie-btn:disabled {
+  pointer-events: none !important;
+  cursor: not-allowed !important;
+  opacity: 0.58 !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+/* Cookie banner visual lock: consistent consent actions + plain legal links. */
+.cookie-banner .cookie-banner-link,
+.cookie-banner .cookie-banner-details-toggle {
+  background: transparent !important;
+  background-image: none !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  outline: none !important;
+  min-height: auto !important;
+  padding: 0 !important;
+  transform: none !important;
+  transition: color 0.12s ease !important;
+}
+
+.cookie-banner .cookie-banner-link:is(:hover, :active, :focus-visible),
+.cookie-banner .cookie-banner-details-toggle:is(:hover, :active, :focus-visible) {
+  background: transparent !important;
+  background-image: none !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  outline: none !important;
+  transform: none !important;
+}
+
+.cookie-banner .cookie-banner-categories,
+.cookie-banner .cookie-settings-panel {
+  transform: none !important;
+  animation: none !important;
+}
+
+.cookie-banner .cookie-btn {
+  background: rgba(255, 255, 255, 0.1) !important;
+  background-image: none !important;
+  border-color: rgba(173, 206, 250, 0.42) !important;
+  color: rgba(241, 247, 255, 0.92) !important;
+  box-shadow: none !important;
+  min-height: 44px !important;
+}
+
+.cookie-banner .cookie-btn:not(:disabled):hover {
+  background: rgba(255, 255, 255, 0.13) !important;
+  border-color: rgba(197, 223, 255, 0.56) !important;
+  color: rgba(241, 247, 255, 0.98) !important;
+  box-shadow: none !important;
+}
+
+.cookie-banner .cookie-btn:focus-visible {
+  outline: none !important;
+  box-shadow: 0 0 0 2px rgba(178, 207, 246, 0.32) !important;
+}
+
+.cookie-banner .cookie-btn:not(:disabled):active {
+  background: rgba(255, 255, 255, 0.16) !important;
+  border-color: rgba(214, 232, 255, 0.62) !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+@media (min-width: 881px) {
+  .cookie-banner .cookie-banner-actions {
+    grid-template-columns: repeat(2, minmax(140px, 1fr));
+    min-width: 300px;
+  }
+}
+
+/* Critical readability lock: plan primary stays white in light mode hover. */
+.landing-shell:not(.landing-dark) .landing-plan-cta.landing-plan-cta-primary:not(:disabled):hover,
+.page.app-shell:not(.app-dark) .landing-plan-cta.landing-plan-cta-primary:not(:disabled):hover {
+  background-color: #ffffff !important;
+  background-image: none !important;
+  background: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.96) !important;
+  color: #1a1000 !important;
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.44),
+    0 10px 24px rgba(7, 22, 43, 0.26) !important;
+  transform: none !important;
+}
+
+.landing-shell.landing-dark .landing-plan-cta.landing-plan-cta-primary:not(:disabled):hover,
+.page.app-shell.app-dark .landing-plan-cta.landing-plan-cta-primary:not(:disabled):hover {
+  background-color: rgba(255, 255, 255, 0.94) !important;
+  background-image: none !important;
+  background: rgba(255, 255, 255, 0.94) !important;
+  border-color: rgba(255, 255, 255, 0.98) !important;
+  color: #1a1000 !important;
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.34),
+    0 10px 24px rgba(9, 24, 45, 0.34) !important;
+  transform: none !important;
+}
+
+/* Fallback lock for dark containers where only theme class is present on ancestor/body. */
+.landing-dark .landing-plan-cta.landing-plan-cta-primary:not(:disabled):hover,
+.app-dark .landing-plan-cta.landing-plan-cta-primary:not(:disabled):hover,
+body.landing-dark-active .landing-plan-cta.landing-plan-cta-primary:not(:disabled):hover {
+  background-color: #ffffff !important;
+  background-image: none !important;
+  background: #ffffff !important;
+  border-color: rgba(255, 255, 255, 0.98) !important;
+  color: #1a1000 !important;
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.34),
+    0 10px 24px rgba(9, 24, 45, 0.34) !important;
+}
+
+/* Global last-resort lock: never allow transparent hover on pricing primary CTA. */
+.landing-plan-cta.landing-plan-cta-primary:not(:disabled):hover {
+  background-color: #ffffff !important;
+  background-image: none !important;
+  background: #ffffff !important;
+  color: #1a1000 !important;
+}
+
+/* Explicit landing/app primary lock for sign-in + hero CTA (light mode only). */
+:is(.landing-shell:not(.landing-dark), .page.app-shell:not(.app-dark)) :is(.landing-accedi-btn, .landing-cta-primary):not(:disabled):not([aria-disabled='true']):hover {
+  background: var(--cta-primary-hover-bg) !important;
+  border: 1px solid var(--cta-primary-hover-border) !important;
+  color: var(--cta-primary-hover-color) !important;
+  box-shadow: var(--cta-primary-hover-shadow) !important;
+  opacity: 1 !important;
+  transform: none !important;
+}
+
+:is(.landing-shell:not(.landing-dark), .page.app-shell:not(.app-dark)) :is(.landing-accedi-btn, .landing-cta-primary):not(:disabled):not([aria-disabled='true']):active {
+  background: var(--cta-primary-active-bg) !important;
+  border: 1px solid var(--cta-primary-active-border) !important;
+  color: var(--cta-primary-active-color) !important;
+  box-shadow: var(--cta-primary-active-shadow) !important;
+  transform: none !important;
+}
+
+:is(.landing-shell:not(.landing-dark), .page.app-shell:not(.app-dark)) :is(.landing-accedi-btn, .landing-cta-primary):focus-visible {
+  outline: none !important;
+  box-shadow: var(--cta-focus-ring-primary), var(--cta-primary-hover-shadow) !important;
+}
+
+/* App hero secondary lock: prevent legacy transparent ghost overrides. */
+.page.app-shell .opportunity-hero .item-actions > .opportunity-activate-radar-cta:not(:disabled):not([aria-disabled='true']):hover,
+.page.app-shell .opportunity-hero .item-actions > .opportunity-refresh-feed-cta:not(:disabled):not([aria-disabled='true']):hover {
+  background: var(--cta-secondary-hover-bg) !important;
+  border-color: var(--cta-secondary-hover-border) !important;
+  color: var(--cta-secondary-hover-color) !important;
+  box-shadow: var(--cta-secondary-hover-shadow) !important;
+  transform: none !important;
+}
+
+.page.app-shell .opportunity-hero .item-actions > .opportunity-activate-radar-cta:not(:disabled):not([aria-disabled='true']):active,
+.page.app-shell .opportunity-hero .item-actions > .opportunity-refresh-feed-cta:not(:disabled):not([aria-disabled='true']):active {
+  background: var(--cta-secondary-active-bg) !important;
+  border-color: var(--cta-secondary-active-border) !important;
+  color: var(--cta-secondary-active-color) !important;
+  box-shadow: var(--cta-secondary-active-shadow) !important;
+  transform: none !important;
+}
+
+.page.app-shell .opportunity-hero .item-actions > .opportunity-activate-radar-cta:focus-visible,
+.page.app-shell .opportunity-hero .item-actions > .opportunity-refresh-feed-cta:focus-visible {
+  outline: none !important;
+  box-shadow: var(--cta-focus-ring-secondary), var(--cta-secondary-hover-shadow) !important;
+}
+
+/* Language dropdown options: explicit parity light/dark. */
+.landing-shell:not(.landing-dark) .landing-lang-popover .landing-lang-option:hover,
+.landing-shell:not(.landing-dark) .landing-lang-popover .landing-lang-option.active,
+.page.app-shell:not(.app-dark) .landing-lang-popover .landing-lang-option:hover,
+.page.app-shell:not(.app-dark) .landing-lang-popover .landing-lang-option.active {
+  background: #edf4ff !important;
+  color: #0f3d7c !important;
+  box-shadow: inset 0 0 0 1px rgba(15, 111, 255, 0.24) !important;
+  transform: none !important;
+}
+
+.landing-shell.landing-dark .landing-lang-popover .landing-lang-option:hover,
+.landing-shell.landing-dark .landing-lang-popover .landing-lang-option.active,
+.page.app-shell.app-dark .landing-lang-popover .landing-lang-option:hover,
+.page.app-shell.app-dark .landing-lang-popover .landing-lang-option.active {
+  background: rgba(255, 255, 255, 0.1) !important;
+  color: #ffffff !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.24) !important;
+  transform: none !important;
+}
+
+.landing-lang-popover .landing-lang-option:focus-visible {
+  outline: none !important;
+  box-shadow: var(--cta-focus-ring-secondary), inset 0 0 0 1px rgba(15, 111, 255, 0.22) !important;
+}
+
+/* Fallback lock: keep language option hover always visible across container variants. */
+.landing-lang-popover .landing-lang-option:hover,
+.landing-lang-popover .landing-lang-option.active {
+  background: #edf4ff !important;
+  color: #0f3d7c !important;
+}
+
+body.landing-dark-active .landing-lang-popover .landing-lang-option:hover,
+body.landing-dark-active .landing-lang-popover .landing-lang-option.active,
+.app-shell.app-dark .landing-lang-popover .landing-lang-option:hover,
+.app-shell.app-dark .landing-lang-popover .landing-lang-option.active {
+  background: rgba(255, 255, 255, 0.12) !important;
+  color: #ffffff !important;
+}
+
+body.landing-dark-active .landing-lang-popover .landing-lang-option,
+.app-shell.app-dark .landing-lang-popover .landing-lang-option {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+/* --------------------------------------------------------------------------
+   Canonical white-button state policy
+   - white buttons must stay white in hover/focus/active
+   - no blue background, no blue border, no blue text
+   -------------------------------------------------------------------------- */
+
+.landing-shell.landing-dark .landing-nav .landing-accedi-btn:not(:disabled):not([aria-disabled='true']):is(:hover, :focus, :focus-visible, :active),
+.landing-dark .landing-accedi-btn:not(:disabled):not([aria-disabled='true']):is(:hover, :focus, :focus-visible, :active),
+.page.app-shell.app-dark .landing-accedi-btn:not(:disabled):not([aria-disabled='true']):is(:hover, :focus, :focus-visible, :active),
+.app-shell.app-dark .hero-controls .landing-accedi-btn:not(:disabled):not([aria-disabled='true']):is(:hover, :focus, :focus-visible, :active),
+body.landing-dark-active .landing-accedi-btn:not(:disabled):not([aria-disabled='true']):is(:hover, :focus, :focus-visible, :active),
+.landing-shell.landing-dark .landing-hero .landing-cta-primary:not(:disabled):not([aria-disabled='true']):is(:hover, :focus, :focus-visible, :active),
+.landing-dark .landing-cta-primary:not(:disabled):not([aria-disabled='true']):is(:hover, :focus, :focus-visible, :active),
+.page.app-shell.app-dark .landing-cta-primary:not(:disabled):not([aria-disabled='true']):is(:hover, :focus, :focus-visible, :active),
+body.landing-dark-active .landing-cta-primary:not(:disabled):not([aria-disabled='true']):is(:hover, :focus, :focus-visible, :active),
+.landing-shell .landing-plan-cta.landing-plan-cta-primary:not(:disabled):not([aria-disabled='true']):is(:hover, :focus, :focus-visible, :active),
+.page.app-shell .landing-plan-cta.landing-plan-cta-primary:not(:disabled):not([aria-disabled='true']):is(:hover, :focus, :focus-visible, :active),
+.landing-dark .landing-plan-cta.landing-plan-cta-primary:not(:disabled):not([aria-disabled='true']):is(:hover, :focus, :focus-visible, :active),
+.app-dark .landing-plan-cta.landing-plan-cta-primary:not(:disabled):not([aria-disabled='true']):is(:hover, :focus, :focus-visible, :active),
+body.landing-dark-active .landing-plan-cta.landing-plan-cta-primary:not(:disabled):not([aria-disabled='true']):is(:hover, :focus, :focus-visible, :active),
+.landing-shell:not(.landing-dark) .landing-hero .landing-cta-ghost:not(:disabled):not([aria-disabled='true']):is(:hover, :focus, :focus-visible, :active) {
+  background: #ffffff !important;
+  background-image: none !important;
+  border: 1px solid rgba(209, 216, 228, 0.9) !important;
+  color: #1a1000 !important;
+  -webkit-text-fill-color: #1a1000 !important;
+  outline: none !important;
+  transform: none !important;
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.34),
+    0 0 22px rgba(255, 255, 255, 0.24),
+    0 10px 24px rgba(9, 24, 45, 0.24) !important;
+}

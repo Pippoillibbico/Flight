@@ -15,7 +15,12 @@ async function withServer(app, fn) {
   }
 }
 
-function createRouterApp({ user = { id: 'u1', planType: 'elite', planStatus: 'active', isPremium: true }, optionalAuthEnabled = false } = {}) {
+function createRouterApp({
+  user = { id: 'u1', planType: 'elite', planStatus: 'active', isPremium: true },
+  optionalAuthEnabled = false,
+  requireSessionAuth = (_req, _res, next) => next(),
+  adminGuard = (_req, _res, next) => next()
+} = {}) {
   const state = {
     users: [user],
     radarPreferences: [],
@@ -36,6 +41,8 @@ function createRouterApp({ user = { id: 'u1', planType: 'elite', planStatus: 'ac
         req.user = { id: user.id, sub: user.id };
         next();
       },
+      requireSessionAuth,
+      adminGuard,
       csrfGuard: (_req, _res, next) => next(),
       requireApiScope: () => (_req, _res, next) => next(),
       quotaGuard: () => (_req, _res, next) => next(),
@@ -197,5 +204,28 @@ test('opportunities explore map endpoint returns points', async () => {
       assert.equal(typeof body.points[0].destination_airport, 'string');
       assert.equal(body.points[0].origin_coords == null || typeof body.points[0].origin_coords.lat === 'number', true);
     }
+  });
+});
+
+test('opportunities pipeline endpoints reject non-admin users', async () => {
+  const { app } = createRouterApp({
+    requireSessionAuth: (_req, _res, next) => next(),
+    adminGuard: (_req, res) => res.status(403).json({ error: 'admin_access_denied' })
+  });
+
+  await withServer(app, async (baseUrl) => {
+    const statusRes = await fetch(`${baseUrl}/api/opportunities/pipeline/status`);
+    assert.equal(statusRes.status, 403);
+    const statusBody = await statusRes.json();
+    assert.equal(statusBody.error, 'admin_access_denied');
+
+    const runRes = await fetch(`${baseUrl}/api/opportunities/pipeline/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    assert.equal(runRes.status, 403);
+    const runBody = await runRes.json();
+    assert.equal(runBody.error, 'admin_access_denied');
   });
 });

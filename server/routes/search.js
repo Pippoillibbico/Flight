@@ -1,10 +1,6 @@
 import { Router } from 'express';
-
-function parseFlag(value, fallback = false) {
-  const text = String(value ?? '').trim().toLowerCase();
-  if (!text) return fallback;
-  return ['1', 'true', 'yes', 'on'].includes(text);
-}
+import { hashValueForLogs } from '../lib/log-redaction.js';
+import { parseFlag } from '../lib/env-flags.js';
 
 function dayKeyText(date = new Date()) {
   const y = date.getUTCFullYear();
@@ -14,6 +10,9 @@ function dayKeyText(date = new Date()) {
 }
 
 async function incrBy(cache, key, amount) {
+  if (typeof cache.incrby === 'function') {
+    return Number(await cache.incrby(key, amount));
+  }
   let out = 0;
   for (let i = 0; i < amount; i += 1) {
     out = Number(await cache.incr(key));
@@ -252,15 +251,29 @@ export function buildSearchRouter({
     const parsed = searchSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid payload.' });
 
-    const result = searchFlights(parsed.data);
-    const providerValidated = await collectProviderValidatedOffers(parsed.data, result.flights, { userId: req.user?.sub || req.user?.id || '' });
+    const searchPayload = parsed.data;
+    const isMultiCityMode = searchPayload.mode === 'multi_city' && Array.isArray(searchPayload.segments) && searchPayload.segments.length >= 2;
+    const firstSegment = isMultiCityMode ? searchPayload.segments[0] : null;
+    const lastSegment = isMultiCityMode ? searchPayload.segments[searchPayload.segments.length - 1] : null;
+    const searchInput = isMultiCityMode
+      ? {
+          ...searchPayload,
+          origin: firstSegment?.origin || searchPayload.origin,
+          destinationQuery: lastSegment?.destination || searchPayload.destinationQuery,
+          dateFrom: firstSegment?.date || searchPayload.dateFrom,
+          dateTo: lastSegment?.date || undefined
+        }
+      : searchPayload;
+
+    const result = searchFlights(searchInput);
+    const providerValidated = await collectProviderValidatedOffers(searchInput, result.flights, { userId: req.user?.sub || req.user?.id || '' });
     const enhancedFlights = (Array.isArray(result.flights) ? result.flights : []).map((flight) => {
       const destinationIata = String(flight?.destinationIata || '').toUpperCase();
       const validatedMinPrice = Number(providerValidated.byDestinationMinPrice[destinationIata]);
       const providerValidatedPrice = Number.isFinite(validatedMinPrice) ? validatedMinPrice : null;
       return {
         ...flight,
-        tripType: parsed.data.dateTo ? 'round_trip' : 'one_way',
+        tripType: searchInput.dateTo ? 'round_trip' : 'one_way',
         isBookable: false,
         inventorySource: 'synthetic_local_model',
         providerValidated: Number.isFinite(providerValidatedPrice),
@@ -285,7 +298,15 @@ export function buildSearchRouter({
       meta: {
         ...(result.meta || {}),
         searchMode: 'synthetic_local_model',
-        bookability: 'simulated_with_optional_provider_validation'
+        bookability: 'simulated_with_optional_provider_validation',
+        requestMode: isMultiCityMode ? 'multi_city' : 'single',
+        multiCitySegments: isMultiCityMode
+          ? searchPayload.segments.map((segment) => ({
+              origin: segment.origin,
+              destination: segment.destination,
+              date: segment.date
+            }))
+          : undefined
       }
     };
 
@@ -295,7 +316,7 @@ export function buildSearchRouter({
           id: nanoid(8),
           at: new Date().toISOString(),
           userId: req.user.sub,
-          payload: parsed.data,
+          payload: searchPayload,
           meta: enhancedResult.meta
         });
         db.searches = db.searches.slice(-1000);
@@ -305,24 +326,24 @@ export function buildSearchRouter({
     await insertSearchEvent({
       userId: req.user.sub,
       channel: String(req.user.authChannel || 'direct'),
-      origin: parsed.data.origin,
-      region: parsed.data.region,
-      dateFrom: parsed.data.dateFrom,
-      dateTo: parsed.data.dateTo || parsed.data.dateFrom
+      origin: searchInput.origin,
+      region: searchInput.region,
+      dateFrom: searchInput.dateFrom,
+      dateTo: searchInput.dateTo || searchInput.dateFrom
     });
     const concreteFlights = Array.isArray(enhancedResult.flights) ? enhancedResult.flights.slice(0, 20) : [];
     Promise.allSettled(
       concreteFlights.map((flight) =>
         captureUserPriceObservation({
-          originIata: String(flight.origin || parsed.data.origin).toUpperCase(),
+          originIata: String(flight.origin || searchInput.origin).toUpperCase(),
           destinationIata: String(flight.destinationIata || '').toUpperCase(),
-          departureDate: parsed.data.dateFrom,
-          returnDate: parsed.data.dateTo || null,
+          departureDate: searchInput.dateFrom,
+          returnDate: searchInput.dateTo || null,
           currency: 'EUR',
           totalPrice: Number(flight.price),
           provider: String(flight.provider || 'user_search'),
-          cabinClass: parsed.data.cabinClass,
-          tripType: parsed.data.dateTo ? 'round_trip' : 'one_way',
+          cabinClass: searchInput.cabinClass,
+          tripType: searchInput.dateTo ? 'round_trip' : 'one_way',
           source: 'user_search',
           metadata: {
             channel: 'search',
@@ -411,6 +432,12 @@ export function buildSearchRouter({
   });
 
   router.get('/search/history', authGuard, requireApiScope('read'), quotaGuard({ counter: 'read', amount: 1 }), async (req, res) => {
+    // persist_enabled tells the client whether searches are actually being saved.
+    // When SEARCH_HISTORY_PERSIST_ENABLED is falsy the store is never written,
+    // so history is always empty and the UI should not surface this feature.
+    if (!persistSearchHistory) {
+      return res.json({ items: [], persist_enabled: false });
+    }
     let items = [];
     await withDb(async (db) => {
       items = db.searches
@@ -419,14 +446,25 @@ export function buildSearchRouter({
         .slice(0, 20);
       return null;
     });
-    return res.json({ items });
+    return res.json({ items, persist_enabled: true });
   });
 
   router.get('/security/activity', authGuard, requireApiScope('read'), quotaGuard({ counter: 'read', amount: 1 }), async (req, res) => {
     let items = [];
+    const currentEmailHash = hashValueForLogs(String(req.user?.email || '').toLowerCase(), { label: 'email', length: 24 });
     await withDb(async (db) => {
       items = db.authEvents
-        .filter((event) => event.userId === req.user.sub || event.email === req.user.email)
+        .filter(
+          (event) =>
+            event.userId === req.user.sub ||
+            (currentEmailHash && event.emailHash === currentEmailHash) ||
+            event.email === req.user.email
+        )
+        .map((event) => ({
+          ...event,
+          ip: event.ipHash || event.ip || null,
+          email: null
+        }))
         .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
         .slice(0, 40);
       return null;

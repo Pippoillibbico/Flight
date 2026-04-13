@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { parseBoolean as parseOptionalBoolean } from '../env-flags.js';
 
 function normalizeIata(value) {
   return String(value || '').trim().toUpperCase();
@@ -21,14 +22,6 @@ function toNullableInt(value) {
   const out = Number(value);
   if (!Number.isFinite(out)) return null;
   return Math.trunc(out);
-}
-
-function parseBoolean(value) {
-  if (typeof value === 'boolean') return value;
-  const text = String(value ?? '').trim().toLowerCase();
-  if (text === 'true' || text === '1' || text === 'yes') return true;
-  if (text === 'false' || text === '0' || text === 'no') return false;
-  return null;
 }
 
 function isDate(value) {
@@ -106,8 +99,8 @@ export function normalizeProviderQuotes({
       providerOfferId: offer?.providerOfferId || meta.offerId || null,
       stops: toNullableInt(meta.stops ?? meta.totalStops ?? meta.outboundStops),
       durationMinutes: toNullableInt(meta.durationMinutes ?? meta.totalDurationMinutes),
-      baggageIncluded: parseBoolean(meta.baggageIncluded ?? meta.baggage_included ?? meta.includedBaggage),
-      isBookable: parseBoolean(offer?.isBookable ?? meta.isBookable) ?? true,
+      baggageIncluded: parseOptionalBoolean(meta.baggageIncluded ?? meta.baggage_included ?? meta.includedBaggage, null),
+      isBookable: parseOptionalBoolean(offer?.isBookable ?? meta.isBookable, null) ?? true,
       observedAt: offer?.observedAt ? new Date(offer.observedAt).toISOString() : new Date().toISOString(),
       source: String(offer?.source || 'scan_worker').trim().toLowerCase(),
       metadata: {

@@ -15,15 +15,15 @@ export const LANGUAGE_OPTIONS = [
   },
   {
     value: 'fr',
-    label: 'Francais'
+    label: 'Fran\u00e7ais'
   },
   {
     value: 'es',
-    label: 'Espanol'
+    label: 'Espa\u00f1ol'
   },
   {
     value: 'pt',
-    label: 'Portugues'
+    label: 'Portugu\u00eas'
   }
 ];
 

@@ -1,3 +1,5 @@
+import { parseFlag } from './env-flags.js';
+
 const PLACEHOLDER_PATTERNS = [
   'replace-with',
   'example.com',
@@ -16,17 +18,42 @@ function hasMinLength(rawValue, min) {
   return String(rawValue || '').trim().length >= min;
 }
 
-function parseFlag(rawValue, fallback = false) {
-  const value = String(rawValue || '').trim().toLowerCase();
-  if (!value) return fallback;
-  return ['1', 'true', 'yes', 'on'].includes(value);
-}
-
 function parseList(rawValue) {
   return String(rawValue || '')
     .split(/[,\n;]+/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function parsePositiveInt(rawValue, fallback = 0) {
+  const parsed = Number(rawValue);
+  if (!Number.isFinite(parsed)) return fallback;
+  if (parsed <= 0) return fallback;
+  return Math.trunc(parsed);
+}
+
+function normalizeOrigin(rawValue) {
+  const value = String(rawValue || '').trim();
+  if (!value) return '';
+  try {
+    const parsed = new URL(value);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return '';
+    return parsed.origin;
+  } catch {
+    return '';
+  }
+}
+
+function parseCorsOrigins(env) {
+  const combined = [
+    ...parseList(env?.CORS_ORIGIN),
+    ...parseList(env?.FRONTEND_ORIGIN),
+    ...parseList(env?.CORS_ALLOWLIST),
+    String(env?.FRONTEND_URL || '').trim()
+  ]
+    .map((value) => normalizeOrigin(value))
+    .filter(Boolean);
+  return Array.from(new Set(combined));
 }
 
 function isLikelyUrl(rawValue) {
@@ -82,6 +109,33 @@ const CHECKS = [
     detailOnPass: 'configured'
   },
   {
+    key: 'OUTBOUND_CLICK_SECRET',
+    label: 'Outbound click HMAC secret',
+    severity: 'blocking',
+    validator: (value, env) => {
+      const isProduction = String(env?.NODE_ENV || '').trim().toLowerCase() === 'production';
+      if (!isProduction) return true;
+      const outboundSecret = String(value || '').trim();
+      if (!hasMinLength(outboundSecret, 24) || valueLooksPlaceholder(outboundSecret)) return false;
+      const jwtSecret = String(env?.JWT_SECRET || '').trim();
+      return !jwtSecret || outboundSecret !== jwtSecret;
+    },
+    detailOnFail: 'production requires OUTBOUND_CLICK_SECRET (>=24 chars), non-placeholder, and distinct from JWT_SECRET',
+    detailOnPass: 'configured'
+  },
+  {
+    key: 'ALLOW_MOCK_BILLING_UPGRADES',
+    label: 'Mock billing upgrade routes disabled in production',
+    severity: 'blocking',
+    validator: (value, env) => {
+      const isProduction = String(env?.NODE_ENV || '').trim().toLowerCase() === 'production';
+      if (!isProduction) return true;
+      return !parseFlag(value, false);
+    },
+    detailOnFail: 'set ALLOW_MOCK_BILLING_UPGRADES=false in production',
+    detailOnPass: 'configured'
+  },
+  {
     key: 'AUDIT_LOG_HMAC_KEY',
     label: 'Immutable audit HMAC key',
     severity: 'blocking',
@@ -106,6 +160,18 @@ const CHECKS = [
     detailOnPass: 'configured'
   },
   {
+    key: 'CORS_ORIGIN',
+    label: 'CORS allowlist origin coverage',
+    severity: 'blocking',
+    validator: (_value, env) => {
+      const isProduction = String(env?.NODE_ENV || '').trim().toLowerCase() === 'production';
+      if (!isProduction) return true;
+      return parseCorsOrigins(env).length > 0;
+    },
+    detailOnFail: 'set FRONTEND_ORIGIN or CORS_ALLOWLIST/CORS_ORIGIN to at least one valid https origin',
+    detailOnPass: 'configured'
+  },
+  {
     key: 'DATABASE_URL',
     label: 'Primary SQL database URL',
     severity: 'blocking',
@@ -124,13 +190,17 @@ const CHECKS = [
   {
     key: 'STRIPE_WEBHOOK_SECRET',
     label: 'Stripe webhook secret',
-    severity: 'recommended',
+    // blocking when Stripe key is present AND we are in production; recommended otherwise
+    severity: 'blocking',
     validator: (value, env) => {
-      if (!String(env.STRIPE_SECRET_KEY || '').trim()) return true;
+      const hasStripeKey = hasMinLength(env.STRIPE_SECRET_KEY, 16);
+      if (!hasStripeKey) return true; // Stripe not configured → always pass
+      const isProduction = String(env.NODE_ENV || '').trim().toLowerCase() === 'production';
+      if (!isProduction) return true; // dev/staging → pass (shows only as recommended gap)
       return hasMinLength(value, 12) && !valueLooksPlaceholder(value);
     },
-    detailOnFail: 'required when Stripe billing is enabled',
-    detailOnPass: 'configured or Stripe not enabled'
+    detailOnFail: 'required in production when STRIPE_SECRET_KEY is configured',
+    detailOnPass: 'configured or Stripe/production not active'
   },
   {
     key: 'SMTP_HOST',
@@ -276,6 +346,48 @@ export function getRuntimeConfigAudit(env = process.env) {
     )
   );
 
+  checks.push(
+    evaluateCheck(
+      {
+        key: 'DATA_RETENTION_AUTH_EVENTS_DAYS',
+        label: 'Auth/security retention window',
+        severity: 'recommended',
+        validator: (_value, envContext) => parsePositiveInt(envContext.DATA_RETENTION_AUTH_EVENTS_DAYS, 180) >= 7,
+        detailOnFail: 'set DATA_RETENTION_AUTH_EVENTS_DAYS to a positive value (recommended >=7)',
+        detailOnPass: `configured (${parsePositiveInt(env.DATA_RETENTION_AUTH_EVENTS_DAYS, 180)} days)`
+      },
+      env
+    )
+  );
+
+  checks.push(
+    evaluateCheck(
+      {
+        key: 'DATA_RETENTION_CLIENT_TELEMETRY_DAYS',
+        label: 'Telemetry retention window',
+        severity: 'recommended',
+        validator: (_value, envContext) => parsePositiveInt(envContext.DATA_RETENTION_CLIENT_TELEMETRY_DAYS, 120) >= 7,
+        detailOnFail: 'set DATA_RETENTION_CLIENT_TELEMETRY_DAYS to a positive value (recommended >=7)',
+        detailOnPass: `configured (${parsePositiveInt(env.DATA_RETENTION_CLIENT_TELEMETRY_DAYS, 120)} days)`
+      },
+      env
+    )
+  );
+
+  checks.push(
+    evaluateCheck(
+      {
+        key: 'DATA_RETENTION_OUTBOUND_EVENTS_DAYS',
+        label: 'Outbound event retention window',
+        severity: 'recommended',
+        validator: (_value, envContext) => parsePositiveInt(envContext.DATA_RETENTION_OUTBOUND_EVENTS_DAYS, 180) >= 7,
+        detailOnFail: 'set DATA_RETENTION_OUTBOUND_EVENTS_DAYS to a positive value (recommended >=7)',
+        detailOnPass: `configured (${parsePositiveInt(env.DATA_RETENTION_OUTBOUND_EVENTS_DAYS, 180)} days)`
+      },
+      env
+    )
+  );
+
   if (isProduction) {
     checks.push(
       evaluateCheck(
@@ -340,6 +452,32 @@ export function getRuntimeConfigAudit(env = process.env) {
           severity: 'blocking',
           validator: (value) => ['sandbox', 'production'].includes(String(value || '').trim().toLowerCase()),
           detailOnFail: 'must be sandbox or production',
+          detailOnPass: 'configured'
+        },
+        env
+      )
+    );
+    checks.push(
+      evaluateCheck(
+        {
+          key: 'BT_PLAN_PRO_ID',
+          label: 'Braintree PRO subscription plan ID',
+          severity: isProduction ? 'blocking' : 'recommended',
+          validator: (value) => hasMinLength(value, 4) && !valueLooksPlaceholder(value),
+          detailOnFail: 'required for Braintree PRO subscription checkout — create the plan in the Braintree Control Panel and set BT_PLAN_PRO_ID',
+          detailOnPass: 'configured'
+        },
+        env
+      )
+    );
+    checks.push(
+      evaluateCheck(
+        {
+          key: 'BT_PLAN_CREATOR_ID',
+          label: 'Braintree ELITE subscription plan ID',
+          severity: isProduction ? 'blocking' : 'recommended',
+          validator: (value) => hasMinLength(value, 4) && !valueLooksPlaceholder(value),
+          detailOnFail: 'required for Braintree ELITE subscription checkout — create the plan in the Braintree Control Panel and set BT_PLAN_CREATOR_ID',
           detailOnPass: 'configured'
         },
         env

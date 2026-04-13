@@ -1,6 +1,7 @@
 import { nanoid } from 'nanoid';
 import { createDiscoveryFeedService } from './discovery-feed-service.js';
 import { withDb as defaultWithDb } from './db.js';
+import { parseFlag } from './env-flags.js';
 import { sendMail } from './mailer.js';
 import { insertEmailDeliveryLog } from './sql-db.js';
 import { logger as rootLogger } from './logger.js';
@@ -19,12 +20,6 @@ function toNumber(value, fallback = 0) {
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
-}
-
-function parseFlag(value, fallback = false) {
-  const text = String(value ?? '').trim().toLowerCase();
-  if (!text) return fallback;
-  return ['1', 'true', 'yes', 'on'].includes(text);
 }
 
 function parseList(value) {

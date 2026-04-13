@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { randomInt } from 'node:crypto';
 import { initPriceHistoryStore, storeObservation } from '../server/lib/price-history-store.js';
 import { detectDeal } from '../server/lib/deal-detector.js';
 import { inferDealType, rankDeal } from '../server/lib/deal-ranking-engine.js';
@@ -14,15 +15,20 @@ function iataFromSeed(seed) {
 
 test('price-history-store dedupes identical fingerprints', async () => {
   await initPriceHistoryStore();
-  const seed = Date.now() % 17576;
+  // randomInt(17576) eliminates the ~17.5 s Date.now()-based collision window.
+  // A dynamic timestamp guarantees a unique fingerprint every run, even if the
+  // same IATA pair recurs, because the fingerprint is the SHA-256 of all fields
+  // including the timestamp. The persistent data/app.db is therefore never an obstacle.
+  const seed = randomInt(17576);
   const origin = iataFromSeed(seed);
   const destination = iataFromSeed((seed + 137) % 17576);
+  const runTs = new Date().toISOString(); // unique per test invocation
   const payload = {
     origin,
     destination,
     date: '2027-07-10',
     price: 221.45,
-    timestamp: '2026-01-01T10:00:00.000Z',
+    timestamp: runTs,
     airline: 'test_airline',
     source: 'unit_test',
     currency: 'EUR',
@@ -57,7 +63,7 @@ test('deal-ranking rules classify and bound score', async () => {
 
 test('deal-detector flags strong under-baseline prices', async () => {
   await initPriceHistoryStore();
-  const seed = (Date.now() + 333) % 17576;
+  const seed = randomInt(17576);
   const origin = iataFromSeed(seed);
   const destination = iataFromSeed((seed + 211) % 17576);
   const departure = '2027-08-15';

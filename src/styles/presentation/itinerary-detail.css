@@ -1,0 +1,231 @@
+.opportunity-detail-panel {
+  gap: 14px;
+}
+
+.opportunity-detail-hero {
+  border: 1px solid rgba(78, 126, 201, 0.3);
+  border-radius: 16px;
+  padding: 16px;
+  background:
+    linear-gradient(145deg, rgba(246, 251, 255, 0.96), rgba(236, 246, 255, 0.93)),
+    radial-gradient(500px 180px at 100% 8%, rgba(28, 117, 230, 0.1), transparent 76%);
+  display: grid;
+  gap: 12px;
+}
+
+.opportunity-detail-hero-main {
+  display: grid;
+  gap: 6px;
+}
+
+.opportunity-detail-label {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #305b92;
+}
+
+.opportunity-detail-route {
+  margin: 0;
+  font-size: clamp(26px, 3.2vw, 34px);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: #0f3f7f;
+}
+
+.opportunity-detail-price {
+  margin: 0;
+  font-size: clamp(32px, 5vw, 44px);
+  font-weight: 900;
+  line-height: 1.02;
+  color: #0f4ea1;
+}
+
+.opportunity-detail-context {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.opportunity-detail-context-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid rgba(75, 127, 205, 0.34);
+  background: rgba(228, 241, 255, 0.88);
+  color: #1f4e8f;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 5px 11px;
+}
+
+.opportunity-detail-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.opportunity-detail-meta-item {
+  border: 1px solid rgba(83, 129, 201, 0.24);
+  border-radius: 12px;
+  background: rgba(245, 250, 255, 0.82);
+  padding: 10px 11px;
+  display: grid;
+  gap: 4px;
+}
+
+.opportunity-detail-meta-label {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #3d6599;
+}
+
+.opportunity-detail-meta-value {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.35;
+  color: #173f75;
+  font-weight: 700;
+}
+
+.opportunity-why-box {
+  border-color: rgba(74, 125, 204, 0.28);
+  background: rgba(240, 248, 255, 0.78);
+  padding: 12px;
+  display: grid;
+  gap: 6px;
+}
+
+.opportunity-why-title {
+  margin: 0;
+  font-size: 14px;
+}
+
+.opportunity-why-copy {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #385b88;
+}
+
+.opportunity-detail-actions {
+  align-items: center;
+}
+
+.opportunity-detail-book-cta {
+  min-height: 44px;
+  min-width: 190px;
+  font-weight: 800;
+}
+
+.opportunity-detail-related-list {
+  gap: 8px;
+}
+
+.opportunity-related-btn {
+  border-color: rgba(86, 133, 206, 0.24);
+  border-radius: 12px;
+  background: rgba(244, 250, 255, 0.82);
+  padding: 10px 11px;
+}
+
+.opportunity-related-route {
+  font-size: 14px;
+  font-weight: 700;
+  color: #244f86;
+}
+
+.opportunity-related-price {
+  font-size: 15px;
+  font-weight: 800;
+  color: #0e539f;
+}
+
+.app-shell.app-dark .opportunity-detail-hero {
+  border-color: rgba(108, 145, 201, 0.42);
+  background:
+    linear-gradient(145deg, rgba(21, 32, 50, 0.94), rgba(16, 25, 40, 0.9)),
+    radial-gradient(500px 180px at 100% 8%, rgba(38, 112, 217, 0.2), transparent 76%);
+}
+
+.app-shell.app-dark .opportunity-detail-label {
+  color: #9ec4f6;
+}
+
+.app-shell.app-dark .opportunity-detail-route {
+  color: #d7e7ff;
+}
+
+.app-shell.app-dark .opportunity-detail-price {
+  color: #8ec1ff;
+}
+
+.app-shell.app-dark .opportunity-detail-context-chip {
+  border-color: rgba(105, 146, 207, 0.42);
+  background: rgba(19, 34, 54, 0.86);
+  color: #c2dcff;
+}
+
+.app-shell.app-dark .opportunity-detail-meta-item {
+  border-color: rgba(107, 145, 201, 0.38);
+  background: rgba(19, 31, 49, 0.8);
+}
+
+.app-shell.app-dark .opportunity-detail-meta-label {
+  color: #9fc1ee;
+}
+
+.app-shell.app-dark .opportunity-detail-meta-value {
+  color: #d2e4ff;
+}
+
+.app-shell.app-dark .opportunity-why-box {
+  border-color: rgba(107, 144, 197, 0.36);
+  background: rgba(20, 33, 51, 0.84);
+}
+
+.app-shell.app-dark .opportunity-why-copy {
+  color: #c1d8f8;
+}
+
+.app-shell.app-dark .opportunity-related-btn {
+  border-color: rgba(104, 145, 207, 0.36);
+  background: rgba(19, 32, 49, 0.82);
+}
+
+.app-shell.app-dark .opportunity-related-route {
+  color: #d0e3ff;
+}
+
+.app-shell.app-dark .opportunity-related-price {
+  color: #92c3ff;
+}
+
+@media (max-width: 980px) {
+  .opportunity-detail-meta-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .opportunity-detail-hero {
+    padding: 14px;
+  }
+
+  .opportunity-detail-route {
+    font-size: clamp(22px, 8vw, 28px);
+  }
+
+  .opportunity-detail-price {
+    font-size: clamp(28px, 11vw, 36px);
+  }
+
+  .opportunity-detail-actions > button {
+    width: 100%;
+  }
+}

@@ -1,0 +1,224 @@
+.ai-travel-panel {
+  gap: 18px;
+}
+
+.ai-travel-header {
+  display: grid;
+  gap: 8px;
+}
+
+.ai-travel-input-card {
+  border: 1px solid rgba(88, 136, 210, 0.24);
+  border-radius: 14px;
+  background: rgba(243, 249, 255, 0.76);
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.ai-travel-actions {
+  margin-top: 2px;
+}
+
+.ai-travel-plan-note {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #38649c;
+}
+
+.ai-travel-summary-card {
+  border: 1px solid rgba(88, 136, 210, 0.24);
+  border-radius: 12px;
+  background: rgba(238, 246, 255, 0.72);
+  padding: 10px 12px;
+  display: grid;
+  gap: 6px;
+}
+
+.ai-travel-summary-label {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  font-size: 11px;
+  font-weight: 800;
+  color: #28518a;
+}
+
+.ai-travel-summary-copy {
+  margin: 0;
+}
+
+.ai-travel-results-section {
+  display: grid;
+  gap: 10px;
+}
+
+.ai-travel-candidate-list {
+  gap: 10px;
+}
+
+.ai-travel-candidate-card {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+  gap: 12px;
+  border-color: rgba(86, 132, 207, 0.28);
+  background:
+    linear-gradient(145deg, rgba(246, 251, 255, 0.95), rgba(237, 246, 255, 0.92)),
+    radial-gradient(440px 170px at 100% 10%, rgba(21, 115, 237, 0.1), transparent 75%);
+}
+
+.ai-travel-candidate-main {
+  display: grid;
+  gap: 6px;
+}
+
+.ai-travel-candidate-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ai-travel-candidate-route {
+  font-size: 17px;
+  line-height: 1.2;
+  color: #133f7d;
+}
+
+.ai-travel-candidate-price {
+  white-space: nowrap;
+  font-size: 20px;
+  font-weight: 900;
+  color: #1452a3;
+}
+
+.ai-travel-candidate-meta {
+  margin: 0;
+  font-size: 13px;
+  color: #4a6c98;
+}
+
+.ai-travel-candidate-meta-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ai-travel-candidate-meta-row .ai-travel-candidate-meta {
+  margin: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(85, 133, 208, 0.28);
+  background: rgba(235, 246, 255, 0.8);
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #37639b;
+}
+
+.ai-travel-candidate-rank {
+  margin: 1px 0 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: #205592;
+}
+
+.ai-travel-candidate-explanation-box {
+  border: 1px solid rgba(83, 131, 205, 0.24);
+  border-radius: 11px;
+  background: rgba(236, 246, 255, 0.76);
+  padding: 9px 10px;
+}
+
+.ai-travel-candidate-explanation {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #355987;
+}
+
+.ai-travel-candidate-cta {
+  min-width: 150px;
+  align-self: center;
+}
+
+.app-shell.app-dark .ai-travel-input-card,
+.app-shell.app-dark .ai-travel-summary-card {
+  border-color: rgba(106, 143, 199, 0.4);
+  background: rgba(21, 32, 50, 0.78);
+}
+
+.app-shell.app-dark .ai-travel-summary-label {
+  color: #b8d7ff;
+}
+
+.app-shell.app-dark .ai-travel-candidate-card {
+  border-color: rgba(104, 145, 206, 0.4);
+  background:
+    linear-gradient(145deg, rgba(21, 32, 49, 0.95), rgba(16, 25, 40, 0.92)),
+    radial-gradient(440px 170px at 100% 10%, rgba(41, 119, 230, 0.2), transparent 75%);
+}
+
+.app-shell.app-dark .ai-travel-candidate-route {
+  color: #d8e8ff;
+}
+
+.app-shell.app-dark .ai-travel-candidate-price {
+  color: #8dc0ff;
+}
+
+.app-shell.app-dark .ai-travel-candidate-meta {
+  color: #a8c1e3;
+}
+
+.app-shell.app-dark .ai-travel-candidate-rank {
+  color: #8fb7f4;
+}
+
+.app-shell.app-dark .ai-travel-candidate-explanation {
+  color: #c6daf7;
+}
+
+.app-shell.app-dark .ai-travel-candidate-meta-row .ai-travel-candidate-meta {
+  border-color: rgba(106, 144, 201, 0.4);
+  background: rgba(20, 34, 53, 0.82);
+  color: #b9d3f6;
+}
+
+.app-shell.app-dark .ai-travel-candidate-explanation-box {
+  border-color: rgba(105, 145, 204, 0.36);
+  background: rgba(20, 33, 51, 0.78);
+}
+
+.app-shell.app-dark .ai-travel-plan-note {
+  color: #b5cff2;
+}
+
+@media (max-width: 900px) {
+  .ai-travel-candidate-card {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .ai-travel-candidate-card > button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 780px) {
+  .ai-travel-input-card,
+  .ai-travel-summary-card {
+    padding: 12px;
+  }
+}
+
+@media (max-width: 760px) {
+  .ai-travel-candidate-meta-row {
+    gap: 6px;
+  }
+
+  .ai-travel-candidate-cta {
+    width: 100%;
+  }
+}

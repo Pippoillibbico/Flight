@@ -1,0 +1,458 @@
+.radar-panel {
+  gap: 14px;
+}
+
+.radar-hero {
+  border: 1px solid rgba(78, 128, 207, 0.24);
+  border-radius: 16px;
+  padding: 18px;
+  background:
+    radial-gradient(560px 240px at 100% 0%, rgba(15, 111, 255, 0.12), transparent 74%),
+    linear-gradient(145deg, rgba(247, 251, 255, 0.96), rgba(238, 246, 255, 0.92));
+  display: grid;
+  gap: 8px;
+}
+
+.radar-live-indicator {
+  margin: 4px 0 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(66, 123, 204, 0.32);
+  background: rgba(236, 245, 255, 0.9);
+  color: #174d93;
+  width: fit-content;
+  max-width: 100%;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.radar-tier-message {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: #2c5c98;
+}
+
+.radar-live-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: #12b76a;
+  box-shadow: 0 0 0 0 rgba(18, 183, 106, 0.38);
+  animation: radar-live-pulse 1.9s ease-out infinite;
+}
+
+@keyframes radar-live-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(18, 183, 106, 0.36);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(18, 183, 106, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(18, 183, 106, 0);
+  }
+}
+
+.radar-section-block {
+  display: grid;
+  gap: 10px;
+}
+
+.radar-setup-block {
+  border: 1px solid rgba(84, 132, 207, 0.22);
+  border-radius: 14px;
+  background: rgba(244, 249, 255, 0.72);
+  padding: 14px;
+}
+
+.radar-primary-actions > button {
+  min-width: 180px;
+}
+
+.opportunity-feed-panel {
+  gap: 28px;
+}
+
+.opportunity-hero-actions > .opportunity-discover-cta,
+.opportunity-hero-actions > .opportunity-activate-radar-cta,
+.opportunity-hero-actions > .opportunity-refresh-feed-cta {
+  min-height: 54px;
+  padding: 0 24px;
+  border-radius: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  font-size: 16px;
+}
+
+.opportunity-hero-actions > .opportunity-discover-cta {
+  font-weight: 800;
+}
+
+.opportunity-hero-actions > .opportunity-activate-radar-cta,
+.opportunity-hero-actions > .opportunity-refresh-feed-cta {
+  font-weight: 700;
+}
+
+.opportunity-section {
+  gap: 14px;
+}
+
+.opportunity-inline-upgrade {
+  border: 1px solid rgba(86, 133, 207, 0.28);
+  border-radius: 12px;
+  background: rgba(241, 248, 255, 0.82);
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.opportunity-inline-upgrade-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+  color: #16457f;
+}
+
+.opportunity-inline-upgrade-note {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: #3f618f;
+}
+
+.opportunity-feed-results-section {
+  gap: 14px;
+}
+
+.opportunity-top-deal-route {
+  font-size: clamp(24px, 2.4vw, 32px);
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+}
+
+.opportunity-top-deal-actions > .opportunity-view-itinerary-cta {
+  min-width: 170px;
+}
+
+.opportunity-feed-panel .opportunity-view-itinerary-cta,
+.opportunity-feed-panel .opportunity-activate-alert-cta,
+.opportunity-feed-panel .opportunity-follow-destination-cta {
+  min-height: 52px;
+  padding: 0 20px;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.opportunity-feed-panel .opportunity-view-itinerary-cta {
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.opportunity-feed-panel .opportunity-activate-alert-cta,
+.opportunity-feed-panel .opportunity-follow-destination-cta {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.opportunity-live-rail {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.opportunity-live-rail-title {
+  margin: 0;
+  grid-column: 1 / -1;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #3f6ca3;
+}
+
+.opportunity-live-rail-item {
+  border: 1px solid rgba(84, 132, 206, 0.26);
+  border-radius: 12px;
+  background: rgba(241, 248, 255, 0.82);
+  padding: 12px;
+  display: grid;
+  gap: 6px;
+}
+
+.opportunity-live-rail-route {
+  font-size: 16px;
+  line-height: 1.2;
+  color: #0f3f80;
+}
+
+.opportunity-live-rail-price {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 900;
+  line-height: 1.05;
+  color: #0f4ea1;
+}
+
+.opportunity-live-rail-meta {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: #4a6f9f;
+}
+
+.opportunity-live-rail-cta {
+  width: 100%;
+}
+
+.opportunity-card {
+  border-radius: 16px;
+  padding: 16px;
+  gap: 14px;
+  background:
+    linear-gradient(145deg, rgba(248, 252, 255, 0.97), rgba(239, 246, 255, 0.94)),
+    radial-gradient(460px 170px at 100% 0%, rgba(22, 116, 237, 0.08), transparent 75%);
+}
+
+.opportunity-card-main {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.opportunity-card-top {
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.opportunity-card-badges {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.opportunity-card-route {
+  font-size: clamp(24px, 2.5vw, 30px);
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+  color: #103f7f;
+}
+
+.opportunity-card-price-block {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.opportunity-card-price {
+  margin: 0;
+  font-size: clamp(30px, 5.2vw, 40px);
+  font-weight: 900;
+  line-height: 1.04;
+  color: #0f4ea1;
+}
+
+.opportunity-card-meta-primary {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #2a5d9f;
+  text-align: right;
+}
+
+.opportunity-card-meta-secondary {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: #436792;
+}
+
+.opportunity-card-supporting-line {
+  margin: 0;
+  font-size: 13px;
+  color: #56759f;
+}
+
+.opportunity-card-description-box {
+  border: 1px solid rgba(84, 132, 206, 0.26);
+  border-radius: 12px;
+  background: rgba(235, 246, 255, 0.76);
+  padding: 10px 11px;
+}
+
+.opportunity-card-description {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: #355a89;
+}
+
+.opportunity-card-actions {
+  align-items: center;
+  gap: 8px;
+}
+
+.opportunity-card-actions > .opportunity-view-itinerary-cta {
+  min-width: 168px;
+  font-weight: 800;
+}
+
+.opportunity-card-actions > .ghost {
+  font-size: 14px;
+}
+
+.opportunity-follow-cluster-cta.locked,
+.opportunity-follow-cluster-cta:disabled {
+  cursor: not-allowed;
+  opacity: 0.64;
+  filter: saturate(0.85);
+}
+
+.app-shell.app-dark .radar-hero {
+  border-color: rgba(104, 140, 193, 0.42);
+  background:
+    radial-gradient(620px 280px at 100% 0%, rgba(23, 88, 190, 0.22), transparent 76%),
+    linear-gradient(145deg, rgba(21, 31, 45, 0.94), rgba(14, 22, 34, 0.9));
+}
+
+.app-shell.app-dark .radar-live-indicator {
+  border-color: rgba(113, 148, 199, 0.44);
+  background: rgba(19, 34, 53, 0.82);
+  color: #cae1ff;
+}
+
+.app-shell.app-dark .radar-tier-message {
+  color: #abc8ef;
+}
+
+.app-shell.app-dark .radar-setup-block {
+  border-color: rgba(106, 145, 201, 0.36);
+  background: rgba(18, 29, 46, 0.74);
+}
+
+.app-shell.app-dark .opportunity-card {
+  border-color: rgba(105, 141, 197, 0.42);
+  background:
+    linear-gradient(145deg, rgba(19, 30, 47, 0.95), rgba(14, 23, 37, 0.92)),
+    radial-gradient(500px 180px at 100% 0%, rgba(34, 111, 217, 0.2), transparent 76%);
+}
+
+.app-shell.app-dark .opportunity-card-route {
+  color: #d5e7ff;
+}
+
+.app-shell.app-dark .opportunity-card-meta-primary {
+  color: #98bced;
+}
+
+.app-shell.app-dark .opportunity-card-meta-secondary {
+  color: #b4ccec;
+}
+
+.app-shell.app-dark .opportunity-card-supporting-line {
+  color: #9eb8db;
+}
+
+.app-shell.app-dark .opportunity-card-description-box {
+  border-color: rgba(106, 145, 202, 0.36);
+  background: rgba(23, 35, 54, 0.8);
+}
+
+.app-shell.app-dark .opportunity-card-description {
+  color: #c7dcf8;
+}
+
+.app-shell.app-dark .opportunity-inline-upgrade {
+  border-color: rgba(106, 145, 202, 0.4);
+  background: rgba(20, 33, 51, 0.8);
+}
+
+.app-shell.app-dark .opportunity-inline-upgrade-title {
+  color: #d1e4ff;
+}
+
+.app-shell.app-dark .opportunity-inline-upgrade-note {
+  color: #abc5ea;
+}
+
+.app-shell.app-dark .opportunity-top-deal-route {
+  color: #dce9ff;
+}
+
+.app-shell.app-dark .opportunity-live-rail-title {
+  color: #9cc0ed;
+}
+
+.app-shell.app-dark .opportunity-live-rail-item {
+  border-color: rgba(106, 145, 202, 0.36);
+  background: rgba(21, 34, 51, 0.86);
+}
+
+.app-shell.app-dark .opportunity-live-rail-route {
+  color: #d5e7ff;
+}
+
+.app-shell.app-dark .opportunity-live-rail-price {
+  color: #9dc6ff;
+}
+
+.app-shell.app-dark .opportunity-live-rail-meta {
+  color: #a9c2e2;
+}
+
+@media (max-width: 980px) {
+  .opportunity-card-actions > .opportunity-view-itinerary-cta {
+    min-width: 150px;
+  }
+
+  .opportunity-live-rail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 780px) {
+  .radar-hero,
+  .radar-setup-block {
+    padding: 12px;
+  }
+}
+
+@media (max-width: 760px) {
+  .opportunity-card {
+    padding: 14px;
+    gap: 12px;
+  }
+
+  .opportunity-card-price-block {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .opportunity-card-meta-primary {
+    text-align: left;
+  }
+
+  .opportunity-card-actions > button {
+    width: 100%;
+  }
+
+  .opportunity-live-rail {
+    grid-template-columns: 1fr;
+  }
+
+  .opportunity-live-rail-item .opportunity-view-itinerary-cta {
+    width: 100%;
+  }
+}

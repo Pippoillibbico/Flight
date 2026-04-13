@@ -277,7 +277,7 @@ function AdvancedAnalyticsSection({
               </div>
             </div>
             <details className="advanced-block" open>
-              <summary>{t('advancedTools')}</summary>
+              <summary>{t('securityEventsSummary')}</summary>
               {securityError ? <p className="error">{securityError}</p> : null}
               {securityEvents.length === 0 ? <p className="muted">{t('noSecurityActivity')}</p> : null}
               {securityEvents.slice(0, 8).map((event) => (
@@ -305,7 +305,7 @@ function AdvancedAnalyticsSection({
           </button>
         </div>
         <details className="advanced-block" open>
-          <summary>{t('advancedTools')}</summary>
+          <summary>{t('searchHistorySummary')}</summary>
           {searchHistory.length === 0 ? <p className="muted">{t('noSearchHistory')}</p> : null}
           <div className="list-stack">
             {searchHistory.map((item) => (
@@ -332,4 +332,3 @@ function AdvancedAnalyticsSection({
 }
 
 export default AdvancedAnalyticsSection;
-
