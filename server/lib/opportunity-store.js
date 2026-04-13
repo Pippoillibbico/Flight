@@ -66,6 +66,98 @@ function shortHash(value) {
     .slice(0, 16);
 }
 
+function normalizeText(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function slugify(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
+}
+
+function parseJsonSafe(value, fallback = {}) {
+  if (value == null) return fallback;
+  if (typeof value === 'object' && !Array.isArray(value)) return value;
+  try {
+    return JSON.parse(String(value || '{}'));
+  } catch {
+    return fallback;
+  }
+}
+
+function toRouteMeta(originAirport, destinationAirport) {
+  const route = routeMap.get(`${String(originAirport || '').toUpperCase()}-${String(destinationAirport || '').toUpperCase()}`) || null;
+  return {
+    route,
+    country: String(route?.country || '').trim(),
+    region: String(route?.region || '').trim().toLowerCase()
+  };
+}
+
+const EAST_COAST_CITIES = new Set(['new york', 'newark', 'boston', 'washington', 'washington dc', 'philadelphia']);
+const SEA_COUNTRIES = new Set(['thailand', 'malaysia', 'vietnam', 'indonesia', 'philippines', 'singapore', 'cambodia']);
+
+function deriveClusterInfo(opportunity) {
+  const city = String(opportunity?.destination_city || '').trim();
+  const cityKey = normalizeText(city);
+  const { country, region } = toRouteMeta(opportunity?.origin_airport, opportunity?.destination_airport);
+  const countryKey = normalizeText(opportunity?.destination_country || country);
+  const regionKey = normalizeText(opportunity?.destination_region || region);
+
+  if (countryKey === 'japan') {
+    return { slug: 'japan', cluster_name: 'Japan', region: 'asia' };
+  }
+  if (SEA_COUNTRIES.has(countryKey)) {
+    return { slug: 'southeast-asia', cluster_name: 'Southeast Asia', region: 'asia' };
+  }
+  if (countryKey === 'united states' && EAST_COAST_CITIES.has(cityKey)) {
+    return { slug: 'usa-east-coast', cluster_name: 'USA East Coast', region: 'america' };
+  }
+  if (country) {
+    return {
+      slug: slugify(country),
+      cluster_name: country,
+      region: regionKey || 'global'
+    };
+  }
+  if (regionKey) {
+    const regionName = regionKey === 'eu' ? 'Europe' : regionKey.charAt(0).toUpperCase() + regionKey.slice(1);
+    return {
+      slug: slugify(regionName),
+      cluster_name: regionName,
+      region: regionKey
+    };
+  }
+  return {
+    slug: slugify(city || 'global'),
+    cluster_name: city || 'Global',
+    region: 'global'
+  };
+}
+
+function budgetBucketFromPrice(value) {
+  const price = toNumber(value, 0);
+  if (price <= 200) return 'under_200';
+  if (price <= 400) return 'under_400';
+  if (price <= 600) return 'under_600';
+  return 'over_600';
+}
+
+function matchesBudgetBucket(item, bucket) {
+  const normalized = normalizeText(bucket).replace(/\s+/g, '_');
+  const price = toNumber(item?.price, 0);
+  if (!normalized) return true;
+  if (normalized === 'under_200') return price <= 200;
+  if (normalized === 'under_400') return price <= 400;
+  if (normalized === 'under_600') return price <= 600;
+  if (normalized === 'over_600') return price > 600;
+  return normalized === budgetBucketFromPrice(price);
+}
+
 function estimateStops(route) {
   const distribution = route?.comfortMetadata?.stopCountDistribution || {};
   const candidates = [
@@ -286,6 +378,21 @@ async function ensurePostgres() {
     );
     CREATE INDEX IF NOT EXISTS idx_opportunity_pipeline_runs_started_at
       ON opportunity_pipeline_runs(started_at DESC);
+    CREATE TABLE IF NOT EXISTS opportunity_user_follows (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      entity_type TEXT NOT NULL,
+      slug TEXT NOT NULL,
+      display_name TEXT NOT NULL,
+      follow_type TEXT NOT NULL DEFAULT 'radar',
+      metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_opportunity_user_follows_unique
+      ON opportunity_user_follows(user_id, entity_type, slug, follow_type);
+    CREATE INDEX IF NOT EXISTS idx_opportunity_user_follows_user
+      ON opportunity_user_follows(user_id, updated_at DESC);
   `);
   await pgPool.query(`
     ALTER TABLE travel_opportunities ADD COLUMN IF NOT EXISTS baseline_price NUMERIC(10,2) NULL;
@@ -361,6 +468,21 @@ async function ensureSqlite() {
     );
     CREATE INDEX IF NOT EXISTS idx_opportunity_pipeline_runs_started_at
       ON opportunity_pipeline_runs(started_at DESC);
+    CREATE TABLE IF NOT EXISTS opportunity_user_follows (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      entity_type TEXT NOT NULL,
+      slug TEXT NOT NULL,
+      display_name TEXT NOT NULL,
+      follow_type TEXT NOT NULL DEFAULT 'radar',
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_opportunity_user_follows_unique
+      ON opportunity_user_follows(user_id, entity_type, slug, follow_type);
+    CREATE INDEX IF NOT EXISTS idx_opportunity_user_follows_user
+      ON opportunity_user_follows(user_id, updated_at DESC);
   `);
   const columns = sqliteDb.prepare(`PRAGMA table_info(travel_opportunities)`).all().map((row) => String(row.name));
   const ensureColumn = (name, sqlType) => {
@@ -525,7 +647,10 @@ async function upsertOpportunity(row) {
         why_it_matters, baseline_price, savings_percent_if_available, dedupe_key, is_published,
         published_at, enrichment_status, alert_status, source_observed_at, created_at, updated_at
       ) VALUES (
-        ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
+        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+        ?
       )
       ON CONFLICT(observation_fingerprint) DO UPDATE SET
         origin_city=excluded.origin_city,
@@ -684,12 +809,17 @@ export async function refreshOpportunityFeed({ lookbackDays = 75, limit = 2000 }
 
 function normalizeOpportunityRowForApi(row) {
   if (!row) return null;
-  return {
+  const meta = toRouteMeta(row.origin_airport, row.destination_airport);
+  const destinationCountry = String(row.destination_country || meta.country || '').trim();
+  const destinationRegion = String(row.destination_region || meta.region || '').trim().toLowerCase();
+  const normalized = {
     id: String(row.id),
     origin_city: String(row.origin_city),
     origin_airport: String(row.origin_airport),
     destination_city: String(row.destination_city),
     destination_airport: String(row.destination_airport),
+    destination_country: destinationCountry || null,
+    destination_region: destinationRegion || null,
     price: toNumber(row.price, 0),
     currency: String(row.currency || 'EUR'),
     depart_date: String(row.depart_date).slice(0, 10),
@@ -714,6 +844,13 @@ function normalizeOpportunityRowForApi(row) {
     alert_status: String(row.alert_status || 'pending'),
     created_at: String(row.created_at || ''),
     updated_at: String(row.updated_at || '')
+  };
+  const cluster = deriveClusterInfo(normalized);
+  return {
+    ...normalized,
+    destination_cluster_slug: cluster.slug,
+    destination_cluster_name: cluster.cluster_name,
+    budget_bucket: budgetBucketFromPrice(normalized.price)
   };
 }
 
@@ -751,16 +888,56 @@ async function dedupePublishedRows() {
   `);
 }
 
-export async function listPublishedOpportunities({ originAirport = '', maxPrice = null, travelMonth = '', limit = 20 } = {}) {
+function applyOpportunityFilters(items, { country = '', region = '', cluster = '', budgetBucket = '', entity = '' } = {}) {
+  const safeCountry = normalizeText(country);
+  const safeRegion = normalizeText(region);
+  const safeCluster = normalizeText(cluster);
+  const safeEntity = normalizeText(entity);
+
+  return items.filter((item) => {
+    if (safeCountry && normalizeText(item.destination_country) !== safeCountry) return false;
+    if (safeRegion && normalizeText(item.destination_region) !== safeRegion) return false;
+    if (safeCluster && normalizeText(item.destination_cluster_slug) !== safeCluster) return false;
+    if (budgetBucket && !matchesBudgetBucket(item, budgetBucket)) return false;
+    if (safeEntity) {
+      const entityPool = new Set([
+        normalizeText(item.destination_city),
+        normalizeText(item.destination_country),
+        normalizeText(item.destination_region),
+        normalizeText(item.destination_cluster_slug),
+        normalizeText(item.destination_airport),
+        normalizeText(item.origin_airport),
+        slugify(item.destination_city),
+        slugify(item.destination_country)
+      ]);
+      if (!entityPool.has(safeEntity)) return false;
+    }
+    return true;
+  });
+}
+
+export async function listPublishedOpportunities({
+  originAirport = '',
+  maxPrice = null,
+  travelMonth = '',
+  country = '',
+  region = '',
+  cluster = '',
+  budgetBucket = '',
+  entity = '',
+  limit = 20
+} = {}) {
   await refreshOpportunityFeed();
   await dedupePublishedRows();
   await ensureInitialized();
 
   const safeOrigin = String(originAirport || '').trim().toUpperCase();
   const safeLimit = Math.max(1, Math.min(60, Number(limit) || 20));
+  const preFilterLimit = Math.max(safeLimit * 4, 120);
   const hasMonth = /^\d{4}-\d{2}$/.test(String(travelMonth || '').trim());
   const safeMonth = hasMonth ? String(travelMonth).trim() : '';
   const safePrice = Number.isFinite(Number(maxPrice)) ? Number(maxPrice) : null;
+  let rows = [];
 
   if (getMode() === 'postgres') {
     const where = ['is_published = true'];
@@ -777,30 +954,191 @@ export async function listPublishedOpportunities({ originAirport = '', maxPrice 
       params.push(`${safeMonth}-%`);
       where.push(`depart_date::text LIKE $${params.length}`);
     }
-    params.push(safeLimit);
+    params.push(preFilterLimit);
     const sql = `SELECT * FROM travel_opportunities WHERE ${where.join(' AND ')} ORDER BY final_score DESC, source_observed_at DESC LIMIT $${params.length}`;
-    const result = await pgPool.query(sql, params);
-    return result.rows.map(normalizeOpportunityRowForApi);
+    rows = (await pgPool.query(sql, params)).rows;
+  } else {
+    const where = ['is_published = 1'];
+    const params = [];
+    if (safeOrigin) {
+      where.push('origin_airport = ?');
+      params.push(safeOrigin);
+    }
+    if (safePrice && safePrice > 0) {
+      where.push('price <= ?');
+      params.push(safePrice);
+    }
+    if (safeMonth) {
+      where.push('depart_date LIKE ?');
+      params.push(`${safeMonth}-%`);
+    }
+    rows = sqliteDb
+      .prepare(`SELECT * FROM travel_opportunities WHERE ${where.join(' AND ')} ORDER BY final_score DESC, source_observed_at DESC LIMIT ?`)
+      .all(...params, preFilterLimit)
+      .map((row) => ({ ...row, is_published: Boolean(row.is_published) }));
   }
 
-  const where = ['is_published = 1'];
-  const params = [];
-  if (safeOrigin) {
-    where.push('origin_airport = ?');
-    params.push(safeOrigin);
+  const normalized = rows.map(normalizeOpportunityRowForApi);
+  const filtered = applyOpportunityFilters(normalized, { country, region, cluster, budgetBucket, entity });
+  return filtered.slice(0, safeLimit);
+}
+
+function mapUserFollowRow(row) {
+  if (!row) return null;
+  const metadata = parseJsonSafe(row.metadata_json, {});
+  return {
+    id: String(row.id),
+    user_id: String(row.user_id),
+    follow_type: String(row.follow_type || 'radar'),
+    created_at: row.created_at ? String(row.created_at) : null,
+    updated_at: row.updated_at ? String(row.updated_at) : null,
+    entity: {
+      entity_type: String(row.entity_type || 'destination_cluster'),
+      slug: String(row.slug || ''),
+      display_name: String(row.display_name || row.slug || ''),
+      metadata
+    }
+  };
+}
+
+export async function createOrUpdateUserFollow({ userId, entityType, slug, displayName, followType = 'radar', metadata = {} }) {
+  await ensureInitialized();
+  const normalizedUserId = String(userId || '').trim();
+  const normalizedEntityType = String(entityType || '').trim().toLowerCase();
+  const normalizedSlug = slugify(slug);
+  const normalizedFollowType = String(followType || 'radar').trim().toLowerCase();
+  const normalizedDisplayName = String(displayName || slug || '').trim() || normalizedSlug;
+  const metadataJson = JSON.stringify(metadata || {});
+  if (!normalizedUserId || !normalizedEntityType || !normalizedSlug) {
+    throw new Error('invalid_follow_payload');
   }
-  if (safePrice && safePrice > 0) {
-    where.push('price <= ?');
-    params.push(safePrice);
+
+  if (getMode() === 'postgres') {
+    const existing = await pgPool.query(
+      `SELECT * FROM opportunity_user_follows
+       WHERE user_id = $1 AND entity_type = $2 AND slug = $3 AND follow_type = $4
+       LIMIT 1`,
+      [normalizedUserId, normalizedEntityType, normalizedSlug, normalizedFollowType]
+    );
+    if (existing.rows[0]) {
+      const updated = await pgPool.query(
+        `UPDATE opportunity_user_follows
+         SET display_name = $2, metadata_json = $3::jsonb, updated_at = NOW()
+         WHERE id = $1
+         RETURNING *`,
+        [existing.rows[0].id, normalizedDisplayName, metadataJson]
+      );
+      return mapUserFollowRow(updated.rows[0]);
+    }
+    const inserted = await pgPool.query(
+      `INSERT INTO opportunity_user_follows
+       (id, user_id, entity_type, slug, display_name, follow_type, metadata_json, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, NOW(), NOW())
+       RETURNING *`,
+      [`follow_${shortHash(`${normalizedUserId}_${normalizedEntityType}_${normalizedSlug}_${normalizedFollowType}`)}`, normalizedUserId, normalizedEntityType, normalizedSlug, normalizedDisplayName, normalizedFollowType, metadataJson]
+    );
+    return mapUserFollowRow(inserted.rows[0]);
   }
-  if (safeMonth) {
-    where.push('depart_date LIKE ?');
-    params.push(`${safeMonth}-%`);
+
+  const existing = sqliteDb
+    .prepare(
+      `SELECT * FROM opportunity_user_follows
+       WHERE user_id = ? AND entity_type = ? AND slug = ? AND follow_type = ?
+       LIMIT 1`
+    )
+    .get(normalizedUserId, normalizedEntityType, normalizedSlug, normalizedFollowType);
+  if (existing) {
+    sqliteDb
+      .prepare(
+        `UPDATE opportunity_user_follows
+         SET display_name = ?, metadata_json = ?, updated_at = datetime('now')
+         WHERE id = ?`
+      )
+      .run(normalizedDisplayName, metadataJson, existing.id);
+    const row = sqliteDb.prepare(`SELECT * FROM opportunity_user_follows WHERE id = ? LIMIT 1`).get(existing.id);
+    return mapUserFollowRow(row);
+  }
+  const id = `follow_${shortHash(`${normalizedUserId}_${normalizedEntityType}_${normalizedSlug}_${normalizedFollowType}`)}`;
+  sqliteDb
+    .prepare(
+      `INSERT INTO opportunity_user_follows
+       (id, user_id, entity_type, slug, display_name, follow_type, metadata_json, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`
+    )
+    .run(id, normalizedUserId, normalizedEntityType, normalizedSlug, normalizedDisplayName, normalizedFollowType, metadataJson);
+  const row = sqliteDb.prepare(`SELECT * FROM opportunity_user_follows WHERE id = ? LIMIT 1`).get(id);
+  return mapUserFollowRow(row);
+}
+
+export async function listUserFollows(userId) {
+  await ensureInitialized();
+  const normalizedUserId = String(userId || '').trim();
+  if (!normalizedUserId) return [];
+  if (getMode() === 'postgres') {
+    const result = await pgPool.query(
+      `SELECT * FROM opportunity_user_follows
+       WHERE user_id = $1
+       ORDER BY updated_at DESC
+       LIMIT 250`,
+      [normalizedUserId]
+    );
+    return result.rows.map(mapUserFollowRow).filter(Boolean);
   }
   const rows = sqliteDb
-    .prepare(`SELECT * FROM travel_opportunities WHERE ${where.join(' AND ')} ORDER BY final_score DESC, source_observed_at DESC LIMIT ?`)
-    .all(...params, safeLimit);
-  return rows.map((row) => normalizeOpportunityRowForApi({ ...row, is_published: Boolean(row.is_published) }));
+    .prepare(
+      `SELECT * FROM opportunity_user_follows
+       WHERE user_id = ?
+       ORDER BY updated_at DESC
+       LIMIT 250`
+    )
+    .all(normalizedUserId);
+  return rows.map(mapUserFollowRow).filter(Boolean);
+}
+
+export async function deleteUserFollow({ userId, followId }) {
+  await ensureInitialized();
+  const normalizedUserId = String(userId || '').trim();
+  const normalizedFollowId = String(followId || '').trim();
+  if (!normalizedUserId || !normalizedFollowId) return { removed: false };
+  if (getMode() === 'postgres') {
+    const result = await pgPool.query(`DELETE FROM opportunity_user_follows WHERE user_id = $1 AND id = $2`, [normalizedUserId, normalizedFollowId]);
+    return { removed: result.rowCount > 0 };
+  }
+  const result = sqliteDb.prepare(`DELETE FROM opportunity_user_follows WHERE user_id = ? AND id = ?`).run(normalizedUserId, normalizedFollowId);
+  return { removed: Number(result?.changes || 0) > 0 };
+}
+
+export async function listDestinationClusters({ region = '', limit = 12 } = {}) {
+  const safeLimit = Math.max(1, Math.min(40, Number(limit) || 12));
+  const items = await listPublishedOpportunities({
+    region,
+    limit: Math.max(160, safeLimit * 6)
+  });
+  const grouped = new Map();
+  for (const item of items) {
+    const cluster = deriveClusterInfo(item);
+    const key = cluster.slug;
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        id: shortHash(`cluster_${key}`),
+        cluster_name: cluster.cluster_name,
+        slug: cluster.slug,
+        region: cluster.region,
+        min_price: toNumber(item.price, 0),
+        opportunities_count: 1
+      });
+      continue;
+    }
+    const entry = grouped.get(key);
+    entry.opportunities_count += 1;
+    entry.min_price = Math.min(entry.min_price, toNumber(item.price, 0));
+  }
+  return [...grouped.values()]
+    .sort((a, b) => {
+      if (b.opportunities_count !== a.opportunities_count) return b.opportunities_count - a.opportunities_count;
+      return a.min_price - b.min_price;
+    })
+    .slice(0, safeLimit);
 }
 
 export async function getOpportunityById(opportunityId) {
@@ -1134,5 +1472,25 @@ export async function getOpportunityPipelineStats() {
     ...lastPipelineStats,
     totals: { total, published, pendingEnrichment },
     recentRuns
+  };
+}
+
+export async function getOpportunityIntelligenceDebugStats() {
+  await ensureInitialized();
+  const opportunityPipeline = await getOpportunityPipelineStats();
+  let followsTotal = 0;
+  if (getMode() === 'postgres') {
+    const result = await pgPool.query(`SELECT COUNT(*)::int AS total FROM opportunity_user_follows`);
+    followsTotal = Number(result.rows[0]?.total || 0);
+  } else {
+    const row = sqliteDb.prepare(`SELECT COUNT(*) AS total FROM opportunity_user_follows`).get();
+    followsTotal = Number(row?.total || 0);
+  }
+  return {
+    opportunityPipeline,
+    follows: {
+      total: followsTotal
+    },
+    refreshedAt: new Date().toISOString()
   };
 }

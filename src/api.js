@@ -345,6 +345,9 @@ export const api = {
   },
   opportunityPipelineStatus(token) {
     return request('/opportunities/pipeline/status', { token });
+  },
+  opportunityPipelineRun(token) {
+    return request('/opportunities/pipeline/run', { method: 'POST', token });
   }
 };
 

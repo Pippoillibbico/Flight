@@ -79,7 +79,7 @@ function LandingSection(props) {
               className="landing-ctrl-btn landing-theme-btn"
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => setDarkMode((d) => !d)}
-              aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+              aria-label={darkMode ? t('themeSwitchToLight') : t('themeSwitchToDark')}
             >
               {darkMode ? (
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -90,7 +90,7 @@ function LandingSection(props) {
                   <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
                 </svg>
               )}
-              <span className="landing-ctrl-label">{darkMode ? 'Dark' : 'Light'}</span>
+              <span className="landing-ctrl-label">{darkMode ? t('themeDark') : t('themeLight')}</span>
             </button>
 
             {/* Language selector */}
@@ -139,17 +139,17 @@ function LandingSection(props) {
                 {t('landingHeroCtaSub')}
               </button>
             </div>
-            <div className="landing-stats-row">
+            <div className="landing-stats-row" aria-label="Opportunity radar highlights">
               <div className="landing-stat">
                 <span className="landing-stat-icon">{'\u2708'}</span>
                 <span className="landing-stat-copy">{t('landingStatsDestinations')}</span>
               </div>
-              <div className="landing-stat-divider" />
+              <div className="landing-stat-divider" aria-hidden="true" />
               <div className="landing-stat">
                 <span className="landing-stat-icon">{'\u{1F514}'}</span>
                 <span className="landing-stat-copy">{t('landingStatsAlert')}</span>
               </div>
-              <div className="landing-stat-divider" />
+              <div className="landing-stat-divider" aria-hidden="true" />
               <div className="landing-stat">
                 <span className="landing-stat-icon">{'\u{1F9E0}'}</span>
                 <span className="landing-stat-copy">{t('landingStatsAI')}</span>
@@ -163,7 +163,7 @@ function LandingSection(props) {
               <div className="lhc-header">
                 <span className="lhc-route">
                   <span>FCO</span>
-                  <span className="lhc-route-sep">to</span>
+                  <span className="lhc-route-sep">{t('landingRouteTo')}</span>
                   <span>TYO</span>
                 </span>
                 <span className="lhc-badge lhc-badge--green">-34%</span>
@@ -176,7 +176,7 @@ function LandingSection(props) {
               <div className="lhc-header">
                 <span className="lhc-route">
                   <span>MXP</span>
-                  <span className="lhc-route-sep">to</span>
+                  <span className="lhc-route-sep">{t('landingRouteTo')}</span>
                   <span>NYC</span>
                 </span>
                 <span className="lhc-badge lhc-badge--blue">{t('landingHeroCardBadge')}</span>
@@ -189,13 +189,13 @@ function LandingSection(props) {
               <div className="lhc-header">
                 <span className="lhc-route">
                   <span>BGY</span>
-                  <span className="lhc-route-sep">to</span>
+                  <span className="lhc-route-sep">{t('landingRouteTo')}</span>
                   <span>DXB</span>
                 </span>
-                <span className="lhc-badge lhc-badge--orange">Price alert</span>
+                <span className="lhc-badge lhc-badge--orange">{t('landingPriceAlertBadge')}</span>
               </div>
               <div className="lhc-price">EUR 198</div>
-              <div className="lhc-meta">From next week</div>
+              <div className="lhc-meta">{t('landingFromNextWeek')}</div>
             </div>
           </div>
 

@@ -5,6 +5,7 @@ import { validateProps } from '../utils/validateProps';
 const AuthSectionPropsSchema = z
   .object({
     showAccountPanel: z.boolean(),
+    darkMode: z.boolean().optional().default(false),
     authView: z.string(),
     authMode: z.string(),
     rememberMe: z.boolean(),
@@ -31,6 +32,7 @@ function AuthSection(props) {
   const { t, isAuthenticated, user, authUi, authTitle, isMfaChallengeActive } = useAppContext();
   const {
     showAccountPanel,
+    darkMode,
     setShowAccountPanel,
     logout,
     formatEur,
@@ -73,9 +75,9 @@ function AuthSection(props) {
 
   return (
 <div
-  className={`account-drawer-backdrop ${!isAuthenticated ? 'auth-modal-backdrop' : ''}`}
+  className={`account-drawer-backdrop ${!isAuthenticated ? 'auth-modal-backdrop' : ''}${darkMode ? ' app-shell app-dark' : ''}`}
   onClick={() => {
-    if (isAuthenticated) setShowAccountPanel(false);
+    setShowAccountPanel(false);
   }}
 >
           <aside
@@ -104,7 +106,7 @@ function AuthSection(props) {
                 <div className="user-box">
                   <strong>{user.name}</strong>
                   <span>{user.email}</span>
-                  <span>Piano attivo: {String(planType || 'free').toUpperCase()}</span>
+                  <span>{t('activePlanLabel')}: {String(planType || 'free').toUpperCase()}</span>
                   <span>{user.mfaEnabled ? t('mfaEnabledOn') : t('mfaDisabledOn')}</span>
                   <div className="watch-item">
                     <div>
@@ -124,12 +126,12 @@ function AuthSection(props) {
                   <div className="item-actions">
                     {planType === 'free' ? (
                       <button className="ghost" type="button" onClick={upgradeToPremium}>
-                        Passa a PRO
+                        {t('pricingProCta')}
                       </button>
                     ) : null}
                     {planType !== 'elite' ? (
                       <button className="ghost" type="button" onClick={chooseElitePlan}>
-                        Passa a ELITE
+                        {t('pricingEliteCta')}
                       </button>
                     ) : null}
                     {!user.mfaEnabled ? (
@@ -146,7 +148,7 @@ function AuthSection(props) {
                     </button>
                   </div>
                   {mfaSetupData?.qrDataUrl ? <img src={mfaSetupData.qrDataUrl} alt="MFA QR" style={{ maxWidth: 180, borderRadius: 10 }} /> : null}
-                  {mfaSetupData?.manualKey ? <p className="muted">Manual key: {mfaSetupData.manualKey}</p> : null}
+                  {mfaSetupData?.manualKey ? <p className="muted">{t('mfaManualKeyLabel')}: {mfaSetupData.manualKey}</p> : null}
                   <label>
                     {t('mfaCode')}
                     <input value={mfaActionCode} onChange={(e) => setMfaActionCode(e.target.value.trim())} placeholder="123456" />

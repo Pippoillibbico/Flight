@@ -23,8 +23,10 @@ const OpportunityFeedSectionPropsSchema = z
     onActivateRadar: z.function(),
     isAuthenticated: z.boolean(),
     onCreateAccount: z.function(),
+    t: z.function().optional(),
+    language: z.string().optional().default('it'),
     showUpgradePrompt: z.boolean().optional().default(false),
-    upgradeMessage: z.string().optional().default('Sblocca tutte le opportunita con PRO'),
+    upgradeMessage: z.string().optional().default('Unlock all opportunities with PRO'),
     onUpgradePro: z.function(),
     onUpgradeElite: z.function()
   })
@@ -36,8 +38,8 @@ function formatPrice(value, currency = 'EUR') {
   return String(currency).toUpperCase() === 'EUR' ? `${Math.round(amount)} \u20AC` : `${Math.round(amount)} ${currency}`;
 }
 
-function formatPeriod(item) {
-  const formatter = new Intl.DateTimeFormat('it-IT', { month: 'short' });
+function formatPeriod(item, locale, labels) {
+  const formatter = new Intl.DateTimeFormat(locale, { month: 'short' });
   if (item?.depart_date && item?.return_date) {
     const depart = new Date(item.depart_date);
     const ret = new Date(item.return_date);
@@ -48,15 +50,15 @@ function formatPeriod(item) {
     }
     return `${item.depart_date} - ${item.return_date}`;
   }
-  if (item?.depart_date) return `Partenza ${item.depart_date}`;
-  return 'Date flessibili';
+  if (item?.depart_date) return `${labels.departurePrefix} ${item.depart_date}`;
+  return labels.flexibleDates;
 }
 
-function levelBadge(level) {
-  if (level === 'Rare opportunity') return '\u26A1 Opportunita rara';
-  if (level === 'Exceptional price') return '\uD83D\uDD25 Prezzo eccezionale';
-  if (level === 'Good deal' || level === 'Great deal') return '\uD83D\uDCB0 Ottimo affare';
-  return '\uD83C\uDF0D Occasione interessante';
+function levelBadge(level, labels) {
+  if (level === 'Rare opportunity') return labels.rareBadge;
+  if (level === 'Exceptional price') return labels.exceptionalBadge;
+  if (level === 'Good deal' || level === 'Great deal') return labels.greatBadge;
+  return labels.interestingBadge;
 }
 
 function OpportunityFeedSection(props) {
@@ -79,6 +81,8 @@ function OpportunityFeedSection(props) {
     onActivateRadar,
     isAuthenticated,
     onCreateAccount,
+    t,
+    language,
     showUpgradePrompt,
     upgradeMessage,
     onUpgradePro,
@@ -88,47 +92,91 @@ function OpportunityFeedSection(props) {
     props,
     'OpportunityFeedSection'
   );
+  const tt = (key, fallback) => (typeof t === 'function' ? t(key) : fallback) || fallback;
+  const locale = String(language || 'it').toLowerCase().startsWith('en') ? 'en-US' : 'it-IT';
+  const labels = {
+    eyebrow: tt('opportunityFeedEyebrow', 'Radar opportunita live'),
+    heroTitle: tt('opportunityFeedHeroTitle', 'Scopri voli incredibilmente economici prima degli altri.'),
+    heroSub: tt(
+      'opportunityFeedHeroSub',
+      'Il nostro radar analizza milioni di rotte e combinazioni tra compagnie aeree per individuare opportunita di viaggio che i normali motori di ricerca spesso non mettono in evidenza.'
+    ),
+    discoverCta: tt('opportunityFeedDiscoverCta', 'Scopri opportunita'),
+    activateRadarCta: tt('opportunityFeedActivateRadarCta', 'Attiva il radar'),
+    refreshCta: tt('opportunityFeedRefreshCta', 'Aggiorna feed'),
+    todayTitle: tt('opportunityFeedTodayTitle', 'Le opportunita di oggi'),
+    todaySub: tt('opportunityFeedTodaySubtitle', 'Voli particolarmente interessanti trovati dal nostro radar.'),
+    clusterTitle: tt('opportunityFeedClusterTitle', 'Scopri per cluster'),
+    showAll: tt('opportunityFeedShowAll', 'Mostra tutto'),
+    clustersLoading: tt('opportunityFeedClustersLoading', 'Caricamento cluster...'),
+    noClusters: tt('opportunityFeedNoClusters', 'Nessun cluster disponibile al momento.'),
+    from: tt('opportunityFeedFromLabel', 'da'),
+    variablePrice: tt('opportunityFeedVariablePrice', 'Prezzo variabile'),
+    opportunitiesWord: tt('opportunityFeedOpportunitiesWord', 'opportunita'),
+    followClusterCta: tt('opportunityFeedFollowClusterCta', 'Segui cluster'),
+    opportunitiesLoading: tt('opportunityFeedLoading', 'Caricamento opportunita in corso...'),
+    noItems: tt('noResults', 'Al momento non ci sono nuove opportunita per i tuoi filtri. Stiamo continuando ad analizzare nuove rotte.'),
+    direct: tt('opportunityFeedDirect', 'Diretto'),
+    stopsSuffix: tt('opportunityFeedStopsSuffix', 'scali'),
+    viewItineraryCta: tt('opportunityFeedViewItineraryCta', 'Vedi itinerario'),
+    activateAlertCta: tt('opportunityFeedActivateAlertCta', 'Attiva alert'),
+    followDestinationCta: tt('opportunityFeedFollowDestinationCta', 'Segui destinazione'),
+    departurePrefix: tt('opportunityFeedDeparturePrefix', 'Partenza'),
+    flexibleDates: tt('opportunityFeedFlexibleDates', 'Date flessibili'),
+    rareBadge: tt('opportunityFeedBadgeRare', '\u26A1 Opportunita rara'),
+    exceptionalBadge: tt('opportunityFeedBadgeExceptional', '\uD83D\uDD25 Prezzo eccezionale'),
+    greatBadge: tt('opportunityFeedBadgeGreat', '\uD83D\uDCB0 Ottimo affare'),
+    interestingBadge: tt('opportunityFeedBadgeInteresting', '\uD83C\uDF0D Occasione interessante'),
+    softGateTitle: tt('opportunityFeedSoftGateTitle', 'Vuoi vedere tutte le opportunita?'),
+    softGateDesc: tt(
+      'opportunityFeedSoftGateDescription',
+      'Crea un account gratuito per sbloccare il feed completo e attivare il tuo radar.'
+    ),
+    softGateCta: tt('opportunityFeedSoftGateCta', 'Crea account gratis'),
+    upgradeTitle: tt('opportunityFeedUpgradeTitle', 'Vuoi vedere tutte le opportunita?'),
+    upgradeMessage: upgradeMessage || tt('upgradePromptUnlockAll', 'Sblocca tutte le opportunita con PRO'),
+    upgradePrimary: tt('opportunityFeedUpgradePrimaryCta', 'Upgrade a PRO'),
+    upgradeSecondary: tt('opportunityFeedUpgradeSecondaryCta', 'Scopri ELITE')
+  };
   const visibleItems = isAuthenticated ? items : items.slice(0, 5);
 
   return (
     <section className="panel opportunity-feed-panel">
       <div className="opportunity-hero">
-        <p className="eyebrow">Radar opportunita live</p>
-        <h2>Scopri voli incredibilmente economici prima degli altri.</h2>
-        <p className="hero-sub">
-          Il nostro radar analizza milioni di rotte e combinazioni tra compagnie aeree per individuare opportunita di viaggio che i normali motori di ricerca spesso non mettono in evidenza.
-        </p>
+        <p className="eyebrow">{labels.eyebrow}</p>
+        <h2>{labels.heroTitle}</h2>
+        <p className="hero-sub">{labels.heroSub}</p>
         <div className="item-actions">
           <button type="button" onClick={onDiscover}>
-            Scopri opportunita
+            {labels.discoverCta}
           </button>
           <button type="button" className="ghost" onClick={onActivateRadar}>
-            Attiva il radar
+            {labels.activateRadarCta}
           </button>
           {onRefresh ? (
             <button type="button" className="ghost" onClick={onRefresh} disabled={loading}>
-              Aggiorna feed
+              {labels.refreshCta}
             </button>
           ) : null}
         </div>
       </div>
 
       <div className="panel-head">
-        <h3>Le opportunita di oggi</h3>
+        <h3>{labels.todayTitle}</h3>
       </div>
-      <p className="muted">Voli particolarmente interessanti trovati dal nostro radar.</p>
+      <p className="muted">{labels.todaySub}</p>
       <div className="panel-head">
-        <h3>Scopri per cluster</h3>
+        <h3>{labels.clusterTitle}</h3>
         {selectedCluster ? (
           <button type="button" className="ghost" onClick={onClearCluster}>
-            Mostra tutto
+            {labels.showAll}
           </button>
         ) : null}
       </div>
-      {clustersLoading ? <p className="muted">Caricamento cluster...</p> : null}
+      {clustersLoading ? <p className="muted">{labels.clustersLoading}</p> : null}
       {clustersError ? <p className="error">{clustersError}</p> : null}
       {!clustersLoading && !clustersError && clusters.length === 0 ? (
-        <p className="muted">Nessun cluster disponibile al momento.</p>
+        <p className="muted">{labels.noClusters}</p>
       ) : null}
       <div className="opportunity-cluster-list">
         {clusters.map((cluster) => {
@@ -138,22 +186,20 @@ function OpportunityFeedSection(props) {
               <button type="button" className="ghost opportunity-cluster-trigger" onClick={() => onSelectCluster(cluster.slug)}>
                 <strong>{cluster.cluster_name}</strong>
                 <p>
-                  {cluster.min_price ? `da ${Math.round(cluster.min_price)} EUR` : 'Prezzo variabile'} | {Number(cluster.opportunities_count || 0)} opportunita
+                  {cluster.min_price ? `${labels.from} ${Math.round(cluster.min_price)} EUR` : labels.variablePrice} | {Number(cluster.opportunities_count || 0)} {labels.opportunitiesWord}
                 </p>
               </button>
               <button type="button" className="ghost" onClick={() => onFollowCluster(cluster)}>
-                Segui cluster
+                {labels.followClusterCta}
               </button>
             </article>
           );
         })}
       </div>
-      {loading ? <p className="muted">Caricamento opportunita in corso...</p> : null}
+      {loading ? <p className="muted">{labels.opportunitiesLoading}</p> : null}
       {error ? <p className="error">{error}</p> : null}
       {!loading && items.length === 0 ? (
-        <p className="muted">
-          Al momento non ci sono nuove opportunita per i tuoi filtri. Stiamo continuando ad analizzare nuove rotte.
-        </p>
+        <p className="muted">{labels.noItems}</p>
       ) : null}
 
       <div className="opportunity-feed-list">
@@ -167,31 +213,41 @@ function OpportunityFeedSection(props) {
                 <span className="opportunity-badge">{item.short_badge_text || levelBadge(item.opportunity_level)}</span>
               </div>
               <p>
-                {formatPrice(item.price, item.currency)} | {formatPeriod(item)} | {item.stops === 0 ? 'Diretto' : `${item.stops} scali`}
+                {formatPrice(item.price, item.currency)} | {formatPeriod(item, locale, labels)} | {item.stops === 0 ? labels.direct : `${item.stops} ${labels.stopsSuffix}`}
               </p>
               {item.ai_description ? <p>{item.ai_description}</p> : null}
             </div>
             <div className="item-actions">
               <button type="button" onClick={() => onView(item.id)}>
-                Vedi itinerario
+                {labels.viewItineraryCta}
               </button>
               <button type="button" className="ghost" onClick={() => onAlert(item.id)}>
-                Attiva alert
+                {labels.activateAlertCta}
               </button>
               <button type="button" className="ghost" onClick={() => onFollow(item.id)}>
-                Segui destinazione
+                {labels.followDestinationCta}
               </button>
             </div>
           </article>
         ))}
         {isAuthenticated && showUpgradePrompt ? (
           <UpgradePrompt
-            message={upgradeMessage}
+            title={labels.upgradeTitle}
+            message={labels.upgradeMessage}
+            primaryLabel={labels.upgradePrimary}
+            secondaryLabel={labels.upgradeSecondary}
             onUpgradePro={onUpgradePro}
             onUpgradeElite={onUpgradeElite}
           />
         ) : null}
-        {!isAuthenticated && !loading && !error && items.length > 5 ? <SoftLoginGate onCreateAccount={onCreateAccount} /> : null}
+        {!isAuthenticated && !loading && !error && items.length > 5 ? (
+          <SoftLoginGate
+            title={labels.softGateTitle}
+            description={labels.softGateDesc}
+            ctaLabel={labels.softGateCta}
+            onCreateAccount={onCreateAccount}
+          />
+        ) : null}
       </div>
     </section>
   );

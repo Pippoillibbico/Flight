@@ -3,11 +3,11 @@ import { validateProps } from '../utils/validateProps';
 
 const SoftLoginGatePropsSchema = z
   .object({
-    title: z.string().default('Vuoi vedere tutte le opportunita?'),
+    title: z.string().default('Want to see all opportunities?'),
     description: z
       .string()
-      .default('Crea un account gratuito per sbloccare il feed completo e attivare il tuo radar.'),
-    ctaLabel: z.string().default('Crea account gratis'),
+      .default('Create a free account to unlock the full feed and activate your radar.'),
+    ctaLabel: z.string().default('Create free account'),
     onCreateAccount: z.function()
   })
   .passthrough();

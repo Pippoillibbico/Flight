@@ -106,7 +106,7 @@ function SearchSection(props) {
               </div>
             </div>
           </div>
-          <p className="muted">Scopri le destinazioni piu economiche in questo momento.</p>
+          <p className="muted">{t('explorePageSubtitle')}</p>
 
           <form className="search-grid" onSubmit={submitSearch}>
             <div className="ai-intake-row">
@@ -453,7 +453,7 @@ function SearchSection(props) {
                     {t('upgradePremium')}
                   </button>
                 ) : null}
-                {!canUseEliteFeatures ? <span className="muted">Route insights disponibili su ELITE.</span> : null}
+                {!canUseEliteFeatures ? <span className="muted">{t('routeInsightsEliteOnly')}</span> : null}
               </div>
             </details>
           ) : null}

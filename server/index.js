@@ -3169,6 +3169,27 @@ async function runStartupTask(name, taskFn) {
   }
 }
 
+async function bootstrapOpportunitySeedIfEmpty() {
+  const status = await getDataFoundationStatus();
+  const priceObservations = Number(status?.totals?.priceObservations || 0);
+  if (priceObservations > 0) {
+    logger.info({ priceObservations }, 'opportunity_seed_bootstrap_skipped_existing_data');
+    return { skipped: true, reason: 'existing_data', priceObservations };
+  }
+
+  const defaultSeedFile = resolve(process.cwd(), 'data', 'price-observations.template.csv');
+  if (!existsSync(defaultSeedFile)) {
+    logger.warn({ defaultSeedFile }, 'opportunity_seed_bootstrap_skipped_missing_seed_file');
+    return { skipped: true, reason: 'missing_seed_file' };
+  }
+
+  const seeded = await runSeedImportOnce({ filePath: defaultSeedFile, dryRun: false });
+  await runNightlyRouteBaselineJob({ reason: 'opportunity_seed_bootstrap' });
+  await runOpportunityPipelineOnce();
+  logger.info({ seeded }, 'opportunity_seed_bootstrap_completed');
+  return { skipped: false, seeded };
+}
+
 scheduleCronJob('notifications_scan', CRON_SCHEDULE, () => scanSubscriptionsOnce());
 scheduleCronJob('ai_pricing', AI_PRICING_CRON, () => monitorAndUpdateSubscriptionPricing({ reason: 'scheduled' }), { timezone: AI_PRICING_CRON_TIMEZONE });
 scheduleCronJob('free_precompute', FREE_PRECOMPUTE_CRON, () => runNightlyFreePrecompute({ reason: 'scheduled' }), { timezone: FREE_JOBS_TIMEZONE });
@@ -3189,6 +3210,7 @@ runStartupTask('route_baseline_startup', () => runNightlyRouteBaselineJob({ reas
 runStartupTask('baseline_recompute_startup', () => runBaselineRecomputeOnce());
 runStartupTask('discovery_alert_worker_startup', () => runDiscoveryAlertWorkerOnce({ limit: 200 }));
 runStartupTask('price_ingestion_worker_startup', () => runPriceIngestionWorkerOnce({ maxJobs: 500 }));
+runStartupTask('opportunity_seed_bootstrap_startup', () => bootstrapOpportunitySeedIfEmpty());
 runStartupTask('opportunity_pipeline_startup', () => runOpportunityPipelineOnce());
 runStartupTask('radar_match_precompute_startup', () => runRadarMatchPrecomputeOnce());
 if (PROVIDER_COLLECTION_ENABLED) {

@@ -2,7 +2,7 @@
 import { addDays, differenceInCalendarDays, format, parseISO } from 'date-fns';
 import { api, COOKIE_SESSION_TOKEN, setCsrfToken } from './api';
 import { handleApiError } from './utils/handleApiError';
-import { DEFAULT_LANGUAGE_PACK, LANGS, LANGUAGE_OPTIONS, loadLanguagePack } from './i18n';
+import { DEFAULT_LANGUAGE, DEFAULT_LANGUAGE_PACK, LANGS, LANGUAGE_OPTIONS, loadLanguagePack } from './i18n';
 import { AppProvider } from './context/AppContext';
 import LandingSection from './components/LandingSection';
 import AuthSection from './components/AuthSection';
@@ -82,7 +82,7 @@ const POST_AUTH_MODE_STORAGE_KEY = 'flight_post_auth_mode';
 const POST_AUTH_VIEW_STORAGE_KEY = 'flight_post_auth_view';
 
 function App() {
-  const [language, setLanguage] = useState('it');
+  const [language, setLanguage] = useState(DEFAULT_LANGUAGE);
   const [i18nPack, setI18nPack] = useState(DEFAULT_LANGUAGE_PACK);
   const isGarbledI18nText = (value) => {
     if (typeof value !== 'string') return false;
@@ -105,7 +105,7 @@ function App() {
   const travelTimeLabel = (code) => TRAVEL_TIME_LABELS_I18N[language]?.[code] || TRAVEL_TIME_LABELS_I18N.en[code] || code;
   useEffect(() => {
     if (!LANGS.includes(language)) {
-      setLanguage('en');
+      setLanguage(DEFAULT_LANGUAGE);
     }
   }, [language]);
 
@@ -822,7 +822,7 @@ function App() {
       return setSubMessage(t('loginRequiredAlert'));
     }
     if (!canUseRadarPlan) {
-      setSubMessage('Sblocca tutte le opportunita con PRO');
+      setSubMessage(t('upgradePromptUnlockAll'));
       setActiveMainSection('premium');
       return;
     }
@@ -847,7 +847,7 @@ function App() {
       return;
     }
     if (!canUseRadarPlan) {
-      setSubMessage('Il follow destinazioni e disponibile su PRO.');
+      setSubMessage(t('followDestinationProOnly'));
       setActiveMainSection('premium');
       return;
     }
@@ -860,7 +860,7 @@ function App() {
         metadata: { source: 'cluster_follow' }
       });
       await loadRadarFollows();
-      setSubMessage(`Cluster seguito: ${displayName}`);
+      setSubMessage(`${t('clusterFollowedPrefix')} ${displayName}`);
     } catch (error) {
       setSubMessage(resolveApiError(error));
     }
@@ -998,7 +998,7 @@ function App() {
   async function saveRadarPreferences() {
     if (!isAuthenticated) return;
     if (!canUseRadarPlan) {
-      setRadarError('Radar completo disponibile su PRO.');
+      setRadarError(t('radarUpgradeTitle'));
       setActiveMainSection('premium');
       return;
     }
@@ -1049,7 +1049,7 @@ function App() {
         await api.followEntity(token, { ...item, followType: 'radar', metadata: { source: 'radar_preferences' } });
       }
 
-      setRadarMessage('Radar aggiornato con successo.');
+      setRadarMessage(t('radarSavedSuccess'));
       await loadRadarMatches();
       await loadRadarFollows();
       await loadOpportunityPipelineStatus();
@@ -1066,7 +1066,7 @@ function App() {
     try {
       await api.unfollowEntity(token, followId);
       await loadRadarFollows();
-      setRadarMessage('Follow radar aggiornato.');
+      setRadarMessage(t('radarFollowUpdated'));
     } catch (error) {
       setRadarFollowsError(resolveApiError(error));
     }
@@ -1075,7 +1075,7 @@ function App() {
   async function runAiTravelQuery() {
     if (!isAuthenticated) return setAiTravelError(t('loginRequiredAlert'));
     if (!canUseAiTravelPlan) {
-      setAiTravelError('AI Travel e disponibile solo nel piano ELITE.');
+      setAiTravelError(t('aiTravelEliteOnly'));
       setActiveMainSection('premium');
       return;
     }
@@ -1227,7 +1227,7 @@ function App() {
       await api.upgradePro(token);
       const payload = await api.me(token);
       setUser(payload.user);
-      setSubMessage('Piano PRO attivo. Opportunita illimitate e radar completo sbloccati.');
+      setSubMessage(t('planProActivated'));
     } catch (error) {
       setSubMessage(resolveApiError(error));
     }
@@ -1243,7 +1243,7 @@ function App() {
       });
       return;
     }
-    setSubMessage('Piano Free attivo. Continua a scoprire opportunita.');
+    setSubMessage(t('planFreeActivated'));
   }
 
   async function chooseElitePlan() {
@@ -1260,7 +1260,7 @@ function App() {
       await api.upgradeElite(token);
       const payload = await api.me(token);
       setUser(payload.user);
-      setSubMessage('Piano ELITE attivo. AI travel planner e opportunita rare sbloccate.');
+      setSubMessage(t('planEliteActivated'));
     } catch (error) {
       setSubMessage(resolveApiError(error));
     }
@@ -1793,7 +1793,7 @@ function App() {
   }
 
   async function loadDestinationInsights(flight) {
-    if (!canUseAiTravelPlan) return setSubMessage('Route insights disponibili su ELITE.');
+    if (!canUseAiTravelPlan) return setSubMessage(t('routeInsightsEliteOnly'));
     const stayDays = Math.max(2, differenceInCalendarDays(parseISO(searchForm.dateTo), parseISO(searchForm.dateFrom)));
     setInsightErrorByFlight((prev) => ({ ...prev, [flight.id]: '' }));
     setInsightLoadingByFlight((prev) => ({ ...prev, [flight.id]: true }));
@@ -2073,19 +2073,38 @@ function App() {
     { icon: '\u{1F4CD}', label: t('landingAddressLabel'), value: t('landingAddressValue') }
   ];
 
+  function enterGuestApp(targetSection = 'home') {
+    persistPostAuthAction(null);
+    clearAuthFunnelState();
+    setShowLandingPage(false);
+    setShowAccountPanel(false);
+    setActiveMainSection(targetSection);
+  }
+
+  async function refreshOpportunityFeedNow() {
+    if (isAuthenticated && token && token !== COOKIE_SESSION_TOKEN) {
+      try {
+        await api.opportunityPipelineRun(token);
+      } catch {
+        // Non blocca il refresh UI se la pipeline non puo partire.
+      }
+    }
+    await Promise.all([
+      loadOpportunityFeed(),
+      loadOpportunityClusters(),
+      isAuthenticated ? loadOpportunityPipelineStatus() : Promise.resolve()
+    ]);
+  }
+
   function handleLandingPrimaryCta() {
     if (isAuthenticated) {
       setShowLandingPage(false);
       setShowAccountPanel(false);
       setSubMessage(t('postAuthEnterAppReady'));
+      setActiveMainSection('home');
       return;
     }
-    beginAuthFlow({
-      action: 'enter_app',
-      authMode: 'login',
-      authView: 'options',
-      keepLandingVisible: false
-    });
+    enterGuestApp('home');
   }
 
   function handleLandingSecondaryCta() {
@@ -2093,9 +2112,10 @@ function App() {
       setShowLandingPage(false);
       setShowAccountPanel(false);
       setSubMessage(t('postAuthSetAlertHint'));
+      setActiveMainSection('radar');
       return;
     }
-    beginSetAlertAuthFlow({ keepLandingVisible: false });
+    enterGuestApp('radar');
   }
 
   function requireSectionLogin(targetSection) {
@@ -2247,6 +2267,7 @@ function App() {
 
       <AuthSection
         showAccountPanel={showAccountPanel || showAuthGateModal}
+        darkMode={darkMode}
         setShowAccountPanel={setShowAccountPanel}
         logout={logout}
         formatEur={formatEur}
@@ -2294,7 +2315,7 @@ function App() {
             selectedCluster={selectedOpportunityCluster}
             loading={opportunityFeedLoading}
             error={opportunityFeedError}
-            onRefresh={loadOpportunityFeed}
+            onRefresh={refreshOpportunityFeedNow}
             onSelectCluster={setSelectedOpportunityCluster}
             onClearCluster={() => setSelectedOpportunityCluster('')}
             onFollowCluster={followDestinationCluster}
@@ -2305,8 +2326,10 @@ function App() {
             onActivateRadar={() => setActiveMainSection('radar')}
             isAuthenticated={isAuthenticated}
             onCreateAccount={() => beginAuthFlow({ action: 'enter_app', authMode: 'register', authView: 'options', keepLandingVisible: false })}
+            t={t}
+            language={language}
             showUpgradePrompt={Boolean(opportunityFeedAccess?.showUpgradePrompt)}
-            upgradeMessage={opportunityFeedAccess?.upgradeMessage || 'Sblocca tutte le opportunita con PRO'}
+            upgradeMessage={t(opportunityFeedAccess?.upgradeMessageKey || 'upgradePromptUnlockAll')}
             onUpgradePro={upgradeToPremium}
             onUpgradeElite={chooseElitePlan}
           />
@@ -2315,6 +2338,7 @@ function App() {
               loading={opportunityDetailLoading}
               error={opportunityDetailError}
               detail={opportunityDetail}
+              t={t}
               onClose={() => setOpportunityDetail(null)}
               onFollow={followOpportunity}
               onActivateAlert={followOpportunity}
@@ -2328,6 +2352,7 @@ function App() {
       {activeMainSection === 'radar' ? (
         isAuthenticated ? (
           <RadarSection
+            t={t}
             draft={radarDraft}
             setDraft={setRadarDraft}
             saving={radarSaving}
@@ -2359,9 +2384,9 @@ function App() {
           />
         ) : (
           <SectionAccessGate
-            title="Attiva il radar delle opportunita"
-            description="Segui aeroporti, destinazioni e budget. Ti avviseremo quando troveremo un'opportunita davvero interessante."
-            ctaLabel="Crea account gratis"
+            title={t('radarPageTitle')}
+            description={t('radarPageAccessDescription')}
+            ctaLabel={t('opportunityFeedSoftGateCta')}
             onCta={() => requireSectionLogin('radar')}
           />
         )
@@ -2371,6 +2396,7 @@ function App() {
         isAuthenticated ? (
           <>
             <AITravelSection
+              t={t}
               prompt={aiTravelPrompt}
               setPrompt={setAiTravelPrompt}
               loading={aiTravelLoading}
@@ -2387,6 +2413,7 @@ function App() {
                 loading={opportunityDetailLoading}
                 error={opportunityDetailError}
                 detail={opportunityDetail}
+                t={t}
                 onClose={() => setOpportunityDetail(null)}
                 onFollow={followOpportunity}
                 onActivateAlert={followOpportunity}
@@ -2397,9 +2424,9 @@ function App() {
           </>
         ) : (
           <SectionAccessGate
-            title="Trova il prossimo viaggio con l'AI"
-            description="Descrivi cosa cerchi e lascia che il sistema trovi opportunita reali gia presenti nel feed."
-            ctaLabel="Accedi per usare AI Travel"
+            title={t('aiTravelPageTitle')}
+            description={t('aiTravelPageSubtitle')}
+            ctaLabel={t('signInToUseAiTravel')}
             onCta={() => requireSectionLogin('ai-travel')}
           />
         )
@@ -2408,44 +2435,44 @@ function App() {
       {activeMainSection === 'premium' ? (
         <section className="panel premium-panel">
           <div className="panel-head">
-            <h2>Sblocca tutte le opportunita</h2>
+            <h2>{t('premiumPageTitle')}</h2>
           </div>
-          <p className="muted">Con PRO ed ELITE ricevi piu radar, piu alert e accesso alle opportunita piu rare.</p>
+          <p className="muted">{t('premiumPageSubtitle')}</p>
           <div className="premium-grid">
             <article className="premium-card">
               <p className="premium-plan-tag">FREE</p>
-              <p className="premium-price">Gratis</p>
-              <p className="premium-card-sub">Per iniziare a scoprire opportunita.</p>
+              <p className="premium-price">{t('pricingFreePrice')}</p>
+              <p className="premium-card-sub">{t('pricingFreeSub')}</p>
               <ul className="premium-feature-list">
-                <li>3 opportunita al giorno</li>
-                <li>Feed base</li>
-                <li>Ricerca limitata</li>
+                <li>{t('pricingFreeFeature1')}</li>
+                <li>{t('pricingFreeFeature2')}</li>
+                <li>{t('pricingFreeFeature3')}</li>
               </ul>
-              <button type="button" className="premium-cta premium-cta-light" onClick={activateFreePlan}>Inizia gratis</button>
+              <button type="button" className="premium-cta premium-cta-light" onClick={activateFreePlan}>{t('pricingFreeCta')}</button>
             </article>
             <article className="premium-card premium-card-featured">
               <p className="premium-plan-tag">PRO</p>
-              <p className="premium-price">7€/mese</p>
-              <p className="premium-card-sub">Per chi vuole catturare opportunita in tempo reale.</p>
+              <p className="premium-price">{t('pricingProPrice')}</p>
+              <p className="premium-card-sub">{t('pricingProSub')}</p>
               <ul className="premium-feature-list">
-                <li>Opportunita illimitate</li>
-                <li>Radar personalizzato</li>
-                <li>Notifiche in tempo reale</li>
-                <li>Analisi voli avanzata</li>
+                <li>{t('pricingProFeature1')}</li>
+                <li>{t('pricingProFeature2')}</li>
+                <li>{t('pricingProFeature3')}</li>
+                <li>{t('pricingProFeature4')}</li>
               </ul>
-              <button type="button" className="premium-cta" onClick={upgradeToPremium}>Passa a PRO</button>
+              <button type="button" className="premium-cta" onClick={upgradeToPremium}>{t('pricingProCta')}</button>
             </article>
             <article className="premium-card">
               <p className="premium-plan-tag">ELITE</p>
-              <p className="premium-price">19€/mese</p>
-              <p className="premium-card-sub">Per power user e travel intelligence avanzata.</p>
+              <p className="premium-price">{t('pricingElitePrice')}</p>
+              <p className="premium-card-sub">{t('pricingEliteSub')}</p>
               <ul className="premium-feature-list">
-                <li>AI travel planner</li>
-                <li>Alert immediati</li>
-                <li>Opportunita rare</li>
-                <li>Analisi completa delle rotte</li>
+                <li>{t('pricingEliteFeature1')}</li>
+                <li>{t('pricingEliteFeature2')}</li>
+                <li>{t('pricingEliteFeature3')}</li>
+                <li>{t('pricingEliteFeature4')}</li>
               </ul>
-              <button type="button" className="premium-cta premium-cta-dark" onClick={chooseElitePlan}>Passa a ELITE</button>
+              <button type="button" className="premium-cta premium-cta-dark" onClick={chooseElitePlan}>{t('pricingEliteCta')}</button>
             </article>
           </div>
         </section>
@@ -2455,14 +2482,14 @@ function App() {
         <>
       <section className="panel">
         <div className="panel-head">
-          <h2>Dove puoi andare spendendo poco</h2>
+          <h2>{t('explorePageTitle')}</h2>
           {selectedOpportunityCluster ? (
             <button type="button" className="ghost" onClick={() => setSelectedOpportunityCluster('')}>
-              Rimuovi filtro cluster
+              {t('exploreClearClusterFilter')}
             </button>
           ) : null}
         </div>
-        <p className="muted">Scopri le destinazioni piu economiche in questo momento. Usa i filtri qui sotto o un cluster del radar.</p>
+        <p className="muted">{t('explorePageSubtitleExtended')}</p>
         <div className="item-actions">
           {destinationClusters.slice(0, 6).map((cluster) => (
             <button
