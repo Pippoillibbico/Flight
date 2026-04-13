@@ -15,7 +15,7 @@ test('home feed and detail flow', async ({ page }) => {
 
   await expect(page.locator('.opportunity-detail-panel')).toBeVisible();
   await expect(page.getByText('Dettaglio opportunita')).toBeVisible();
-  await expect(page.getByText('Why this matters')).toBeVisible();
+  await expect(page.locator('.opportunity-why-box strong')).toContainText(/Why this matters|Perche conta/i);
 });
 
 test('radar preferences save flow', async ({ page }) => {

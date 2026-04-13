@@ -1,17 +1,21 @@
 # Regression Latest
 
-- Run: 2026-03-10T08:28:20.952Z
+- Run: 2026-03-22T16:56:15.335Z
 - Status: green
 - Failed stages: 0
 - Open regressions: 0
-- Fixed regressions (history): 1
+- Fixed regressions (history): 10
 
 ## Stage Summary
 
-- Lint: exit=0, failures=0, durationMs=4532
-- Provider Lint: exit=0, failures=0, durationMs=454
-- Node Tests: exit=0, failures=0, durationMs=13724
-- E2E Playwright: exit=0, failures=0, durationMs=70515
+- Lint: status=pass, exit=0, failures=0, durationMs=7647
+- Provider Lint: status=pass, exit=0, failures=0, durationMs=466
+- Node Tests: status=pass, exit=0, failures=0, durationMs=12740
+- E2E Playwright: status=pass, exit=0, failures=0, durationMs=76142
+
+## Skipped Stages
+
+- None
 
 ## Open Regressions
 
