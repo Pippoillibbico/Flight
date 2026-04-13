@@ -3082,7 +3082,7 @@ app.use(
 // ── SaaS routes ───────────────────────────────────────────────────
 // Mount routers (they receive authGuard/csrfGuard from closure)
 app.use('/api/keys',    buildApiKeysRouter({ authGuard, csrfGuard }));
-app.use('/api/billing', buildBillingRouter({ authGuard }));
+app.use('/api/billing', buildBillingRouter({ authGuard, csrfGuard }));
 app.use('/api/usage',   buildUsageRouter({ authGuard }));
 app.use('/', buildDealEngineRouter());
 app.use('/api/discovery', buildDiscoveryRouter({ authGuard, csrfGuard, quotaGuard, requireApiScope }));
