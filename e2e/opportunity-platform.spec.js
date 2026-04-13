@@ -35,6 +35,7 @@ async function ensureJapanUntracked(page) {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     if ((await readTrackedRoutesCount(page)) === 0) return;
     if (await untrackButton.isVisible().catch(() => false)) {
+      await untrackButton.scrollIntoViewIfNeeded().catch(() => {});
       await untrackButton.click({ force: true });
       try {
         await expect.poll(() => readTrackedRoutesCount(page), { timeout: 2000 }).toBe(0);

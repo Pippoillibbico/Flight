@@ -261,7 +261,7 @@ test.describe('Playwright UI/UX/i18n audit suite', () => {
       await runVisibleTextAudit(page, `ai-travel:${language}`);
 
       await page.getByTestId('app-nav-premium').click({ force: true });
-      await expect(page.locator('.premium-card')).toHaveCount(3);
+      await expect(page.locator('[data-testid^="premium-plan-"]')).toHaveCount(3);
       await runVisibleTextAudit(page, `premium:${language}`);
     });
   }

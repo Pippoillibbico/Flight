@@ -65,8 +65,8 @@ test('feed, detail, radar, ai travel and premium are navigable', async ({ page }
   await expect(page.getByTestId('ai-travel-summary')).toBeVisible();
 
   await page.getByTestId('app-nav-premium').click({ force: true });
-  await expect(page.locator('.premium-card')).toHaveCount(3);
-  await expect(page.locator('.premium-card-featured')).toHaveCount(1);
+  await expect(page.locator('[data-testid^="premium-plan-"]')).toHaveCount(3);
+  await expect(page.locator('.ph-card--featured')).toHaveCount(1);
 });
 
 test('mobile viewport has no horizontal overflow on landing', async ({ page }) => {

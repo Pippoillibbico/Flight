@@ -17,6 +17,8 @@ import {
 
 const CONSENT_KEY = CONSENT_STORAGE_KEY;
 const CONSENT_VERSION = 2;
+const LEGACY_CONSENT_VERSION = 1;
+const SUPPORTED_CONSENT_VERSIONS = new Set([LEGACY_CONSENT_VERSION, CONSENT_VERSION]);
 
 const FUNCTIONAL_STORAGE_KEYS = [...FUNCTIONAL_LOCAL_STORAGE_KEYS];
 const ANALYTICS_STORAGE_KEYS = [...ANALYTICS_LOCAL_STORAGE_KEYS];
@@ -37,7 +39,8 @@ function getStorage() {
 /** @returns {ConsentRecord | null} */
 function normalizeConsentRecord(record) {
   if (!record || typeof record !== 'object' || Array.isArray(record)) return null;
-  if (Number(record.version) !== CONSENT_VERSION) return null;
+  const version = Number(record.version);
+  if (!SUPPORTED_CONSENT_VERSIONS.has(version)) return null;
   return {
     functional: Boolean(record.functional),
     analytics: Boolean(record.analytics),
@@ -53,7 +56,18 @@ function readConsent() {
   try {
     const raw = storage.getItem(CONSENT_KEY);
     if (!raw) return null;
-    return normalizeConsentRecord(JSON.parse(raw));
+    const parsed = JSON.parse(raw);
+    const normalized = normalizeConsentRecord(parsed);
+    if (!normalized) return null;
+    // Seamless migration: keep existing consent choice while upgrading schema shape/version.
+    if (Number(parsed?.version) !== CONSENT_VERSION) {
+      try {
+        storage.setItem(CONSENT_KEY, JSON.stringify(normalized));
+      } catch {
+        // ignore write failures and return normalized in-memory snapshot
+      }
+    }
+    return normalized;
   } catch {
     return null;
   }

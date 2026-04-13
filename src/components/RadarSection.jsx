@@ -163,7 +163,7 @@ function RadarSection(props) {
             data-testid="radar-push-toggle"
           >
             {push.loading
-              ? tt('pushToggleLoading', 'Please wait…')
+              ? tt('pushToggleLoading', 'Please wait...')
               : push.subscribed
                 ? tt('pushToggleDisable', 'Disable browser notifications')
                 : tt('pushToggleEnable', 'Enable browser notifications')}
@@ -261,7 +261,7 @@ function RadarSection(props) {
                     <div key={`${item.id}_${match.opportunityId}`} className="watch-item">
                       <div>
                         <strong>
-                          {match.originAirport} {'→'}{localizeCityName(match.destinationCity, language)} ({match.destinationAirport})
+                          {match.originAirport} {' -> '}{localizeCityName(match.destinationCity, language)} ({match.destinationAirport})
                         </strong>
                         <p>
                           {Math.round(Number(match.price || 0))} {match.currency} | {match.departDate} | {match.haulType}
