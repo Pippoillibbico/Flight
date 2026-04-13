@@ -1,11 +1,13 @@
 import express from 'express';
 import { z } from 'zod';
 import { nanoid } from 'nanoid';
+import countries from 'world-countries';
 import {
   createOrUpdateUserFollow,
   deleteUserFollow,
   listDestinationClusters,
   getOpportunityById,
+  getOpportunityFeedVersion,
   getOpportunityPipelineStats,
   listUserFollows,
   listPublishedOpportunities,
@@ -14,6 +16,29 @@ import {
 } from '../lib/opportunity-store.js';
 import { runOpportunityPipelineOnce } from '../jobs/opportunity-pipeline-worker.js';
 import { canUseAITravel, canViewRareOpportunities, canViewUnlimitedOpportunities, resolveUserPlan } from '../lib/plan-access.js';
+import { getCacheClient } from '../lib/free-cache.js';
+
+const ORIGIN_COORDS = {
+  FCO: { lat: 41.8003, lng: 12.2389 },
+  MXP: { lat: 45.6301, lng: 8.7231 },
+  BLQ: { lat: 44.5354, lng: 11.2887 },
+  VCE: { lat: 45.5053, lng: 12.3519 },
+  NAP: { lat: 40.886, lng: 14.2908 }
+};
+
+const countryCoords = new Map();
+for (const country of countries || []) {
+  const latlng = Array.isArray(country?.latlng) ? country.latlng : [];
+  const lat = Number(latlng[0]);
+  const lng = Number(latlng[1]);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+  const names = [country?.name?.common, country?.name?.official, country?.cca2, country?.cca3]
+    .map((x) => String(x || '').trim().toLowerCase())
+    .filter(Boolean);
+  for (const key of names) {
+    if (!countryCoords.has(key)) countryCoords.set(key, { lat, lng });
+  }
+}
 
 const feedQuerySchema = z.object({
   origin: z.string().trim().length(3).optional(),
@@ -51,6 +76,14 @@ const aiQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(30).optional().default(12)
 });
 
+const budgetExploreSchema = z.object({
+  origin: z.string().trim().length(3),
+  budget_max: z.coerce.number().positive(),
+  limit: z.coerce.number().int().min(1).max(80).optional().default(20)
+});
+
+const OPPORTUNITY_FEED_SOURCE = 'travel_opportunities';
+
 function buildDefaultRadarPreference(userId) {
   return {
     id: nanoid(12),
@@ -64,8 +97,86 @@ function buildDefaultRadarPreference(userId) {
   };
 }
 
+function sortedQueryFingerprint(input = {}) {
+  const entries = Object.entries(input)
+    .filter(([, value]) => value !== undefined && value !== null && value !== '')
+    .map(([key, value]) => [key, String(value)])
+    .sort((a, b) => a[0].localeCompare(b[0]));
+  return entries.map(([k, v]) => `${k}=${v}`).join('&');
+}
+
+async function readCachedJson(cache, key) {
+  try {
+    const raw = await cache.get(key);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+async function writeCachedJson(cache, key, ttlSec, payload) {
+  try {
+    await cache.setex(key, Math.max(1, Number(ttlSec) || 60), JSON.stringify(payload));
+  } catch {}
+}
+
+function findOriginCoords(iata) {
+  const key = String(iata || '').trim().toUpperCase();
+  return ORIGIN_COORDS[key] || null;
+}
+
+function findCountryCoords(countryName) {
+  const key = String(countryName || '').trim().toLowerCase();
+  if (!key) return null;
+  return countryCoords.get(key) || null;
+}
+
 export function buildOpportunitiesRouter({ authGuard, csrfGuard, requireApiScope, quotaGuard, withDb, optionalAuth }) {
   const router = express.Router();
+  const cache = getCacheClient();
+  const exploreCacheTtlSec = Math.max(5, Math.min(300, Number(process.env.OPPORTUNITY_EXPLORE_CACHE_TTL_SEC || 60)));
+
+  function toExploreDestinations(items, limit = 20) {
+    const byDestination = new Map();
+    for (const item of items || []) {
+      const key = String(item.destination_airport || '').toUpperCase();
+      if (!key) continue;
+      const existing = byDestination.get(key);
+      if (!existing) {
+        byDestination.set(key, {
+          destination_airport: key,
+          destination_city: item.destination_city,
+          destination_country: item.destination_country || null,
+          destination_region: item.destination_region || null,
+          min_price: Number(item.price || 0),
+          currency: item.currency || 'EUR',
+          trip_type: item.trip_type || 'round_trip',
+          depart_date: item.depart_date || null,
+          return_date: item.return_date || null,
+          stops: Number(item.stops || 0),
+          airline: item.airline || 'unknown',
+          baggage_included: item.baggage_included == null ? null : Boolean(item.baggage_included),
+          opportunity_count: 1
+        });
+        continue;
+      }
+      existing.opportunity_count += 1;
+      const price = Number(item.price || 0);
+      if (Number.isFinite(price) && price > 0 && price < existing.min_price) {
+        existing.min_price = price;
+        existing.trip_type = item.trip_type || existing.trip_type;
+        existing.depart_date = item.depart_date || existing.depart_date;
+        existing.return_date = item.return_date || existing.return_date;
+        existing.stops = Number(item.stops || existing.stops || 0);
+        existing.airline = item.airline || existing.airline;
+        existing.baggage_included = item.baggage_included == null ? existing.baggage_included : Boolean(item.baggage_included);
+      }
+    }
+    return [...byDestination.values()]
+      .sort((a, b) => a.min_price - b.min_price || b.opportunity_count - a.opportunity_count)
+      .slice(0, Math.max(1, Number(limit) || 20));
+  }
 
   const handleFeed = async (req, res, next) => {
     const parsed = feedQuerySchema.safeParse(req.query);
@@ -93,7 +204,7 @@ export function buildOpportunitiesRouter({ authGuard, csrfGuard, requireApiScope
       }
 
       if (!user) {
-        return res.json({ items: sourceItems });
+        return res.json({ source: OPPORTUNITY_FEED_SOURCE, items: sourceItems });
       }
 
       const plan = resolveUserPlan(user);
@@ -106,6 +217,7 @@ export function buildOpportunitiesRouter({ authGuard, csrfGuard, requireApiScope
       const showUpgradePrompt = !isUnlimited && totalCount > visibleCount;
 
       return res.json({
+        source: OPPORTUNITY_FEED_SOURCE,
         items: cappedItems,
         access: {
           planType: plan.planType,
@@ -135,6 +247,69 @@ export function buildOpportunitiesRouter({ authGuard, csrfGuard, requireApiScope
         limit: parsed.data.limit
       });
       return res.json({ items });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get('/explore/budget', async (req, res, next) => {
+    const parsed = budgetExploreSchema.safeParse(req.query);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid query.' });
+    try {
+      const version = getOpportunityFeedVersion();
+      const fingerprint = sortedQueryFingerprint(parsed.data);
+      const cacheKey = `opps:explore:budget:v${version}:${fingerprint}`;
+      const cached = await readCachedJson(cache, cacheKey);
+      if (cached) {
+        res.setHeader('Cache-Control', `private, max-age=${exploreCacheTtlSec}`);
+        return res.json(cached);
+      }
+      const items = await listPublishedOpportunities({
+        originAirport: parsed.data.origin,
+        maxPrice: parsed.data.budget_max,
+        limit: Math.max(parsed.data.limit * 6, 120)
+      });
+      const destinations = toExploreDestinations(items, parsed.data.limit);
+      const payload = { origin: parsed.data.origin, budget_max: parsed.data.budget_max, items: destinations };
+      await writeCachedJson(cache, cacheKey, exploreCacheTtlSec, payload);
+      res.setHeader('Cache-Control', `private, max-age=${exploreCacheTtlSec}`);
+      return res.json(payload);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get('/explore/map', async (req, res, next) => {
+    const parsed = budgetExploreSchema.safeParse(req.query);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid query.' });
+    try {
+      const version = getOpportunityFeedVersion();
+      const fingerprint = sortedQueryFingerprint(parsed.data);
+      const cacheKey = `opps:explore:map:v${version}:${fingerprint}`;
+      const cached = await readCachedJson(cache, cacheKey);
+      if (cached) {
+        res.setHeader('Cache-Control', `private, max-age=${exploreCacheTtlSec}`);
+        return res.json(cached);
+      }
+      const items = await listPublishedOpportunities({
+        originAirport: parsed.data.origin,
+        maxPrice: parsed.data.budget_max,
+        limit: Math.max(parsed.data.limit * 8, 180)
+      });
+      const originCoords = findOriginCoords(parsed.data.origin);
+      const points = toExploreDestinations(items, parsed.data.limit).map((item) => ({
+        ...item,
+        destination_coords: findCountryCoords(item.destination_country),
+        origin_coords: originCoords
+      }));
+      const payload = {
+        origin: parsed.data.origin,
+        budget_max: parsed.data.budget_max,
+        points
+      };
+      await writeCachedJson(cache, cacheKey, exploreCacheTtlSec, payload);
+      res.setHeader('Cache-Control', `private, max-age=${exploreCacheTtlSec}`);
+      return res.json(payload);
     } catch (error) {
       next(error);
     }

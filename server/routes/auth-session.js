@@ -2,6 +2,14 @@ import { Router } from 'express';
 import { getSaasPool } from '../lib/saas-db.js';
 import { resolveUserPlan, setUserPlan } from '../lib/plan-access.js';
 
+function parseFlag(value, fallback = false) {
+  const text = String(value ?? '')
+    .trim()
+    .toLowerCase();
+  if (!text) return fallback;
+  return ['1', 'true', 'yes', 'on'].includes(text);
+}
+
 export function buildAuthSessionRouter({
   authGuard,
   csrfGuard,
@@ -31,6 +39,24 @@ export function buildAuthSessionRouter({
   mfaCodeSchema
 }) {
   const router = Router();
+  const mockBillingUpgradesEnabled = parseFlag(process.env.ALLOW_MOCK_BILLING_UPGRADES, String(process.env.NODE_ENV || '').trim().toLowerCase() !== 'production');
+
+  async function rejectMockBillingUpgrade(req, res, route) {
+    const userId = req.user?.sub || req.user?.id || null;
+    const email = req.user?.email || '';
+    await logAuthEvent({
+      userId,
+      email,
+      type: 'billing_upgrade_mock_blocked',
+      success: false,
+      req,
+      detail: `route=${route}`
+    });
+    return res.status(403).json({
+      error: 'billing_upgrade_mock_disabled',
+      message: 'Mock billing upgrade endpoints are disabled.'
+    });
+  }
 
   router.get('/auth/me', authGuard, async (req, res) => {
     let user = null;
@@ -87,6 +113,7 @@ export function buildAuthSessionRouter({
   });
 
   router.post('/billing/upgrade-demo', authGuard, csrfGuard, async (req, res) => {
+    if (!mockBillingUpgradesEnabled) return rejectMockBillingUpgrade(req, res, '/billing/upgrade-demo');
     let user = null;
     await withDb(async (db) => {
       user = db.users.find((item) => item.id === req.user.sub) || null;
@@ -101,6 +128,7 @@ export function buildAuthSessionRouter({
   });
 
   router.post('/upgrade/pro', authGuard, csrfGuard, async (req, res) => {
+    if (!mockBillingUpgradesEnabled) return rejectMockBillingUpgrade(req, res, '/upgrade/pro');
     let user = null;
     await withDb(async (db) => {
       user = db.users.find((item) => item.id === req.user.sub) || null;
@@ -115,6 +143,7 @@ export function buildAuthSessionRouter({
   });
 
   router.post('/upgrade/elite', authGuard, csrfGuard, async (req, res) => {
+    if (!mockBillingUpgradesEnabled) return rejectMockBillingUpgrade(req, res, '/upgrade/elite');
     let user = null;
     await withDb(async (db) => {
       user = db.users.find((item) => item.id === req.user.sub) || null;

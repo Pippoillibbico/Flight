@@ -7,6 +7,7 @@ import { AppProvider } from './context/AppContext';
 import LandingSection from './components/LandingSection';
 import AuthSection from './components/AuthSection';
 import SearchSection from './components/SearchSection';
+import ExploreDiscoverySection from './components/ExploreDiscoverySection';
 import LanguageMenu from './components/LanguageMenu';
 import OpportunityFeedSection from './components/OpportunityFeedSection';
 import OpportunityDetailSection from './components/OpportunityDetailSection';
@@ -22,6 +23,7 @@ const defaultTo = format(addDays(new Date(), 18), 'yyyy-MM-dd');
 
 const defaultSearch = {
   origin: 'MXP',
+  tripType: 'round_trip',
   periodPreset: 'custom',
   region: 'all',
   connectionType: 'all',
@@ -80,6 +82,7 @@ const QUICK_INTAKE_PROMPTS_I18N = {
 const POST_AUTH_ACTION_STORAGE_KEY = 'flight_post_auth_action';
 const POST_AUTH_MODE_STORAGE_KEY = 'flight_post_auth_mode';
 const POST_AUTH_VIEW_STORAGE_KEY = 'flight_post_auth_view';
+const LOCAL_BILLING_NONCE = 'fake-valid-nonce';
 
 function App() {
   const [language, setLanguage] = useState(DEFAULT_LANGUAGE);
@@ -228,6 +231,16 @@ function App() {
   });
   const [billingPricingLoading, setBillingPricingLoading] = useState(false);
   const [billingPricingError, setBillingPricingError] = useState('');
+  const [billingCheckoutModal, setBillingCheckoutModal] = useState({
+    open: false,
+    planType: 'pro',
+    loading: false,
+    processing: false,
+    error: '',
+    fallbackMode: false,
+    clientToken: ''
+  });
+  const [billingFallbackNonce, setBillingFallbackNonce] = useState('');
   const [funnelReport, setFunnelReport] = useState(null);
   const [funnelLoading, setFunnelLoading] = useState(false);
   const [funnelError, setFunnelError] = useState('');
@@ -287,6 +300,18 @@ function App() {
   const [aiTravelLoading, setAiTravelLoading] = useState(false);
   const [aiTravelResult, setAiTravelResult] = useState(null);
   const [aiTravelError, setAiTravelError] = useState('');
+  const [exploreDiscoveryInput, setExploreDiscoveryInput] = useState({
+    origin: 'MXP',
+    budgetMax: '450',
+    limit: 24
+  });
+  const [exploreBudgetItems, setExploreBudgetItems] = useState([]);
+  const [exploreBudgetLoading, setExploreBudgetLoading] = useState(false);
+  const [exploreBudgetError, setExploreBudgetError] = useState('');
+  const [exploreMapPoints, setExploreMapPoints] = useState([]);
+  const [exploreMapLoading, setExploreMapLoading] = useState(false);
+  const [exploreMapError, setExploreMapError] = useState('');
+  const [exploreSelectedDestination, setExploreSelectedDestination] = useState('');
 
   function persistPostAuthAction(action) {
     setPendingPostAuthAction(action || null);
@@ -354,7 +379,12 @@ function App() {
       .config()
       .then((payload) => {
         setConfig(payload);
-        setSearchForm((prev) => ({ ...prev, origin: payload.origins[0]?.code || 'MXP' }));
+        const fallbackOrigin = payload.origins[0]?.code || 'MXP';
+        setSearchForm((prev) => ({ ...prev, origin: fallbackOrigin }));
+        setExploreDiscoveryInput((prev) => ({
+          ...prev,
+          origin: /^[A-Za-z]{3}$/.test(String(prev.origin || '')) ? String(prev.origin).toUpperCase() : fallbackOrigin
+        }));
       })
       .catch(() => {
         setConfig({
@@ -372,7 +402,7 @@ function App() {
     loadBillingPricing();
     const timer = setInterval(() => {
       loadBillingPricing(true);
-    }, 60000);
+    }, 300000);
     return () => clearInterval(timer);
   }, []);
 
@@ -436,6 +466,14 @@ function App() {
   }, [selectedOpportunityCluster, showLandingPage]);
 
   useEffect(() => {
+    if (showLandingPage) return;
+    if (activeMainSection !== 'explore') return;
+    if (exploreBudgetLoading || exploreMapLoading) return;
+    if (exploreBudgetItems.length > 0 || exploreMapPoints.length > 0) return;
+    loadExploreDiscovery().catch(() => {});
+  }, [activeMainSection, showLandingPage]);
+
+  useEffect(() => {
     if (!user || !pendingPostAuthAction) return;
     if (pendingPostAuthAction === 'enter_app') {
       setShowLandingPage(false);
@@ -485,7 +523,7 @@ function App() {
 
   useEffect(() => {
     if (!showAccountPanel) return undefined;
-    loadBillingPricing(true);
+    loadBillingPricing(true, true);
     const onKeyDown = (event) => {
       if (event.key === 'Escape' && user) setShowAccountPanel(false);
     };
@@ -771,11 +809,15 @@ function App() {
     }
   }
 
-  async function loadOpportunityFeed() {
+  async function loadOpportunityFeed(forceRefresh = false) {
     setOpportunityFeedLoading(true);
     setOpportunityFeedError('');
     try {
-      const payload = await api.opportunityFeed(token, { limit: 24, cluster: selectedOpportunityCluster || undefined });
+      const payload = await api.opportunityFeed(
+        token,
+        { limit: 24, cluster: selectedOpportunityCluster || undefined },
+        { forceRefresh }
+      );
       setOpportunityFeed(payload.items || []);
       setOpportunityFeedAccess(payload.access || null);
     } catch (error) {
@@ -787,11 +829,11 @@ function App() {
     }
   }
 
-  async function loadOpportunityClusters() {
+  async function loadOpportunityClusters(forceRefresh = false) {
     setDestinationClustersLoading(true);
     setDestinationClustersError('');
     try {
-      const payload = await api.opportunityClusters(token, { limit: 12 });
+      const payload = await api.opportunityClusters(token, { limit: 12 }, { forceRefresh });
       setDestinationClusters(Array.isArray(payload?.items) ? payload.items : []);
     } catch (error) {
       setDestinationClusters([]);
@@ -799,6 +841,109 @@ function App() {
     } finally {
       setDestinationClustersLoading(false);
     }
+  }
+
+  async function loadExploreDiscovery(overrides = {}) {
+    const origin = String(overrides.origin ?? exploreDiscoveryInput.origin ?? '').trim().toUpperCase();
+    const budgetCandidate = overrides.budgetMax ?? exploreDiscoveryInput.budgetMax;
+    const budgetMax = Number(budgetCandidate);
+    const limitCandidate = Number(overrides.limit ?? exploreDiscoveryInput.limit ?? 24);
+    const limit = Number.isFinite(limitCandidate) && limitCandidate > 0 ? Math.min(60, Math.max(5, Math.round(limitCandidate))) : 24;
+
+    if (!/^[A-Z]{3}$/.test(origin)) {
+      setExploreBudgetItems([]);
+      setExploreMapPoints([]);
+      setExploreBudgetError(t('exploreDiscoveryOriginRequired'));
+      setExploreMapError('');
+      return;
+    }
+    if (!Number.isFinite(budgetMax) || budgetMax <= 0) {
+      setExploreBudgetItems([]);
+      setExploreMapPoints([]);
+      setExploreBudgetError(t('exploreDiscoveryBudgetRequired'));
+      setExploreMapError('');
+      return;
+    }
+
+    setExploreBudgetLoading(true);
+    setExploreMapLoading(true);
+    setExploreBudgetError('');
+    setExploreMapError('');
+    setExploreDiscoveryInput((prev) => ({
+      ...prev,
+      origin,
+      budgetMax: String(Math.round(budgetMax)),
+      limit
+    }));
+
+    const [budgetResult, mapResult] = await Promise.allSettled([
+      api.opportunityExploreBudget(token, { origin, budgetMax, limit }),
+      api.opportunityExploreMap(token, { origin, budgetMax, limit })
+    ]);
+
+    if (budgetResult.status === 'fulfilled') {
+      const items = Array.isArray(budgetResult.value?.items) ? budgetResult.value.items : [];
+      setExploreBudgetItems(items);
+      if (!items.length) setExploreSelectedDestination('');
+      else {
+        const selected = String(exploreSelectedDestination || '').toUpperCase();
+        const hasSelected = items.some((item) => String(item.destination_airport || '').toUpperCase() === selected);
+        if (!selected || !hasSelected) setExploreSelectedDestination(String(items[0].destination_airport || '').toUpperCase());
+      }
+    } else {
+      setExploreBudgetItems([]);
+      setExploreBudgetError(resolveApiError(budgetResult.reason));
+    }
+
+    if (mapResult.status === 'fulfilled') {
+      const points = Array.isArray(mapResult.value?.points) ? mapResult.value.points : [];
+      if (points.length > 0) {
+        setExploreMapPoints(points);
+      } else if (budgetResult.status === 'fulfilled') {
+        const budgetFallback = Array.isArray(budgetResult.value?.items) ? budgetResult.value.items : [];
+        setExploreMapPoints(
+          budgetFallback.map((item) => ({
+            ...item,
+            min_price: item.min_price,
+            destination_airport: item.destination_airport,
+            destination_city: item.destination_city,
+            destination_country: item.destination_country || null,
+            destination_coords: null,
+            origin_coords: null
+          }))
+        );
+      } else {
+        setExploreMapPoints([]);
+      }
+    } else {
+      setExploreMapPoints([]);
+      setExploreMapError(resolveApiError(mapResult.reason));
+    }
+
+    setExploreBudgetLoading(false);
+    setExploreMapLoading(false);
+  }
+
+  function applyExploreDestination(item) {
+    const destinationAirport = String(item?.destination_airport || '').toUpperCase();
+    const destinationQuery = String(item?.destination_city || destinationAirport || '').trim();
+    const parsedBudget = Number(item?.min_price);
+    const fallbackBudget = Number(exploreDiscoveryInput.budgetMax);
+    const resolvedBudget = Number.isFinite(parsedBudget) && parsedBudget > 0
+      ? String(Math.round(parsedBudget))
+      : Number.isFinite(fallbackBudget) && fallbackBudget > 0
+      ? String(Math.round(fallbackBudget))
+      : '';
+    if (!destinationQuery) return;
+    setExploreSelectedDestination(destinationAirport);
+    setSearchForm((prev) => ({
+      ...prev,
+      origin: String(exploreDiscoveryInput.origin || prev.origin || '').toUpperCase() || prev.origin,
+      destinationQuery,
+      maxBudget: resolvedBudget || prev.maxBudget,
+      cheapOnly: true
+    }));
+    setSubMessage(`${t('exploreDiscoveryAppliedPrefix')} ${destinationQuery}`);
   }
 
   async function openOpportunityDetail(opportunityId) {
@@ -1178,11 +1323,11 @@ function App() {
     }
   }
 
-  async function loadBillingPricing(silent = false) {
+  async function loadBillingPricing(silent = false, forceRefresh = false) {
     if (!silent) setBillingPricingLoading(true);
     setBillingPricingError('');
     try {
-      const payload = await api.billingPricing();
+      const payload = await api.billingPricing({ forceRefresh });
       const pricing = payload?.pricing || {};
       setBillingPricing({
         free: { monthlyEur: Number(pricing?.free?.monthlyEur || 0) },
@@ -1213,7 +1358,69 @@ function App() {
     }
   }
 
-  async function upgradeToPremium() {
+  function isLocalBillingBypassEnabled() {
+    if (typeof window === 'undefined') return false;
+    const host = String(window.location?.hostname || '').trim().toLowerCase();
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+  }
+
+  function closeBillingCheckoutModal() {
+    setBillingCheckoutModal({
+      open: false,
+      planType: 'pro',
+      loading: false,
+      processing: false,
+      error: '',
+      fallbackMode: false,
+      clientToken: ''
+    });
+    setBillingFallbackNonce('');
+  }
+
+  async function refreshUserAfterPlanUpgrade(planType) {
+    const payload = await api.me(token);
+    setUser(payload.user);
+    setSubMessage(planType === 'elite' ? t('planEliteActivated') : t('planProActivated'));
+  }
+
+  async function runLegacyUpgrade(planType) {
+    if (planType === 'elite') await api.upgradeElite(token);
+    else await api.upgradePro(token);
+    await refreshUserAfterPlanUpgrade(planType);
+  }
+
+  async function openBillingCheckoutModal(planType) {
+    setBillingFallbackNonce('');
+    setBillingCheckoutModal({
+      open: true,
+      planType,
+      loading: true,
+      processing: false,
+      error: '',
+      fallbackMode: true,
+      clientToken: ''
+    });
+    try {
+      const payload = await api.billingClientToken(token);
+      const clientToken = String(payload?.clientToken || '').trim();
+      setBillingCheckoutModal((prev) => ({
+        ...prev,
+        loading: false,
+        fallbackMode: true,
+        clientToken,
+        error: clientToken ? '' : 'Checkout token unavailable. Retry in a few seconds.'
+      }));
+    } catch (error) {
+      setBillingCheckoutModal((prev) => ({
+        ...prev,
+        loading: false,
+        fallbackMode: true,
+        error: resolveApiError(error)
+      }));
+    }
+  }
+
+  async function startPlanUpgrade(planType) {
     if (!isAuthenticated) {
       beginAuthFlow({
         action: 'enter_app',
@@ -1223,14 +1430,65 @@ function App() {
       });
       return;
     }
+
+    setSubMessage('');
+
     try {
-      await api.upgradePro(token);
-      const payload = await api.me(token);
-      setUser(payload.user);
-      setSubMessage(t('planProActivated'));
+      let subscription = null;
+      try {
+        subscription = await api.subscription(token);
+      } catch (error) {
+        if (Number(error?.status || 0) === 404) {
+          await runLegacyUpgrade(planType);
+          return;
+        }
+        throw error;
+      }
+
+      const billingProvider = String(subscription?.billingProvider || '').trim().toLowerCase();
+      if (billingProvider !== 'braintree') {
+        await runLegacyUpgrade(planType);
+        return;
+      }
+
+      if (isLocalBillingBypassEnabled()) {
+        await api.billingCheckout(token, {
+          planType,
+          paymentMethodNonce: LOCAL_BILLING_NONCE
+        });
+        await refreshUserAfterPlanUpgrade(planType);
+        return;
+      }
+
+      await openBillingCheckoutModal(planType);
     } catch (error) {
       setSubMessage(resolveApiError(error));
     }
+  }
+
+  async function submitBillingCheckout() {
+    if (!isAuthenticated) return;
+    const planType = billingCheckoutModal.planType === 'elite' ? 'elite' : 'pro';
+    const nonce = isLocalBillingBypassEnabled() ? LOCAL_BILLING_NONCE : String(billingFallbackNonce || '').trim();
+    if (!nonce) {
+      setBillingCheckoutModal((prev) => ({ ...prev, error: 'Payment method nonce is required.' }));
+      return;
+    }
+    setBillingCheckoutModal((prev) => ({ ...prev, processing: true, error: '' }));
+    try {
+      await api.billingCheckout(token, {
+        planType,
+        paymentMethodNonce: nonce
+      });
+      closeBillingCheckoutModal();
+      await refreshUserAfterPlanUpgrade(planType);
+    } catch (error) {
+      setBillingCheckoutModal((prev) => ({ ...prev, processing: false, error: resolveApiError(error) }));
+    }
+  }
+
+  async function upgradeToPremium() {
+    await startPlanUpgrade('pro');
   }
 
   function activateFreePlan() {
@@ -1247,23 +1505,7 @@ function App() {
   }
 
   async function chooseElitePlan() {
-    if (!isAuthenticated) {
-      beginAuthFlow({
-        action: 'enter_app',
-        authMode: 'register',
-        authView: 'options',
-        keepLandingVisible: false
-      });
-      return;
-    }
-    try {
-      await api.upgradeElite(token);
-      const payload = await api.me(token);
-      setUser(payload.user);
-      setSubMessage(t('planEliteActivated'));
-    } catch (error) {
-      setSubMessage(resolveApiError(error));
-    }
+    await startPlanUpgrade('elite');
   }
 
   async function finishOnboarding() {
@@ -1507,8 +1749,11 @@ function App() {
     setSearchError('');
     setSearchLoading(true);
 
+    const isOneWay = String(searchForm.tripType || 'round_trip') === 'one_way';
     const payload = {
       ...searchForm,
+      tripType: isOneWay ? 'one_way' : 'round_trip',
+      dateTo: isOneWay ? undefined : searchForm.dateTo,
       country: searchForm.country.trim() || undefined,
       destinationQuery: searchForm.destinationQuery.trim() || undefined,
       maxBudget: searchForm.maxBudget ? Number(searchForm.maxBudget) : undefined,
@@ -1536,6 +1781,9 @@ function App() {
     setSearchError('');
     setSearchLoading(true);
     try {
+      if (String(searchForm.tripType || 'round_trip') === 'one_way') {
+        throw new Error('Just Go richiede un intervallo andata/ritorno.');
+      }
       const tripLengthDays = Math.max(2, differenceInCalendarDays(parseISO(searchForm.dateTo), parseISO(searchForm.dateFrom)));
       const budgetMax = searchForm.maxBudget ? Number(searchForm.maxBudget) : 0;
       if (!Number.isFinite(budgetMax) || budgetMax <= 0) {
@@ -2049,7 +2297,7 @@ function App() {
       features: [t('landingPricingFeaturePro1'), t('landingPricingFeaturePro2'), t('landingPricingFeaturePro3'), t('landingPricingFeaturePro4'), t('landingPricingFeaturePro5')],
       ctaClassName: 'landing-plan-cta landing-plan-cta-primary',
       ctaLabel: t('landingPricingCtaPro'),
-      onClick: () => { setShowLandingPage(false); setShowAccountPanel(true); },
+      onClick: () => beginAuthFlow({ action: 'enter_app', authMode: 'register', authView: 'options', keepLandingVisible: false }),
       featured: true
     },
     {
@@ -2062,7 +2310,7 @@ function App() {
       features: [t('landingPricingFeatureCreator1'), t('landingPricingFeatureCreator2'), t('landingPricingFeatureCreator3'), t('landingPricingFeatureCreator4'), t('landingPricingFeatureCreator5')],
       ctaClassName: 'landing-plan-cta ghost',
       ctaLabel: t('landingPricingCtaCreator'),
-      onClick: () => { setShowLandingPage(false); setShowAccountPanel(true); },
+      onClick: () => beginAuthFlow({ action: 'enter_app', authMode: 'register', authView: 'options', keepLandingVisible: false }),
       featured: false
     }
   ];
@@ -2090,8 +2338,8 @@ function App() {
       }
     }
     await Promise.all([
-      loadOpportunityFeed(),
-      loadOpportunityClusters(),
+      loadOpportunityFeed(true),
+      loadOpportunityClusters(true),
       isAuthenticated ? loadOpportunityPipelineStatus() : Promise.resolve()
     ]);
   }
@@ -2116,6 +2364,15 @@ function App() {
       return;
     }
     enterGuestApp('radar');
+  }
+
+  function handleLandingSignIn() {
+    beginAuthFlow({
+      action: 'enter_app',
+      authMode: 'login',
+      authView: 'options',
+      keepLandingVisible: false
+    });
   }
 
   function requireSectionLogin(targetSection) {
@@ -2148,6 +2405,7 @@ function App() {
         landingContactCards={landingContactCards}
         onHeroPrimaryCta={handleLandingPrimaryCta}
         onHeroSecondaryCta={handleLandingSecondaryCta}
+        onOpenAuth={handleLandingSignIn}
       />
     ) : (
     <main className={`page app-shell${darkMode ? ' app-dark' : ''}`}>
@@ -2214,7 +2472,7 @@ function App() {
       {showOnboarding && isAuthenticated ? (
         <div className="account-drawer-backdrop" onClick={() => setShowOnboarding(false)}>
           <aside className="account-drawer" role="dialog" aria-modal="true" aria-label={t('onboardingTitle')} onClick={(e) => e.stopPropagation()}>
-            <section className="panel account-panel">
+            <section className="panel account-panel onboarding-panel">
               <div className="panel-head">
                 <h2>{t('onboardingTitle')}</h2>
                 <button className="ghost" type="button" onClick={() => setShowOnboarding(false)}>
@@ -2222,7 +2480,7 @@ function App() {
                 </button>
               </div>
               <p className="muted">{t('onboardingSub')}</p>
-              <p className="api-usage-note">{t('aiApiDescriptionShort')}</p>
+              <p className="api-usage-note onboarding-tip">{t('aiApiDescriptionShort')}</p>
               <label>
                 {t('onboardingIntent')}
                 <select value={onboardingDraft.intent} onChange={(e) => setOnboardingDraft((prev) => ({ ...prev, intent: e.target.value }))}>
@@ -2305,6 +2563,51 @@ function App() {
         deletingAccount={deletingAccount}
       />
 
+      {billingCheckoutModal.open ? (
+        <div className="account-drawer-backdrop" onClick={() => (billingCheckoutModal.processing ? null : closeBillingCheckoutModal())}>
+          <aside
+            className="account-drawer"
+            role="dialog"
+            aria-modal="true"
+            aria-label={billingCheckoutModal.planType === 'elite' ? 'Checkout ELITE' : 'Checkout PRO'}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <section className="panel account-panel onboarding-panel">
+              <div className="panel-head">
+                <h2>{billingCheckoutModal.planType === 'elite' ? t('pricingEliteCta') : t('pricingProCta')}</h2>
+                <button className="ghost" type="button" onClick={closeBillingCheckoutModal} disabled={billingCheckoutModal.processing}>
+                  {t('close')}
+                </button>
+              </div>
+              <p className="muted">Secure checkout initialization in progress.</p>
+              {billingCheckoutModal.error ? <p className="error">{billingCheckoutModal.error}</p> : null}
+              {billingCheckoutModal.loading ? <p className="muted">{t('loadReport')}...</p> : null}
+              {!billingCheckoutModal.loading && billingCheckoutModal.fallbackMode ? (
+                <label>
+                  Payment method nonce
+                  <input
+                    type="text"
+                    value={billingFallbackNonce}
+                    onChange={(e) => setBillingFallbackNonce(e.target.value)}
+                    placeholder="fake-valid-nonce"
+                    autoComplete="off"
+                    disabled={billingCheckoutModal.processing}
+                  />
+                </label>
+              ) : null}
+              <div className="item-actions">
+                <button type="button" onClick={submitBillingCheckout} disabled={billingCheckoutModal.loading || billingCheckoutModal.processing}>
+                  {billingCheckoutModal.processing ? `${t('loadReport')}...` : 'Conferma checkout'}
+                </button>
+                <button className="ghost" type="button" onClick={closeBillingCheckoutModal} disabled={billingCheckoutModal.processing}>
+                  {t('close')}
+                </button>
+              </div>
+            </section>
+          </aside>
+        </div>
+      ) : null}
+
       {activeMainSection === 'home' ? (
         <>
           <OpportunityFeedSection
@@ -2338,6 +2641,7 @@ function App() {
               loading={opportunityDetailLoading}
               error={opportunityDetailError}
               detail={opportunityDetail}
+              language={language}
               t={t}
               onClose={() => setOpportunityDetail(null)}
               onFollow={followOpportunity}
@@ -2413,6 +2717,7 @@ function App() {
                 loading={opportunityDetailLoading}
                 error={opportunityDetailError}
                 detail={opportunityDetail}
+                language={language}
                 t={t}
                 onClose={() => setOpportunityDetail(null)}
                 onFollow={followOpportunity}
@@ -2506,6 +2811,24 @@ function App() {
           ))}
         </div>
       </section>
+
+      <ExploreDiscoverySection
+        t={t}
+        language={language}
+        origins={config.origins}
+        value={exploreDiscoveryInput}
+        onChange={(next) => setExploreDiscoveryInput((prev) => ({ ...prev, ...next }))}
+        onSubmit={loadExploreDiscovery}
+        loading={exploreBudgetLoading}
+        error={exploreBudgetError}
+        budgetItems={exploreBudgetItems}
+        mapPoints={exploreMapPoints}
+        mapLoading={exploreMapLoading}
+        mapError={exploreMapError}
+        selectedDestination={exploreSelectedDestination}
+        onSelectDestination={setExploreSelectedDestination}
+        onApplyDestination={applyExploreDestination}
+      />
 
       <SearchSection
         uiMode={uiMode}
@@ -2664,6 +2987,16 @@ function App() {
             </label>
           ) : null}
         </div>
+        {searchResult?.meta?.bookability ? (
+          <p className="muted">
+            Search mode: {searchResult.meta.searchMode || 'unknown'} | Bookability: {searchResult.meta.bookability}
+          </p>
+        ) : null}
+        {searchResult?.inventory?.providerValidated?.degradedReason ? (
+          <p className="muted">
+            Provider validation degraded: {String(searchResult.inventory.providerValidated.degradedReason)}
+          </p>
+        ) : null}
 
         {searchResult.flights.length === 0 ? <p className="muted">{t('noResults')}</p> : null}
 

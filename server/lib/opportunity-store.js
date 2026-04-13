@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import { buildBookingLink } from './flight-engine.js';
 import { listPriceObservationsSince, scoreDeal } from './deal-engine-store.js';
+import { getCacheClient } from './free-cache.js';
 import { ORIGINS, ROUTES } from '../data/local-flight-data.js';
 import { scoreOpportunityCandidate } from './opportunity-scoring.js';
 
@@ -30,6 +31,7 @@ let sqliteDb = null;
 let pgPool = null;
 let initialized = false;
 let lastRefreshAt = 0;
+let opportunityFeedVersion = '0';
 let refreshInFlight = null;
 let lastPipelineStats = {
   refreshedAt: null,
@@ -38,8 +40,17 @@ let lastPipelineStats = {
   deduped: 0,
   skippedWeak: 0,
   enriched: 0,
-  enrichFailed: 0
+  enrichFailed: 0,
+  apiFilteredOut: 0
 };
+const OPPORTUNITY_PIPELINE_STALE_RUNNING_MINUTES = Math.max(
+  10,
+  Math.min(24 * 60, Number(process.env.OPPORTUNITY_PIPELINE_STALE_RUNNING_MINUTES || 60))
+);
+const OPPORTUNITY_PIPELINE_OVERLAP_GUARD_MINUTES = Math.max(
+  1,
+  Math.min(24 * 60, Number(process.env.OPPORTUNITY_PIPELINE_OVERLAP_GUARD_MINUTES || 30))
+);
 
 function getMode() {
   return process.env.DATABASE_URL ? 'postgres' : 'sqlite';
@@ -52,6 +63,12 @@ function clamp(value, min, max) {
 function toNumber(value, fallback = 0) {
   const out = Number(value);
   return Number.isFinite(out) ? out : fallback;
+}
+
+function clampMinutes(value, fallback, minValue = 1, maxValue = 24 * 60) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(minValue, Math.min(maxValue, Math.trunc(parsed)));
 }
 
 function toIso(value = new Date()) {
@@ -70,6 +87,30 @@ function normalizeText(value) {
   return String(value || '').trim().toLowerCase();
 }
 
+function isIataCode(value) {
+  return /^[A-Z]{3}$/.test(String(value || '').trim().toUpperCase());
+}
+
+function isYmd(value) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(value || '').trim());
+}
+
+function toYmd(value) {
+  if (!value) return '';
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return '';
+    return value.toISOString().slice(0, 10);
+  }
+  const text = String(value || '').trim();
+  if (!text) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+  const leadingIso = text.match(/^(\d{4}-\d{2}-\d{2})[T\s]/);
+  if (leadingIso) return leadingIso[1];
+  const parsed = new Date(text);
+  if (Number.isNaN(parsed.getTime())) return '';
+  return parsed.toISOString().slice(0, 10);
+}
+
 function slugify(value) {
   return String(value || '')
     .trim()
@@ -86,6 +127,44 @@ function parseJsonSafe(value, fallback = {}) {
     return JSON.parse(String(value || '{}'));
   } catch {
     return fallback;
+  }
+}
+
+function compactRunMetadata(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const clone = { ...value };
+  if (clone.stats && typeof clone.stats === 'object' && !Array.isArray(clone.stats)) {
+    const stats = { ...clone.stats };
+    if (Array.isArray(stats.recentRuns)) {
+      stats.recentRuns = stats.recentRuns.slice(0, 5).map((run) => ({
+        id: run?.id || null,
+        status: run?.status || null,
+        started_at: run?.started_at || null,
+        finished_at: run?.finished_at || null,
+        processed_count: Number(run?.processed_count || 0),
+        published_count: Number(run?.published_count || 0),
+        deduped_count: Number(run?.deduped_count || 0),
+        enriched_count: Number(run?.enriched_count || 0),
+        enrich_failed_count: Number(run?.enrich_failed_count || 0)
+      }));
+    }
+    clone.stats = stats;
+  }
+  return clone;
+}
+
+function stringifyJsonSafe(value) {
+  if (value == null) return null;
+  try {
+    return JSON.stringify(value);
+  } catch {}
+  try {
+    return JSON.stringify(compactRunMetadata(value));
+  } catch {}
+  try {
+    return JSON.stringify({ truncated: true, reason: 'serialization_failed' });
+  } catch {
+    return '{"truncated":true}';
   }
 }
 
@@ -174,6 +253,32 @@ function computeTripLength(departDate, returnDate) {
   if (Number.isNaN(depart.getTime()) || Number.isNaN(ret.getTime()) || ret <= depart) return null;
   const days = Math.round((ret.getTime() - depart.getTime()) / (24 * 3600 * 1000));
   return clamp(days, 1, 60);
+}
+
+function normalizeTripType(value, returnDate) {
+  const raw = normalizeText(value);
+  if (raw === 'one_way' || raw === 'round_trip') return raw;
+  return returnDate ? 'round_trip' : 'one_way';
+}
+
+function toNullableInt(value) {
+  const out = Math.floor(toNumber(value, NaN));
+  return Number.isFinite(out) ? out : null;
+}
+
+function toNullableScore(value) {
+  const out = toNumber(value, NaN);
+  if (!Number.isFinite(out)) return null;
+  return clamp(Math.round(out * 100) / 100, 0, 100);
+}
+
+function parseBaggageIncluded(value) {
+  if (value === true || value === false) return value;
+  const text = normalizeText(value);
+  if (!text) return null;
+  if (['1', 'true', 'yes', 'included', 'incl', 'si', 'sì'].includes(text)) return true;
+  if (['0', 'false', 'no', 'excluded', 'none'].includes(text)) return false;
+  return null;
 }
 
 function buildAiCopy(row) {
@@ -333,8 +438,13 @@ async function ensurePostgres() {
       depart_date DATE NOT NULL,
       return_date DATE NULL,
       trip_length_days INTEGER NULL,
+      trip_type TEXT NOT NULL DEFAULT 'round_trip',
       stops INTEGER NOT NULL DEFAULT 1,
       airline TEXT NOT NULL,
+      baggage_included BOOLEAN NULL,
+      travel_duration_minutes INTEGER NULL,
+      distance_km INTEGER NULL,
+      airline_quality_score NUMERIC(5,2) NULL,
       booking_url TEXT NOT NULL,
       raw_score NUMERIC(6,2) NOT NULL,
       final_score NUMERIC(6,2) NOT NULL,
@@ -401,6 +511,11 @@ async function ensurePostgres() {
     ALTER TABLE travel_opportunities ADD COLUMN IF NOT EXISTS published_at TIMESTAMPTZ NULL;
     ALTER TABLE travel_opportunities ADD COLUMN IF NOT EXISTS enrichment_status TEXT NOT NULL DEFAULT 'pending';
     ALTER TABLE travel_opportunities ADD COLUMN IF NOT EXISTS alert_status TEXT NOT NULL DEFAULT 'pending';
+    ALTER TABLE travel_opportunities ADD COLUMN IF NOT EXISTS trip_type TEXT NOT NULL DEFAULT 'round_trip';
+    ALTER TABLE travel_opportunities ADD COLUMN IF NOT EXISTS baggage_included BOOLEAN NULL;
+    ALTER TABLE travel_opportunities ADD COLUMN IF NOT EXISTS travel_duration_minutes INTEGER NULL;
+    ALTER TABLE travel_opportunities ADD COLUMN IF NOT EXISTS distance_km INTEGER NULL;
+    ALTER TABLE travel_opportunities ADD COLUMN IF NOT EXISTS airline_quality_score NUMERIC(5,2) NULL;
   `);
 }
 
@@ -423,8 +538,13 @@ async function ensureSqlite() {
       depart_date TEXT NOT NULL,
       return_date TEXT NULL,
       trip_length_days INTEGER NULL,
+      trip_type TEXT NOT NULL DEFAULT 'round_trip',
       stops INTEGER NOT NULL DEFAULT 1,
       airline TEXT NOT NULL,
+      baggage_included INTEGER NULL,
+      travel_duration_minutes INTEGER NULL,
+      distance_km INTEGER NULL,
+      airline_quality_score REAL NULL,
       booking_url TEXT NOT NULL,
       raw_score REAL NOT NULL,
       final_score REAL NOT NULL,
@@ -495,6 +615,11 @@ async function ensureSqlite() {
   ensureColumn('published_at', 'TEXT NULL');
   ensureColumn('enrichment_status', "TEXT NOT NULL DEFAULT 'pending'");
   ensureColumn('alert_status', "TEXT NOT NULL DEFAULT 'pending'");
+  ensureColumn('trip_type', "TEXT NOT NULL DEFAULT 'round_trip'");
+  ensureColumn('baggage_included', 'INTEGER NULL');
+  ensureColumn('travel_duration_minutes', 'INTEGER NULL');
+  ensureColumn('distance_km', 'INTEGER NULL');
+  ensureColumn('airline_quality_score', 'REAL NULL');
 }
 
 async function ensureInitialized() {
@@ -514,9 +639,18 @@ function normalizeOpportunityRow({
   stops,
   tripLengthDays
 }) {
-  const departDate = String(observation.departure_date || '').slice(0, 10);
-  const returnDateRaw = String(observation.return_date || '').slice(0, 10);
-  const returnDate = /^\d{4}-\d{2}-\d{2}$/.test(returnDateRaw) ? returnDateRaw : null;
+  const departDate = toYmd(observation.departure_date) || toYmd(observation.travel_month);
+  const returnDate = toYmd(observation.return_date) || null;
+  const observationMeta = parseJsonSafe(observation.metadata, {});
+  const tripType = normalizeTripType(observation.trip_type, returnDate);
+  const baggageIncluded = parseBaggageIncluded(
+    observationMeta.baggageIncluded ?? observationMeta.baggage_included ?? observationMeta.includedBaggage
+  );
+  const travelDurationMinutes = toNullableInt(
+    observationMeta.totalDurationMinutes ?? observationMeta.durationMinutes ?? observationMeta.travelDurationMinutes
+  );
+  const distanceKm = toNullableInt(observationMeta.distanceKm ?? observationMeta.distance_km ?? route?.distanceKm);
+  const airlineQualityScore = toNullableScore(observationMeta.airlineQualityScore ?? observationMeta.airline_quality_score);
   const originAirport = String(observation.origin_iata || '').toUpperCase();
   const destinationAirport = String(observation.destination_iata || '').toUpperCase();
   const destinationCity = String(route?.destinationName || destinationAirport);
@@ -532,8 +666,13 @@ function normalizeOpportunityRow({
     depart_date: departDate,
     return_date: returnDate,
     trip_length_days: tripLengthDays,
+    trip_type: tripType,
     stops,
     airline: String(observation.provider || 'unknown'),
+    baggage_included: baggageIncluded,
+    travel_duration_minutes: travelDurationMinutes,
+    distance_km: distanceKm,
+    airline_quality_score: airlineQualityScore,
     booking_url: bookingUrl,
     raw_score: toNumber(scoreData.rawScore, 50),
     final_score: toNumber(scoreData.finalScore, 50),
@@ -565,12 +704,13 @@ async function upsertOpportunity(row) {
     await pgPool.query(
       `INSERT INTO travel_opportunities (
         id, observation_fingerprint, origin_city, origin_airport, destination_city, destination_airport,
-        price, currency, depart_date, return_date, trip_length_days, stops, airline, booking_url,
+        price, currency, depart_date, return_date, trip_length_days, trip_type, stops, airline,
+        baggage_included, travel_duration_minutes, distance_km, airline_quality_score, booking_url,
         raw_score, final_score, opportunity_level, ai_title, ai_description, notification_text,
         why_it_matters, baseline_price, savings_percent_if_available, dedupe_key, is_published,
         published_at, enrichment_status, alert_status, source_observed_at, created_at, updated_at
       ) VALUES (
-        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36
       )
       ON CONFLICT (observation_fingerprint) DO UPDATE SET
         origin_city = EXCLUDED.origin_city,
@@ -582,8 +722,13 @@ async function upsertOpportunity(row) {
         depart_date = EXCLUDED.depart_date,
         return_date = EXCLUDED.return_date,
         trip_length_days = EXCLUDED.trip_length_days,
+        trip_type = EXCLUDED.trip_type,
         stops = EXCLUDED.stops,
         airline = EXCLUDED.airline,
+        baggage_included = EXCLUDED.baggage_included,
+        travel_duration_minutes = EXCLUDED.travel_duration_minutes,
+        distance_km = EXCLUDED.distance_km,
+        airline_quality_score = EXCLUDED.airline_quality_score,
         booking_url = EXCLUDED.booking_url,
         raw_score = EXCLUDED.raw_score,
         final_score = EXCLUDED.final_score,
@@ -613,8 +758,13 @@ async function upsertOpportunity(row) {
         row.depart_date,
         row.return_date,
         row.trip_length_days,
+        row.trip_type,
         row.stops,
         row.airline,
+        row.baggage_included,
+        row.travel_duration_minutes,
+        row.distance_km,
+        row.airline_quality_score,
         row.booking_url,
         row.raw_score,
         row.final_score,
@@ -642,7 +792,8 @@ async function upsertOpportunity(row) {
     .prepare(
       `INSERT INTO travel_opportunities (
         id, observation_fingerprint, origin_city, origin_airport, destination_city, destination_airport,
-        price, currency, depart_date, return_date, trip_length_days, stops, airline, booking_url,
+        price, currency, depart_date, return_date, trip_length_days, trip_type, stops, airline,
+        baggage_included, travel_duration_minutes, distance_km, airline_quality_score, booking_url,
         raw_score, final_score, opportunity_level, ai_title, ai_description, notification_text,
         why_it_matters, baseline_price, savings_percent_if_available, dedupe_key, is_published,
         published_at, enrichment_status, alert_status, source_observed_at, created_at, updated_at
@@ -650,7 +801,7 @@ async function upsertOpportunity(row) {
         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-        ?
+        ?, ?, ?, ?, ?, ?
       )
       ON CONFLICT(observation_fingerprint) DO UPDATE SET
         origin_city=excluded.origin_city,
@@ -662,8 +813,13 @@ async function upsertOpportunity(row) {
         depart_date=excluded.depart_date,
         return_date=excluded.return_date,
         trip_length_days=excluded.trip_length_days,
+        trip_type=excluded.trip_type,
         stops=excluded.stops,
         airline=excluded.airline,
+        baggage_included=excluded.baggage_included,
+        travel_duration_minutes=excluded.travel_duration_minutes,
+        distance_km=excluded.distance_km,
+        airline_quality_score=excluded.airline_quality_score,
         booking_url=excluded.booking_url,
         raw_score=excluded.raw_score,
         final_score=excluded.final_score,
@@ -694,8 +850,13 @@ async function upsertOpportunity(row) {
       row.depart_date,
       row.return_date,
       row.trip_length_days,
+      row.trip_type,
       row.stops,
       row.airline,
+      row.baggage_included == null ? null : row.baggage_included ? 1 : 0,
+      row.travel_duration_minutes,
+      row.distance_km,
+      row.airline_quality_score,
       row.booking_url,
       row.raw_score,
       row.final_score,
@@ -732,18 +893,38 @@ export async function refreshOpportunityFeed({ lookbackDays = 75, limit = 2000 }
 
     let published = 0;
     let skippedWeak = 0;
+    let skippedInvalid = 0;
     for (const observation of observations) {
       const originAirport = String(observation.origin_iata || '').toUpperCase();
       const destinationAirport = String(observation.destination_iata || '').toUpperCase();
+      const departureDate = toYmd(observation.departure_date) || toYmd(observation.travel_month);
+      if (!departureDate) {
+        skippedInvalid += 1;
+        continue;
+      }
+      const observationMeta = parseJsonSafe(observation.metadata, {});
+      const returnDate = toYmd(observation.return_date) || null;
       const route = routeMap.get(`${originAirport}-${destinationAirport}`) || null;
       const origin = originMap.get(originAirport) || { airport: originAirport, city: originAirport };
-      const stops = estimateStops(route);
-      const tripLengthDays = computeTripLength(observation.departure_date, observation.return_date);
+      const stopHint = toNullableInt(observationMeta.totalStops ?? observationMeta.stops ?? observationMeta.stopCount);
+      const stops = Number.isFinite(stopHint) ? Math.max(0, stopHint) : estimateStops(route);
+      if (stops > 3) {
+        skippedInvalid += 1;
+        continue;
+      }
+      const travelDurationMinutes = toNullableInt(
+        observationMeta.totalDurationMinutes ?? observationMeta.durationMinutes ?? observationMeta.travelDurationMinutes
+      );
+      if (Number.isFinite(travelDurationMinutes) && travelDurationMinutes > 45 * 60) {
+        skippedInvalid += 1;
+        continue;
+      }
+      const tripLengthDays = computeTripLength(departureDate, returnDate);
 
       const scoredDeal = await scoreDeal({
         origin: originAirport,
         destination: destinationAirport,
-        departureDate: String(observation.departure_date || '').slice(0, 10),
+        departureDate,
         price: toNumber(observation.total_price, 0)
       });
       const baselineMedian = toNumber(scoredDeal?.baselineMedian, 0);
@@ -759,22 +940,29 @@ export async function refreshOpportunityFeed({ lookbackDays = 75, limit = 2000 }
         routeMeta: route || {},
         stopCount: stops,
         tripLengthDays,
-        departDate: String(observation.departure_date || '').slice(0, 10),
-        returnDate: String(observation.return_date || '').slice(0, 10),
+        travelDurationMinutes,
+        distanceKm: toNullableInt(observationMeta.distanceKm ?? observationMeta.distance_km ?? route?.distanceKm),
+        airlineQualityScore: toNullableScore(observationMeta.airlineQualityScore ?? observationMeta.airline_quality_score),
+        departDate: departureDate,
+        returnDate: returnDate || '',
         observationCount: toNumber(scoredDeal?.confidence?.observationCount, 0)
       });
 
       const bookingUrl = buildBookingLink({
         origin: originAirport,
         destinationIata: destinationAirport,
-        dateFrom: String(observation.departure_date || '').slice(0, 10),
-        dateTo: String(observation.return_date || observation.departure_date || '').slice(0, 10),
+        dateFrom: departureDate,
+        dateTo: returnDate || departureDate,
         travellers: 1,
         cabinClass: 'economy'
       });
 
       const row = normalizeOpportunityRow({
-        observation,
+        observation: {
+          ...observation,
+          departure_date: departureDate,
+          return_date: returnDate
+        },
         route,
         originCity: origin.city,
         scoreData,
@@ -789,15 +977,20 @@ export async function refreshOpportunityFeed({ lookbackDays = 75, limit = 2000 }
       else skippedWeak += 1;
     }
 
+    // Keep publication dedupe in the pipeline write-path, not in read endpoints.
+    await dedupePublishedRows();
+
     lastRefreshAt = Date.now();
+    opportunityFeedVersion = String(lastRefreshAt);
     lastPipelineStats = {
       ...lastPipelineStats,
       refreshedAt: new Date().toISOString(),
       processed: observations.length,
       published,
-      skippedWeak
+      skippedWeak,
+      skippedInvalid
     };
-    return { refreshed: true, processed: observations.length, published, skippedWeak };
+    return { refreshed: true, processed: observations.length, published, skippedWeak, skippedInvalid };
   })();
 
   try {
@@ -812,6 +1005,8 @@ function normalizeOpportunityRowForApi(row) {
   const meta = toRouteMeta(row.origin_airport, row.destination_airport);
   const destinationCountry = String(row.destination_country || meta.country || '').trim();
   const destinationRegion = String(row.destination_region || meta.region || '').trim().toLowerCase();
+  const departDate = toYmd(row.depart_date);
+  const returnDate = toYmd(row.return_date);
   const normalized = {
     id: String(row.id),
     origin_city: String(row.origin_city),
@@ -822,11 +1017,16 @@ function normalizeOpportunityRowForApi(row) {
     destination_region: destinationRegion || null,
     price: toNumber(row.price, 0),
     currency: String(row.currency || 'EUR'),
-    depart_date: String(row.depart_date).slice(0, 10),
-    return_date: row.return_date ? String(row.return_date).slice(0, 10) : null,
+    depart_date: departDate || '',
+    return_date: returnDate || null,
     trip_length_days: row.trip_length_days == null ? null : Math.max(0, Math.floor(toNumber(row.trip_length_days, 0))),
+    trip_type: normalizeTripType(row.trip_type, returnDate || null),
     stops: Math.max(0, Math.floor(toNumber(row.stops, 1))),
     airline: String(row.airline || 'unknown'),
+    baggage_included: parseBaggageIncluded(row.baggage_included),
+    travel_duration_minutes: row.travel_duration_minutes == null ? null : Math.max(0, Math.floor(toNumber(row.travel_duration_minutes, 0))),
+    distance_km: row.distance_km == null ? null : Math.max(0, Math.floor(toNumber(row.distance_km, 0))),
+    airline_quality_score: row.airline_quality_score == null ? null : toNullableScore(row.airline_quality_score),
     booking_url: String(row.booking_url || ''),
     raw_score: toNumber(row.raw_score, 0),
     final_score: toNumber(row.final_score, 0),
@@ -839,12 +1039,27 @@ function normalizeOpportunityRowForApi(row) {
     savings_percent_if_available: row.savings_percent_if_available == null ? null : toNumber(row.savings_percent_if_available, 0),
     dedupe_key: String(row.dedupe_key || ''),
     is_published: Boolean(row.is_published),
-    published_at: row.published_at ? String(row.published_at) : null,
+    published_at: row.published_at ? toIso(row.published_at) : null,
     enrichment_status: String(row.enrichment_status || 'pending'),
     alert_status: String(row.alert_status || 'pending'),
-    created_at: String(row.created_at || ''),
-    updated_at: String(row.updated_at || '')
+    created_at: row.created_at ? toIso(row.created_at) : '',
+    updated_at: row.updated_at ? toIso(row.updated_at) : ''
   };
+  if (!normalized.id || !isIataCode(normalized.origin_airport) || !isIataCode(normalized.destination_airport) || !isYmd(normalized.depart_date)) {
+    return null;
+  }
+  if (normalized.stops > 3) {
+    return null;
+  }
+  if (normalized.trip_type === 'one_way' && normalized.return_date) {
+    return null;
+  }
+  if (normalized.trip_type === 'round_trip' && normalized.return_date && normalized.return_date <= normalized.depart_date) {
+    return null;
+  }
+  if (Number.isFinite(normalized.travel_duration_minutes) && normalized.travel_duration_minutes > 45 * 60) {
+    return null;
+  }
   const cluster = deriveClusterInfo(normalized);
   return {
     ...normalized,
@@ -927,12 +1142,10 @@ export async function listPublishedOpportunities({
   entity = '',
   limit = 20
 } = {}) {
-  await refreshOpportunityFeed();
-  await dedupePublishedRows();
   await ensureInitialized();
 
   const safeOrigin = String(originAirport || '').trim().toUpperCase();
-  const safeLimit = Math.max(1, Math.min(60, Number(limit) || 20));
+  const safeLimit = Math.max(1, Math.min(5000, Number(limit) || 20));
   const preFilterLimit = Math.max(safeLimit * 4, 120);
   const hasMonth = /^\d{4}-\d{2}$/.test(String(travelMonth || '').trim());
   const safeMonth = hasMonth ? String(travelMonth).trim() : '';
@@ -979,7 +1192,15 @@ export async function listPublishedOpportunities({
   }
 
   const normalized = rows.map(normalizeOpportunityRowForApi);
-  const filtered = applyOpportunityFilters(normalized, { country, region, cluster, budgetBucket, entity });
+  const sanitized = normalized.filter(Boolean);
+  const filteredOut = normalized.length - sanitized.length;
+  if (filteredOut > 0) {
+    lastPipelineStats = {
+      ...lastPipelineStats,
+      apiFilteredOut: Number(lastPipelineStats.apiFilteredOut || 0) + filteredOut
+    };
+  }
+  const filtered = applyOpportunityFilters(sanitized, { country, region, cluster, budgetBucket, entity });
   return filtered.slice(0, safeLimit);
 }
 
@@ -1142,8 +1363,6 @@ export async function listDestinationClusters({ region = '', limit = 12 } = {}) 
 }
 
 export async function getOpportunityById(opportunityId) {
-  await refreshOpportunityFeed();
-  await dedupePublishedRows();
   await ensureInitialized();
   const id = String(opportunityId || '').trim();
   if (!id) return null;
@@ -1255,6 +1474,25 @@ export async function queryOpportunitiesByPrompt({ prompt, limit = 12 }) {
 export async function enrichShortlistedOpportunities({ maxItems = 10 } = {}) {
   await ensureInitialized();
   const safeLimit = Math.max(1, Math.min(40, Number(maxItems) || 10));
+  const perRunCap = Math.max(0, Number(process.env.OPPORTUNITY_AI_ENRICHMENT_MAX_CALLS_PER_RUN || 0));
+  const dailyCap = Math.max(0, Number(process.env.OPPORTUNITY_AI_ENRICHMENT_DAILY_BUDGET || 0));
+  const effectiveLimit = perRunCap > 0 ? Math.min(safeLimit, perRunCap) : safeLimit;
+  const cache = getCacheClient();
+  const dayStamp = (() => {
+    const now = new Date();
+    return `${now.getUTCFullYear()}${String(now.getUTCMonth() + 1).padStart(2, '0')}${String(now.getUTCDate()).padStart(2, '0')}`;
+  })();
+  const dailyKey = `opportunity:ai:enrichment:day:${dayStamp}`;
+
+  async function claimDailyBudget() {
+    if (!dailyCap || !cache || typeof cache.incr !== 'function') return true;
+    const used = Number(await cache.incr(dailyKey));
+    if (used === 1 && typeof cache.expire === 'function') {
+      await cache.expire(dailyKey, 24 * 60 * 60 + 120);
+    }
+    return used <= dailyCap;
+  }
+
   const selectSql =
     getMode() === 'postgres'
       ? `SELECT * FROM travel_opportunities
@@ -1272,12 +1510,18 @@ export async function enrichShortlistedOpportunities({ maxItems = 10 } = {}) {
 
   const rows =
     getMode() === 'postgres'
-      ? (await pgPool.query(selectSql, [safeLimit])).rows
-      : sqliteDb.prepare(selectSql).all(safeLimit);
+      ? (await pgPool.query(selectSql, [effectiveLimit])).rows
+      : sqliteDb.prepare(selectSql).all(effectiveLimit);
 
   let enriched = 0;
   let failed = 0;
+  let skippedBudget = 0;
   for (const row of rows) {
+    const withinBudget = await claimDailyBudget();
+    if (!withinBudget) {
+      skippedBudget += 1;
+      continue;
+    }
     try {
       const fallback = buildAiCopy(row);
       const copy = await enrichWithProviderIfEnabled(row, fallback);
@@ -1315,19 +1559,21 @@ export async function enrichShortlistedOpportunities({ maxItems = 10 } = {}) {
     enriched: (lastPipelineStats.enriched || 0) + enriched,
     enrichFailed: (lastPipelineStats.enrichFailed || 0) + failed
   };
-  return { candidates: rows.length, enriched, failed };
+  return { candidates: rows.length, enriched, failed, skippedBudget };
 }
 
 export async function createOpportunityPipelineRun({ providerFetchEnabled = false, metadata = {} } = {}) {
   await ensureInitialized();
+  await cleanupStaleOpportunityPipelineRuns();
   const id = `oprun_${shortHash(`${Date.now()}_${Math.random()}`)}`;
   const startedAt = new Date().toISOString();
+  const metadataJson = stringifyJsonSafe(metadata || {});
   if (getMode() === 'postgres') {
     await pgPool.query(
       `INSERT INTO opportunity_pipeline_runs
        (id, status, started_at, provider_fetch_enabled, metadata, created_at, updated_at)
        VALUES ($1, 'running', $2, $3, $4::jsonb, NOW(), NOW())`,
-      [id, startedAt, Boolean(providerFetchEnabled), JSON.stringify(metadata || {})]
+      [id, startedAt, Boolean(providerFetchEnabled), metadataJson]
     );
     return { id, startedAt };
   }
@@ -1337,8 +1583,100 @@ export async function createOpportunityPipelineRun({ providerFetchEnabled = fals
        (id, status, started_at, provider_fetch_enabled, metadata, created_at, updated_at)
        VALUES (?, 'running', ?, ?, ?, datetime('now'), datetime('now'))`
     )
-    .run(id, startedAt, providerFetchEnabled ? 1 : 0, JSON.stringify(metadata || {}));
+    .run(id, startedAt, providerFetchEnabled ? 1 : 0, metadataJson);
   return { id, startedAt };
+}
+
+export async function cleanupStaleOpportunityPipelineRuns({ staleAfterMinutes = null } = {}) {
+  await ensureInitialized();
+  const safeMinutes = clampMinutes(staleAfterMinutes, OPPORTUNITY_PIPELINE_STALE_RUNNING_MINUTES, 10);
+  if (getMode() === 'postgres') {
+    const result = await pgPool.query(
+      `UPDATE opportunity_pipeline_runs
+       SET status = 'failed',
+           finished_at = COALESCE(finished_at, NOW()),
+           error_summary = COALESCE(error_summary, 'stale_pipeline_run_auto_closed'),
+           updated_at = NOW()
+       WHERE status = 'running'
+         AND started_at < NOW() - ($1::int * INTERVAL '1 minute')`,
+      [safeMinutes]
+    );
+    return Number(result?.rowCount || 0);
+  }
+  const result = sqliteDb
+    .prepare(
+      `UPDATE opportunity_pipeline_runs
+       SET status = 'failed',
+           finished_at = COALESCE(finished_at, datetime('now')),
+           error_summary = COALESCE(error_summary, 'stale_pipeline_run_auto_closed'),
+           updated_at = datetime('now')
+       WHERE status = 'running'
+         AND datetime(started_at) < datetime('now', '-' || ? || ' minute')`
+    )
+    .run(safeMinutes);
+  return Number(result?.changes || 0);
+}
+
+export async function findRecentRunningOpportunityPipelineRun({ withinMinutes = null } = {}) {
+  await ensureInitialized();
+  const safeMinutes = clampMinutes(withinMinutes, OPPORTUNITY_PIPELINE_OVERLAP_GUARD_MINUTES, 1);
+
+  if (getMode() === 'postgres') {
+    const result = await pgPool.query(
+      `SELECT
+         id,
+         status,
+         started_at,
+         finished_at,
+         processed_count,
+         published_count,
+         deduped_count,
+         enriched_count,
+         enrich_failed_count,
+         provider_fetch_enabled,
+         error_summary,
+         metadata,
+         created_at,
+         updated_at
+       FROM opportunity_pipeline_runs
+       WHERE status = 'running'
+         AND started_at >= NOW() - ($1::int * INTERVAL '1 minute')
+       ORDER BY started_at DESC
+       LIMIT 1`,
+      [safeMinutes]
+    );
+    return result.rows[0] || null;
+  }
+
+  const row = sqliteDb
+    .prepare(
+      `SELECT
+         id,
+         status,
+         started_at,
+         finished_at,
+         processed_count,
+         published_count,
+         deduped_count,
+         enriched_count,
+         enrich_failed_count,
+         provider_fetch_enabled,
+         error_summary,
+         metadata,
+         created_at,
+         updated_at
+       FROM opportunity_pipeline_runs
+       WHERE status = 'running'
+         AND datetime(started_at) >= datetime('now', '-' || ? || ' minute')
+       ORDER BY datetime(started_at) DESC
+       LIMIT 1`
+    )
+    .get(safeMinutes);
+  if (!row) return null;
+  return {
+    ...row,
+    metadata: parseJsonSafe(row.metadata, {})
+  };
 }
 
 export async function finalizeOpportunityPipelineRun({
@@ -1354,6 +1692,7 @@ export async function finalizeOpportunityPipelineRun({
 }) {
   await ensureInitialized();
   if (!runId) return;
+  const metadataJson = metadata ? stringifyJsonSafe(metadata) : null;
   if (getMode() === 'postgres') {
     await pgPool.query(
       `UPDATE opportunity_pipeline_runs
@@ -1377,7 +1716,7 @@ export async function finalizeOpportunityPipelineRun({
         Number(enrichedCount || 0),
         Number(enrichFailedCount || 0),
         errorSummary ? String(errorSummary) : null,
-        metadata ? JSON.stringify(metadata) : null
+        metadataJson
       ]
     );
     return;
@@ -1406,7 +1745,7 @@ export async function finalizeOpportunityPipelineRun({
       Number(enrichedCount || 0),
       Number(enrichFailedCount || 0),
       errorSummary ? String(errorSummary) : null,
-      metadata ? JSON.stringify(metadata) : null,
+      metadataJson,
       runId
     );
 }
@@ -1434,6 +1773,10 @@ export async function listRecentOpportunityPipelineRuns(limit = 10) {
        LIMIT ?`
     )
     .all(safeLimit);
+}
+
+export function getOpportunityFeedVersion() {
+  return String(opportunityFeedVersion || '0');
 }
 
 export async function getOpportunityPipelineStats() {
@@ -1471,6 +1814,9 @@ export async function getOpportunityPipelineStats() {
   return {
     ...lastPipelineStats,
     totals: { total, published, pendingEnrichment },
+    apiQuality: {
+      filteredOutSinceBoot: Number(lastPipelineStats.apiFilteredOut || 0)
+    },
     recentRuns
   };
 }

@@ -37,7 +37,7 @@ function LanguageMenu(props) {
   }, []);
 
   return (
-    <div className={`landing-ctrl-btn landing-lang-btn${open ? ' open' : ''}`} title={title} ref={rootRef}>
+    <div className={`landing-ctrl-btn landing-lang-btn${open ? ' open' : ''}`} ref={rootRef}>
       <button
         type="button"
         className="landing-lang-trigger"

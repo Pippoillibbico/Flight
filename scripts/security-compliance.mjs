@@ -1,12 +1,38 @@
 import { spawn } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
+import { readFile, unlink } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
+import dotenv from 'dotenv';
 
+dotenv.config();
+
+const STRICT_MODE =
+  process.argv.includes('--strict') ||
+  String(process.env.SECURITY_COMPLIANCE_STRICT || 'false')
+    .trim()
+    .toLowerCase() === 'true';
 const PORT = Number(process.env.SECURITY_COMPLIANCE_PORT || 3102);
 const BASE_URL = `http://127.0.0.1:${PORT}`;
-const ALLOWED_ORIGIN = process.env.SECURITY_TEST_ORIGIN || 'http://localhost:5173';
+const ALLOWED_ORIGIN = process.env.SECURITY_TEST_ORIGIN || 'https://app.flightsuite.test';
 const BLOCKED_ORIGIN = 'http://evil.example';
 const DB_FILE = process.env.SECURITY_COMPLIANCE_DB_FILE || `data/db-security-compliance-${PORT}.json`;
+const AUDIT_LOG_FILE = process.env.SECURITY_COMPLIANCE_AUDIT_LOG_FILE || `data/audit-log-security-compliance-${PORT}.ndjson`;
+const CLEAN_DB_ARTIFACTS = String(process.env.SECURITY_COMPLIANCE_CLEAN_DB || 'true')
+  .trim()
+  .toLowerCase() !== 'false';
+const EXPECTED_BYPASS_MISSING_KEYS = new Set(['DATABASE_URL', 'REDIS_URL']);
+
+function waitForExit(proc, timeoutMs = 4000) {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      resolve();
+    };
+    proc.once('exit', finish);
+    setTimeout(finish, timeoutMs).unref?.();
+  });
+}
 
 function mergeSetCookie(existing, setCookieHeaders = []) {
   const map = new Map();
@@ -24,6 +50,13 @@ function mergeSetCookie(existing, setCookieHeaders = []) {
 
 function createCheck(id, ok, detail) {
   return { id, ok, detail };
+}
+
+function requiredStrictRuntimeEnv() {
+  return {
+    DATABASE_URL: String(process.env.DATABASE_URL || '').trim(),
+    REDIS_URL: String(process.env.REDIS_URL || '').trim()
+  };
 }
 
 async function waitForHealth() {
@@ -79,21 +112,41 @@ async function runEnvAuditChecks() {
   return checks;
 }
 
+const strictRuntime = requiredStrictRuntimeEnv();
+if (STRICT_MODE) {
+  const missingStrict = Object.entries(strictRuntime)
+    .filter(([, value]) => !value)
+    .map(([key]) => key);
+  if (missingStrict.length > 0) {
+    console.error(`security-compliance: STRICT mode requires: ${missingStrict.join(', ')}`);
+    process.exit(1);
+  }
+}
+
 const child = spawn(process.execPath, ['server/index.js'], {
   env: {
     ...process.env,
     PORT: String(PORT),
     NODE_ENV: 'production',
-    BILLING_PROVIDER: 'stripe',
+    BILLING_PROVIDER: 'braintree',
     JWT_SECRET: process.env.JWT_SECRET || '12345678901234567890123456789012',
+    INTERNAL_INGEST_TOKEN: process.env.INTERNAL_INGEST_TOKEN || 'internal_ingest_token_for_compliance_checks_1234',
     FRONTEND_ORIGIN: ALLOWED_ORIGIN,
     CORS_ORIGIN: ALLOWED_ORIGIN,
     CORS_ALLOWLIST: ALLOWED_ORIGIN,
+    TRUST_PROXY: process.env.TRUST_PROXY || '1',
     FLIGHT_DB_FILE: DB_FILE,
+    RUN_STARTUP_TASKS: 'false',
+    BT_MERCHANT_ID: process.env.BT_MERCHANT_ID || 'merchant_test',
+    BT_PUBLIC_KEY: process.env.BT_PUBLIC_KEY || 'public_test',
+    BT_PRIVATE_KEY: process.env.BT_PRIVATE_KEY || 'private_key_test_12345',
+    BT_ENVIRONMENT: process.env.BT_ENVIRONMENT || 'sandbox',
     AUDIT_LOG_HMAC_KEY: process.env.AUDIT_LOG_HMAC_KEY || 'compliance_hmac_key_for_checks_only',
-    ALLOW_INSECURE_STARTUP_FOR_TESTS: 'true',
-    DATABASE_URL: '',
-    REDIS_URL: ''
+    AUDIT_LOG_FILE,
+    ALLOW_INSECURE_STARTUP_FOR_TESTS: STRICT_MODE ? 'false' : 'true',
+    ALLOW_INSECURE_STARTUP_IN_PRODUCTION: STRICT_MODE ? 'false' : 'true',
+    DATABASE_URL: STRICT_MODE ? strictRuntime.DATABASE_URL : '',
+    REDIS_URL: STRICT_MODE ? strictRuntime.REDIS_URL : ''
   },
   stdio: 'inherit'
 });
@@ -210,7 +263,7 @@ try {
   const securityHealth = await fetch(`${BASE_URL}/api/health/security`);
   const securityPayload = await securityHealth.json();
   const securityChecks = Array.isArray(securityPayload?.checks) ? securityPayload.checks : [];
-  const ignoredWhenBypass = new Set(['runtime_config_blocking', 'startup_policy']);
+  const ignoredWhenBypass = STRICT_MODE ? new Set() : new Set(['runtime_config_blocking']);
   const failedCriticalChecks = securityChecks.filter((item) => !item.ok && !ignoredWhenBypass.has(String(item.id || '')));
   checks.push(
     createCheck(
@@ -219,6 +272,50 @@ try {
       `status=${securityHealth.status}, criticalFailed=${failedCriticalChecks.length}`
     )
   );
+
+  const runtimeBlockingCheck = securityChecks.find((item) => String(item.id || '') === 'runtime_config_blocking');
+  const startupPolicyCheck = securityChecks.find((item) => String(item.id || '') === 'startup_policy');
+  const runtimeMissingKeys = String(runtimeBlockingCheck?.detail || '')
+    .replace(/^missing=/i, '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  const runtimeMissingSet = new Set(runtimeMissingKeys);
+  const hasOnlyExpectedBypassMissingKeys =
+    runtimeMissingSet.size === EXPECTED_BYPASS_MISSING_KEYS.size &&
+    [...EXPECTED_BYPASS_MISSING_KEYS].every((key) => runtimeMissingSet.has(key));
+
+  if (STRICT_MODE) {
+    checks.push(
+      createCheck(
+        'startup_policy_strict_mode',
+        Boolean(startupPolicyCheck?.ok),
+        startupPolicyCheck?.detail || 'startup policy check missing'
+      )
+    );
+    checks.push(
+      createCheck(
+        'runtime_blocking_strict_mode',
+        Boolean(runtimeBlockingCheck?.ok),
+        runtimeBlockingCheck?.detail || 'runtime blocking check missing'
+      )
+    );
+  } else {
+    checks.push(
+      createCheck(
+        'startup_policy_no_bypass_needed',
+        Boolean(startupPolicyCheck?.ok),
+        startupPolicyCheck?.detail || 'startup policy check missing'
+      )
+    );
+    checks.push(
+      createCheck(
+        'runtime_blocking_bypass_scoped',
+        runtimeBlockingCheck && runtimeBlockingCheck.ok === false && hasOnlyExpectedBypassMissingKeys,
+        `missing=${runtimeMissingKeys.join(',') || 'none'}`
+      )
+    );
+  }
 
   const envChecks = await runEnvAuditChecks();
   checks.push(...envChecks);
@@ -237,4 +334,13 @@ try {
   }
 } finally {
   child.kill('SIGTERM');
+  await waitForExit(child);
+  if (CLEAN_DB_ARTIFACTS) {
+    await Promise.allSettled([
+      unlink(DB_FILE),
+      unlink(`${DB_FILE}.bak`),
+      unlink(AUDIT_LOG_FILE),
+      unlink(`${AUDIT_LOG_FILE}.lock`)
+    ]);
+  }
 }

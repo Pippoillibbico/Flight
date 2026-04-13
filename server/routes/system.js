@@ -16,9 +16,21 @@ export function buildSystemRouter({
   runFeatureAudit,
   getDataFoundationStatus,
   getOpportunityPipelineStats,
+  getOpportunityIntelligenceDebugStats,
   providerRegistry,
+  getScanProviderAdapterMetrics = () => ({}),
+  getDiscoveryFeedRuntimeMetrics = () => ({}),
   getRuntimeConfigAudit,
-  evaluateStartupReadiness
+  evaluateStartupReadiness,
+  authGuard = (_req, _res, next) => next(),
+  csrfGuard = (_req, _res, next) => next(),
+  requireApiScope = () => (_req, _res, next) => next(),
+  quotaGuard = () => (_req, _res, next) => next(),
+  FLIGHT_SCAN_ENABLED = false,
+  getFlightScanStatus = async () => ({ ok: false, reason: 'flight_scan_status_not_configured' }),
+  runFlightScanSchedulerOnce = null,
+  runFlightScanWorkerOnce = null,
+  runFlightScanCycleOnce = null
 }) {
   const router = Router();
 
@@ -250,6 +262,111 @@ export function buildSystemRouter({
         amadeusConfigured: Boolean(amadeus?.configured)
       }
     });
+  });
+
+  // Backward-compatible alias used by older frontend clients.
+  router.get('/api/system/opportunity-debug', async (_req, res) => {
+    try {
+      if (typeof getOpportunityIntelligenceDebugStats === 'function') {
+        const payload = await getOpportunityIntelligenceDebugStats();
+        return res.json(payload);
+      }
+      const base = await getDataFoundationStatus();
+      const opportunityPipeline = (await getOpportunityPipelineStats?.()) || null;
+      return res.json({ opportunityPipeline, data: base, refreshedAt: new Date().toISOString() });
+    } catch (error) {
+      logger.error({ err: error }, 'system_opportunity_debug_failed');
+      return res.status(500).json({ error: 'internal_error' });
+    }
+  });
+
+  router.get('/api/health/observability', async (_req, res) => {
+    const opportunityPipeline = (await getOpportunityPipelineStats?.()) || null;
+    const providerRuntime = providerRegistry?.runtimeStats?.() || providerRegistry?.listProviders?.() || [];
+    const scanStatus = (await getFlightScanStatus?.()) || null;
+    const scanProviderAdapter = getScanProviderAdapterMetrics();
+    const discoveryFeedRuntime = getDiscoveryFeedRuntimeMetrics?.() || {};
+    const db = await readDb();
+    const totalProviderSearches = providerRuntime.reduce((sum, item) => sum + Number(item.totalSearches || 0), 0);
+    const totalProviderFailures = providerRuntime.reduce((sum, item) => sum + Number(item.failures || 0), 0);
+    const totalProviderRejectedOffers = providerRuntime.reduce((sum, item) => sum + Number(item.rejectedOffers || 0), 0);
+    const pushDeadLetters = Array.isArray(db?.pushDeadLetters) ? db.pushDeadLetters.length : 0;
+    return res.json({
+      ok: true,
+      now: new Date().toISOString(),
+      providerRuntime,
+      scanProviderAdapter,
+      scan: {
+        enabled: Boolean(FLIGHT_SCAN_ENABLED),
+        queue: scanStatus?.queue || null,
+        worker: scanStatus?.worker || null,
+        scheduler: scanStatus?.scheduler || null
+      },
+      pipelineQuality: {
+        filteredOutSinceBoot: Number(opportunityPipeline?.apiQuality?.filteredOutSinceBoot || 0),
+        discoveryFeed: discoveryFeedRuntime
+      },
+      counters: {
+        providerSearches: totalProviderSearches,
+        providerFailures: totalProviderFailures,
+        providerRejectedOffers: totalProviderRejectedOffers,
+        pushDeadLetters,
+        discoveryFeedFreshBuilds: Number(discoveryFeedRuntime?.freshBuildsTotal || 0),
+        discoveryFeedCacheHits: Number(discoveryFeedRuntime?.cacheHitsTotal || 0),
+        discoveryFeedSkipped: Number(discoveryFeedRuntime?.skippedTotal || 0)
+      }
+    });
+  });
+
+  router.get('/api/system/flight-scan/status', authGuard, requireApiScope('read'), quotaGuard({ counter: 'read', amount: 1 }), async (_req, res) => {
+    const status = await getFlightScanStatus();
+    return res.status(status?.ok === false ? 503 : 200).json({
+      enabled: Boolean(FLIGHT_SCAN_ENABLED),
+      ...status
+    });
+  });
+
+  router.post('/api/system/flight-scan/scheduler/run', authGuard, csrfGuard, requireApiScope('alerts'), quotaGuard({ counter: 'alerts', amount: 1 }), async (_req, res) => {
+    if (typeof runFlightScanSchedulerOnce !== 'function') {
+      return res.status(503).json({ error: 'scanner_not_configured' });
+    }
+    try {
+      const summary = await runFlightScanSchedulerOnce({ enabled: true });
+      return res.json({ ok: true, summary });
+    } catch (error) {
+      logger.error({ err: error }, 'flight_scan_scheduler_manual_run_failed');
+      return res.status(500).json({ error: 'internal_error' });
+    }
+  });
+
+  router.post('/api/system/flight-scan/worker/run', authGuard, csrfGuard, requireApiScope('alerts'), quotaGuard({ counter: 'alerts', amount: 1 }), async (_req, res) => {
+    if (typeof runFlightScanWorkerOnce !== 'function') {
+      return res.status(503).json({ error: 'scanner_not_configured' });
+    }
+    try {
+      const summary = await runFlightScanWorkerOnce({ enabled: true });
+      return res.json({ ok: true, summary });
+    } catch (error) {
+      logger.error({ err: error }, 'flight_scan_worker_manual_run_failed');
+      return res.status(500).json({ error: 'internal_error' });
+    }
+  });
+
+  router.post('/api/system/flight-scan/run', authGuard, csrfGuard, requireApiScope('alerts'), quotaGuard({ counter: 'alerts', amount: 1 }), async (_req, res) => {
+    if (typeof runFlightScanCycleOnce !== 'function') {
+      return res.status(503).json({ error: 'scanner_not_configured' });
+    }
+    try {
+      const summary = await runFlightScanCycleOnce({
+        enabled: true,
+        runScheduler: true,
+        stopWhenQueueEmpty: true
+      });
+      return res.json({ ok: true, summary });
+    } catch (error) {
+      logger.error({ err: error }, 'flight_scan_cycle_manual_run_failed');
+      return res.status(500).json({ error: 'internal_error' });
+    }
   });
 
   return router;

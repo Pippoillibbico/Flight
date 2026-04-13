@@ -70,6 +70,32 @@ function scoreItinerarySanity({ departDate, returnDate, tripLengthDays }) {
   return 62;
 }
 
+function scoreDurationMinutes(durationMinutes) {
+  const value = toNumber(durationMinutes, NaN);
+  if (!Number.isFinite(value) || value <= 0) return 64;
+  if (value <= 180) return 94;
+  if (value <= 360) return 84;
+  if (value <= 540) return 72;
+  if (value <= 900) return 56;
+  return 36;
+}
+
+function scoreDistance(distanceKm) {
+  const value = toNumber(distanceKm, NaN);
+  if (!Number.isFinite(value) || value <= 0) return 68;
+  if (value <= 1200) return 90;
+  if (value <= 2600) return 82;
+  if (value <= 5200) return 72;
+  if (value <= 9000) return 60;
+  return 52;
+}
+
+function scoreAirlineQuality(airlineQualityScore) {
+  const value = toNumber(airlineQualityScore, NaN);
+  if (!Number.isFinite(value)) return 66;
+  return clamp(Math.round(value), 20, 100);
+}
+
 function confidenceMultiplier(observationCount) {
   const count = Math.max(0, Math.floor(toNumber(observationCount, 0)));
   if (count >= 80) return 1;
@@ -84,6 +110,9 @@ export function scoreOpportunityCandidate({
   routeMeta = {},
   stopCount = 1,
   tripLengthDays = 0,
+  travelDurationMinutes = null,
+  distanceKm = null,
+  airlineQualityScore = null,
   departDate = '',
   returnDate = '',
   observationCount = 0
@@ -93,17 +122,23 @@ export function scoreOpportunityCandidate({
     destinationDesirability: scoreDestinationDesirability(routeMeta),
     stops: scoreStops(stopCount),
     tripQuality: scoreTripQuality(tripLengthDays),
+    duration: scoreDurationMinutes(travelDurationMinutes),
+    distance: scoreDistance(distanceKm),
+    airlineQuality: scoreAirlineQuality(airlineQualityScore),
     travelPeriod: scoreTravelPeriod(departDate, routeMeta),
     itinerarySanity: scoreItinerarySanity({ departDate, returnDate, tripLengthDays })
   };
 
   const rawScore = Math.round(
-    components.priceAttractiveness * 0.44 +
-      components.destinationDesirability * 0.14 +
-      components.stops * 0.14 +
-      components.tripQuality * 0.1 +
-      components.travelPeriod * 0.1 +
-      components.itinerarySanity * 0.08
+    components.priceAttractiveness * 0.36 +
+      components.destinationDesirability * 0.12 +
+      components.stops * 0.11 +
+      components.tripQuality * 0.08 +
+      components.duration * 0.1 +
+      components.distance * 0.08 +
+      components.airlineQuality * 0.07 +
+      components.travelPeriod * 0.05 +
+      components.itinerarySanity * 0.03
   );
 
   const multiplier = confidenceMultiplier(observationCount);

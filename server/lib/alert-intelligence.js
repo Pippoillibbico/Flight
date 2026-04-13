@@ -4,6 +4,7 @@ import { detectDeal } from './deal-detector.js';
 import { readDb, withDb } from './db.js';
 import { sendMail } from './mailer.js';
 import { logger } from './logger.js';
+import { appendImmutableAudit } from './audit-log.js';
 
 /**
  * @typedef {Object} AlertObservation
@@ -30,9 +31,99 @@ function shortDealMessage({ destination, price, dealType }) {
   return `Great deal to ${destination}: EUR ${Math.round(price)}.`;
 }
 
+const PUSH_WEBHOOK_URL = String(process.env.PUSH_WEBHOOK_URL || '').trim();
+const PUSH_TIMEOUT_MS = Math.max(2000, Number(process.env.PUSH_TIMEOUT_MS || 8000));
+const PUSH_RETRIES = Math.max(0, Math.min(4, Number(process.env.PUSH_RETRIES || 2)));
+const PUSH_RETRY_BASE_MS = Math.max(100, Number(process.env.PUSH_RETRY_BASE_MS || 250));
+const PUSH_DEAD_LETTER_MAX = Math.max(100, Number(process.env.PUSH_DEAD_LETTER_MAX || 5000));
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function pushWithRetry(payload) {
+  for (let attempt = 0; attempt <= PUSH_RETRIES; attempt += 1) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), PUSH_TIMEOUT_MS);
+    try {
+      const response = await fetch(PUSH_WEBHOOK_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(process.env.PUSH_WEBHOOK_TOKEN ? { Authorization: `Bearer ${process.env.PUSH_WEBHOOK_TOKEN}` } : {})
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal
+      });
+      if (response.ok) return { sent: true, status: response.status };
+      const retryable = response.status === 429 || (response.status >= 500 && response.status <= 599);
+      if (!retryable || attempt === PUSH_RETRIES) {
+        return { sent: false, status: response.status, reason: `push_http_${response.status}` };
+      }
+    } catch (error) {
+      if (attempt === PUSH_RETRIES) {
+        return { sent: false, status: null, reason: error?.name === 'AbortError' ? 'push_timeout' : 'push_network_error' };
+      }
+    } finally {
+      clearTimeout(timer);
+    }
+    await sleep(PUSH_RETRY_BASE_MS * 2 ** attempt);
+  }
+  return { sent: false, status: null, reason: 'push_unknown_error' };
+}
+
+async function pushToDeadLetter(entry) {
+  await withDb((db) => {
+    db.pushDeadLetters = db.pushDeadLetters || [];
+    db.pushDeadLetters.push({
+      id: nanoid(12),
+      createdAt: new Date().toISOString(),
+      ...entry
+    });
+    db.pushDeadLetters = db.pushDeadLetters.slice(-PUSH_DEAD_LETTER_MAX);
+    return db;
+  });
+}
+
 async function sendPushNotification({ userId, message, metadata }) {
-  logger.info({ userId, message, metadata }, 'push_notification_stub');
-  return { sent: false, reason: 'push_not_configured' };
+  if (!PUSH_WEBHOOK_URL) {
+    return { sent: false, skipped: true, reason: 'push_not_configured' };
+  }
+
+  const payload = {
+    userId,
+    title: 'Flight deal alert',
+    message,
+    metadata: metadata || {},
+    sentAt: new Date().toISOString()
+  };
+  const result = await pushWithRetry(payload);
+  if (result.sent) {
+    appendImmutableAudit({
+      category: 'push_notification',
+      type: 'send_success',
+      success: true,
+      userId,
+      detail: `status=${result.status || 200}`
+    }).catch(() => {});
+    return result;
+  }
+
+  await pushToDeadLetter({
+    userId,
+    reason: result.reason || 'push_failed',
+    message,
+    metadata: metadata || {}
+  }).catch(() => {});
+  appendImmutableAudit({
+    category: 'push_notification',
+    type: 'send_failed_dead_lettered',
+    success: false,
+    userId,
+    detail: result.reason || 'push_failed'
+  }).catch(() => {});
+  logger.warn({ userId, reason: result.reason, metadata }, 'push_notification_failed_dead_lettered');
+  return result;
 }
 
 async function loadDiscoverySubs() {

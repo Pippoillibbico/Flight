@@ -25,7 +25,7 @@ function matchesRadar(opportunity, radar) {
     if (!ok) return false;
   }
   if (countries.length > 0) {
-    const haystack = `${opportunity.destination_city} ${opportunity.destination_airport}`.toLowerCase();
+    const haystack = `${opportunity.destination_country || ''} ${opportunity.destination_city || ''} ${opportunity.destination_airport || ''}`.toLowerCase();
     const ok = countries.some((hint) => haystack.includes(hint));
     if (!ok) return false;
   }

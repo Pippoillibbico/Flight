@@ -1,5 +1,26 @@
 import { Router } from 'express';
 
+function parseFlag(value, fallback = false) {
+  const text = String(value ?? '').trim().toLowerCase();
+  if (!text) return fallback;
+  return ['1', 'true', 'yes', 'on'].includes(text);
+}
+
+function dayKeyText(date = new Date()) {
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(date.getUTCDate()).padStart(2, '0');
+  return `${y}${m}${d}`;
+}
+
+async function incrBy(cache, key, amount) {
+  let out = 0;
+  for (let i = 0; i < amount; i += 1) {
+    out = Number(await cache.incr(key));
+  }
+  return out;
+}
+
 export function buildSearchRouter({
   ORIGINS,
   REGION_ENUM,
@@ -25,9 +46,133 @@ export function buildSearchRouter({
   insertSearchEvent,
   nanoid,
   sendMachineError,
-  captureUserPriceObservation = async () => {}
+  captureUserPriceObservation = async () => {},
+  searchProviderOffers = async () => [],
+  cacheClient = null
 }) {
   const router = Router();
+  const providerValidationLimit = Math.max(1, Math.min(10, Number(process.env.SEARCH_PROVIDER_VALIDATION_LIMIT || 5)));
+  const providerValidationEnabled = parseFlag(process.env.SEARCH_PROVIDER_VALIDATION_ENABLED, true);
+  const providerGlobalDailyBudget = Math.max(0, Number(process.env.SEARCH_PROVIDER_GLOBAL_DAILY_BUDGET || 0));
+  const providerUserDailyBudget = Math.max(0, Number(process.env.SEARCH_PROVIDER_USER_DAILY_BUDGET || 0));
+  const providerGlobalPerMinuteBudget = Math.max(0, Number(process.env.SEARCH_PROVIDER_GLOBAL_PER_MINUTE_BUDGET || 0));
+  const providerShieldGracefulDegrade = parseFlag(process.env.SEARCH_PROVIDER_COST_SHIELD_ENABLED, true);
+  const persistSearchHistory = parseFlag(
+    process.env.SEARCH_HISTORY_PERSIST_ENABLED,
+    !String(process.env.DATABASE_URL || '').trim()
+  );
+
+  async function claimProviderValidationBudget({ userId = '', plannedCalls = 0 }) {
+    const amount = Math.max(0, Number(plannedCalls) || 0);
+    if (!amount) return { allowed: true, degradedReason: null };
+    if (!cacheClient || typeof cacheClient.incr !== 'function') return { allowed: true, degradedReason: null };
+
+    const now = Date.now();
+    const minuteBucket = Math.floor(now / 60_000);
+    const dayBucket = dayKeyText(new Date(now));
+    const safeUserId = String(userId || '').trim() || 'anonymous';
+
+    const globalDayKey = `search:provider:budget:global:day:${dayBucket}`;
+    const userDayKey = `search:provider:budget:user:${safeUserId}:day:${dayBucket}`;
+    const globalMinuteKey = `search:provider:budget:global:minute:${minuteBucket}`;
+
+    const [globalUsedDay, userUsedDay, globalUsedMinute] = await Promise.all([
+      incrBy(cacheClient, globalDayKey, amount),
+      incrBy(cacheClient, userDayKey, amount),
+      incrBy(cacheClient, globalMinuteKey, amount)
+    ]);
+
+    if (typeof cacheClient.expire === 'function') {
+      await Promise.allSettled([
+        cacheClient.expire(globalDayKey, 24 * 60 * 60 + 120),
+        cacheClient.expire(userDayKey, 24 * 60 * 60 + 120),
+        cacheClient.expire(globalMinuteKey, 120)
+      ]);
+    }
+
+    if (providerGlobalDailyBudget > 0 && globalUsedDay > providerGlobalDailyBudget) {
+      return { allowed: false, degradedReason: 'provider_budget_global_daily_exceeded' };
+    }
+    if (providerUserDailyBudget > 0 && userUsedDay > providerUserDailyBudget) {
+      return { allowed: false, degradedReason: 'provider_budget_user_daily_exceeded' };
+    }
+    if (providerGlobalPerMinuteBudget > 0 && globalUsedMinute > providerGlobalPerMinuteBudget) {
+      return { allowed: false, degradedReason: 'provider_budget_global_minute_exceeded' };
+    }
+    return { allowed: true, degradedReason: null };
+  }
+
+  async function collectProviderValidatedOffers(searchInput, syntheticFlights, { userId = '' } = {}) {
+    const flights = Array.isArray(syntheticFlights) ? syntheticFlights : [];
+    if (!providerValidationEnabled) {
+      return { enabled: false, items: [], byDestinationMinPrice: {}, degradedReason: 'provider_validation_disabled' };
+    }
+    if (flights.length === 0) return { enabled: false, items: [], byDestinationMinPrice: {}, degradedReason: null };
+    const candidates = [];
+    const seen = new Set();
+    for (const flight of flights) {
+      const destinationIata = String(flight?.destinationIata || '').toUpperCase();
+      if (!/^[A-Z]{3}$/.test(destinationIata)) continue;
+      if (seen.has(destinationIata)) continue;
+      seen.add(destinationIata);
+      candidates.push(destinationIata);
+      if (candidates.length >= providerValidationLimit) break;
+    }
+    if (candidates.length === 0) return { enabled: false, items: [], byDestinationMinPrice: {}, degradedReason: null };
+
+    const budgetClaim = await claimProviderValidationBudget({ userId, plannedCalls: candidates.length });
+    if (!budgetClaim.allowed && providerShieldGracefulDegrade) {
+      return {
+        enabled: false,
+        items: [],
+        byDestinationMinPrice: {},
+        degradedReason: budgetClaim.degradedReason || 'provider_budget_exceeded'
+      };
+    }
+
+    const settled = await Promise.allSettled(
+      candidates.map((destinationIata) =>
+        searchProviderOffers({
+          originIata: String(searchInput.origin || '').toUpperCase(),
+          destinationIata,
+          departureDate: searchInput.dateFrom,
+          returnDate: searchInput.dateTo || null,
+          adults: Number(searchInput.travellers || 1),
+          cabinClass: String(searchInput.cabinClass || 'economy').toLowerCase()
+        })
+      )
+    );
+
+    const validItems = [];
+    for (const row of settled) {
+      if (row.status !== 'fulfilled' || !Array.isArray(row.value)) continue;
+      for (const offer of row.value) {
+        const destinationIata = String(offer?.destinationIata || '').toUpperCase();
+        const totalPrice = Number(offer?.totalPrice);
+        if (!/^[A-Z]{3}$/.test(destinationIata)) continue;
+        if (!Number.isFinite(totalPrice) || totalPrice <= 0) continue;
+        validItems.push({
+          originIata: String(offer?.originIata || searchInput.origin || '').toUpperCase(),
+          destinationIata,
+          totalPrice,
+          currency: String(offer?.currency || 'EUR').toUpperCase(),
+          provider: String(offer?.provider || 'provider').toLowerCase(),
+          tripType: String(offer?.tripType || (searchInput.dateTo ? 'round_trip' : 'one_way')).toLowerCase()
+        });
+      }
+    }
+    validItems.sort((a, b) => a.totalPrice - b.totalPrice);
+    const byDestinationMinPrice = {};
+    for (const item of validItems) {
+      if (!Object.hasOwn(byDestinationMinPrice, item.destinationIata)) byDestinationMinPrice[item.destinationIata] = item.totalPrice;
+    }
+    return {
+      enabled: true,
+      items: validItems.slice(0, 120),
+      byDestinationMinPrice,
+      degradedReason: null
+    };
+  }
 
   router.get('/config', (_req, res) => {
     const countriesByRegion = {};
@@ -108,39 +253,76 @@ export function buildSearchRouter({
     if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid payload.' });
 
     const result = searchFlights(parsed.data);
-
-    await withDb(async (db) => {
-      db.searches.push({
-        id: nanoid(8),
-        at: new Date().toISOString(),
-        userId: req.user.sub,
-        payload: parsed.data,
-        meta: result.meta
-      });
-      db.searches = db.searches.slice(-1000);
-      return db;
+    const providerValidated = await collectProviderValidatedOffers(parsed.data, result.flights, { userId: req.user?.sub || req.user?.id || '' });
+    const enhancedFlights = (Array.isArray(result.flights) ? result.flights : []).map((flight) => {
+      const destinationIata = String(flight?.destinationIata || '').toUpperCase();
+      const validatedMinPrice = Number(providerValidated.byDestinationMinPrice[destinationIata]);
+      const providerValidatedPrice = Number.isFinite(validatedMinPrice) ? validatedMinPrice : null;
+      return {
+        ...flight,
+        tripType: parsed.data.dateTo ? 'round_trip' : 'one_way',
+        isBookable: false,
+        inventorySource: 'synthetic_local_model',
+        providerValidated: Number.isFinite(providerValidatedPrice),
+        providerValidatedMinPrice: providerValidatedPrice
+      };
     });
+    const enhancedResult = {
+      ...result,
+      flights: enhancedFlights,
+      inventory: {
+        synthetic: {
+          count: enhancedFlights.length,
+          source: 'local_model'
+        },
+        providerValidated: {
+          enabled: providerValidated.enabled,
+          count: providerValidated.items.length,
+          items: providerValidated.items,
+          degradedReason: providerValidated.degradedReason || null
+        }
+      },
+      meta: {
+        ...(result.meta || {}),
+        searchMode: 'synthetic_local_model',
+        bookability: 'simulated_with_optional_provider_validation'
+      }
+    };
+
+    if (persistSearchHistory) {
+      withDb(async (db) => {
+        db.searches.push({
+          id: nanoid(8),
+          at: new Date().toISOString(),
+          userId: req.user.sub,
+          payload: parsed.data,
+          meta: enhancedResult.meta
+        });
+        db.searches = db.searches.slice(-1000);
+        return db;
+      }).catch(() => {});
+    }
     await insertSearchEvent({
       userId: req.user.sub,
       channel: String(req.user.authChannel || 'direct'),
       origin: parsed.data.origin,
       region: parsed.data.region,
       dateFrom: parsed.data.dateFrom,
-      dateTo: parsed.data.dateTo
+      dateTo: parsed.data.dateTo || parsed.data.dateFrom
     });
-    const concreteFlights = Array.isArray(result.flights) ? result.flights.slice(0, 20) : [];
+    const concreteFlights = Array.isArray(enhancedResult.flights) ? enhancedResult.flights.slice(0, 20) : [];
     Promise.allSettled(
       concreteFlights.map((flight) =>
         captureUserPriceObservation({
           originIata: String(flight.origin || parsed.data.origin).toUpperCase(),
           destinationIata: String(flight.destinationIata || '').toUpperCase(),
           departureDate: parsed.data.dateFrom,
-          returnDate: parsed.data.dateTo,
+          returnDate: parsed.data.dateTo || null,
           currency: 'EUR',
           totalPrice: Number(flight.price),
           provider: String(flight.provider || 'user_search'),
           cabinClass: parsed.data.cabinClass,
-          tripType: 'round_trip',
+          tripType: parsed.data.dateTo ? 'round_trip' : 'one_way',
           source: 'user_search',
           metadata: {
             channel: 'search',
@@ -150,7 +332,7 @@ export function buildSearchRouter({
       )
     ).catch(() => {});
 
-    return res.json(result);
+    return res.json(enhancedResult);
   });
 
   router.post('/decision/just-go', authGuard, csrfGuard, requireApiScope('search'), quotaGuard({ counter: 'decision', amount: 1 }), async (req, res) => {
@@ -183,17 +365,19 @@ export function buildSearchRouter({
       decisionResult: result
     });
 
-    await withDb(async (db) => {
-      db.searches.push({
-        id: nanoid(8),
-        at: new Date().toISOString(),
-        userId: req.user.sub,
-        payload: { ...payload, mode: 'just_go' },
-        meta: result.meta
-      });
-      db.searches = db.searches.slice(-1000);
-      return db;
-    });
+    if (persistSearchHistory) {
+      withDb(async (db) => {
+        db.searches.push({
+          id: nanoid(8),
+          at: new Date().toISOString(),
+          userId: req.user.sub,
+          payload: { ...payload, mode: 'just_go' },
+          meta: result.meta
+        });
+        db.searches = db.searches.slice(-1000);
+        return db;
+      }).catch(() => {});
+    }
 
     await insertSearchEvent({
       userId: req.user.sub,

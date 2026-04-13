@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { addDays, formatISO } from 'date-fns';
 import { initSqlDb } from '../server/lib/sql-db.js';
 import { ingestPriceObservation, initDealEngineStore } from '../server/lib/deal-engine-store.js';

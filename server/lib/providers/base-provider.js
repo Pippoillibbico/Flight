@@ -15,6 +15,10 @@ export class BaseProvider {
     return [];
   }
 
+  isStub() {
+    return false;
+  }
+
   normalizeOffer(input) {
     return {
       originIata: String(input.originIata || '').trim().toUpperCase(),

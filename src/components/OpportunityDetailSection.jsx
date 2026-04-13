@@ -6,6 +6,7 @@ const OpportunityDetailSectionPropsSchema = z
     loading: z.boolean(),
     error: z.string(),
     detail: z.any().nullable(),
+    language: z.string().optional().default('it'),
     t: z.function().optional(),
     onClose: z.function(),
     onFollow: z.function(),
@@ -16,12 +17,28 @@ const OpportunityDetailSectionPropsSchema = z
   .passthrough();
 
 function OpportunityDetailSection(props) {
-  const { loading, error, detail, t, onClose, onFollow, onActivateAlert, onOpenBooking, onViewRelated } = validateProps(
+  const { loading, error, detail, language, t, onClose, onFollow, onActivateAlert, onOpenBooking, onViewRelated } = validateProps(
     OpportunityDetailSectionPropsSchema,
     props,
     'OpportunityDetailSection'
   );
   const tt = (key, fallback) => (typeof t === 'function' ? t(key) : fallback) || fallback;
+  const isEnglish = String(language || 'it').toLowerCase().startsWith('en');
+  const normalizeWhyItMatters = (value) => {
+    const raw = String(value || '').trim();
+    if (!raw || !isEnglish) return raw;
+    const lower = raw.toLowerCase();
+    const looksItalian =
+      lower.includes('opportunit') ||
+      lower.includes('prezzo competitivo') ||
+      lower.includes('rotta') ||
+      lower.includes('finestra viaggio');
+    if (!looksItalian) return raw;
+    const period = detail?.item?.depart_date && detail?.item?.return_date ? `${detail.item.depart_date} - ${detail.item.return_date}` : tt('opportunityFeedFlexibleDates', 'Flexible dates');
+    const stops = Number(detail?.item?.stops || 0);
+    const route = stops === 0 ? 'a direct route' : `a route with ${stops} stop${stops === 1 ? '' : 's'}`;
+    return `This opportunity combines a competitive price, ${route}, and travel window ${period}.`;
+  };
 
   return (
     <section className="panel opportunity-detail-panel">
@@ -59,7 +76,7 @@ function OpportunityDetailSection(props) {
           {detail.item.why_it_matters ? (
             <div className="opportunity-why-box">
               <strong>{tt('opportunityDetailWhyMattersTitle', 'Why this matters')}</strong>
-              <p>{detail.item.why_it_matters}</p>
+              <p>{normalizeWhyItMatters(detail.item.why_it_matters)}</p>
             </div>
           ) : null}
           <div className="item-actions">

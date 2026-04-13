@@ -11,6 +11,8 @@
   --brand-glow: rgba(15, 111, 255, 0.22);
   --success: #0b8f58;
   --warning: #b36a12;
+  --hover-gold: #f5c518;
+  --hover-gold-glow: rgba(245, 197, 24, 0.42);
 }
 
 * {
@@ -101,6 +103,8 @@ body.app-dark-active {
   --ink: #eef2f8;
   --muted: #a9b4c4;
   --line: #394556;
+  --surface: #111925;
+  --surface-soft: #182332;
 }
 
 .app-shell.app-dark h3 {
@@ -181,6 +185,32 @@ body.app-dark-active {
 .app-shell.app-dark .landing-ctrl-btn:hover {
   background: rgba(255, 255, 255, 0.12);
   border-color: rgba(255, 255, 255, 0.35);
+}
+
+.app-shell.app-dark .hero-controls .landing-theme-btn:hover,
+.app-shell.app-dark .hero-controls .landing-lang-btn:hover {
+  border-color: var(--hover-gold) !important;
+  box-shadow:
+    0 0 0 1px var(--hover-gold),
+    0 0 18px var(--hover-gold-glow) !important;
+}
+
+.app-shell.app-dark .hero-controls .landing-lang-btn .landing-lang-trigger:hover {
+  border-radius: 10px;
+  box-shadow: inset 0 0 0 1px rgba(245, 197, 24, 0.24);
+}
+
+.hero-controls .landing-theme-btn:hover,
+.hero-controls .landing-lang-btn:hover {
+  border-color: var(--hover-gold) !important;
+  box-shadow:
+    0 0 0 1px var(--hover-gold),
+    0 0 18px var(--hover-gold-glow) !important;
+}
+
+.hero-controls .landing-lang-btn .landing-lang-trigger:hover {
+  border-radius: 10px;
+  box-shadow: none !important;
 }
 
 .app-shell.app-dark .landing-lang-popover {
@@ -386,20 +416,27 @@ body.app-dark-active {
 }
 
 .opportunity-hero {
-  padding: 16px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(239, 247, 255, 0.9));
+  padding: 26px 20px 22px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.opportunity-hero .eyebrow {
+  margin: 0 0 10px;
 }
 
 .opportunity-hero h2 {
-  line-height: 1.14;
+  line-height: 1.18;
   max-width: 22ch;
+  margin: 0 0 12px;
 }
 
 .opportunity-hero .hero-sub {
-  line-height: 1.3;
+  line-height: 1.4;
   max-width: 62ch;
+  margin: 0 0 18px;
 }
 
 .opportunity-hero .item-actions {
@@ -407,8 +444,8 @@ body.app-dark-active {
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-start;
-  gap: 10px;
-  margin-top: 12px;
+  gap: 12px;
+  margin-top: 14px;
   margin-left: 0;
   padding-left: 0;
 }
@@ -422,11 +459,9 @@ body.app-dark-active {
 }
 
 .app-shell.app-dark .opportunity-hero {
-  border-color: #3e4d62;
-  background:
-    radial-gradient(460px 180px at 98% 8%, rgba(245, 197, 24, 0.14), transparent 72%),
-    linear-gradient(155deg, #18212d, #111823);
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.28);
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
 }
 
 .app-shell.app-dark .opportunity-hero .eyebrow {
@@ -441,6 +476,13 @@ body.app-dark-active {
 
 .app-shell.app-dark .opportunity-hero .hero-sub {
   color: rgba(224, 233, 246, 0.82);
+}
+
+.app-shell.app-dark .opportunity-hero .item-actions > button:hover {
+  border-color: var(--hover-gold) !important;
+  box-shadow:
+    0 0 0 1px var(--hover-gold),
+    0 0 18px var(--hover-gold-glow) !important;
 }
 
 .opportunity-feed-list {
@@ -601,6 +643,115 @@ body.app-dark-active {
   border-color: #9fc0f6;
 }
 
+.explore-discovery-panel {
+  gap: 12px;
+}
+
+.explore-discovery-form {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.explore-discovery-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(0, 1.5fr);
+  gap: 12px;
+}
+
+.explore-budget-card,
+.explore-map-card {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-soft);
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.explore-budget-list {
+  display: grid;
+  gap: 8px;
+  max-height: 440px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.explore-budget-item {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 8px;
+  background: var(--surface);
+  display: grid;
+  gap: 8px;
+}
+
+.explore-budget-item.active {
+  border-color: #8eb6fa;
+  box-shadow: 0 8px 18px rgba(15, 111, 255, 0.15);
+}
+
+.explore-budget-main {
+  width: 100%;
+  text-align: left;
+  display: grid;
+  gap: 4px;
+}
+
+.explore-budget-main p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.explore-map-svg-wrap {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+  background: linear-gradient(160deg, rgba(15, 111, 255, 0.06), rgba(15, 111, 255, 0.02));
+}
+
+.explore-map-svg {
+  width: 100%;
+  display: block;
+}
+
+.explore-map-grid-line {
+  stroke: rgba(15, 111, 255, 0.12);
+  stroke-width: 1;
+}
+
+.explore-map-route-line {
+  stroke: rgba(15, 111, 255, 0.28);
+  stroke-width: 1.4;
+  stroke-dasharray: 5 5;
+}
+
+.explore-map-origin-dot {
+  fill: #0f6fff;
+  stroke: #ffffff;
+  stroke-width: 2;
+}
+
+.explore-map-destination-dot {
+  fill: #2e80ff;
+  stroke: rgba(255, 255, 255, 0.9);
+  stroke-width: 1.5;
+  cursor: pointer;
+  transition: transform 0.15s ease, fill 0.15s ease;
+}
+
+.explore-map-destination-dot:hover {
+  transform: scale(1.08);
+  fill: #1a72ef;
+}
+
+.explore-map-destination-dot.active {
+  fill: #f5c518;
+  stroke: #4f3b00;
+}
+
 .premium-panel .premium-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -612,8 +763,9 @@ body.app-dark-active {
   border-radius: 14px;
   padding: 14px;
   background: var(--surface-soft);
-  display: grid;
-  gap: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .premium-plan-tag {
@@ -636,6 +788,7 @@ body.app-dark-active {
   color: var(--muted);
   font-size: 13px;
   line-height: 1.4;
+  min-height: 56px;
 }
 
 .premium-feature-list {
@@ -644,6 +797,7 @@ body.app-dark-active {
   list-style: none;
   display: grid;
   gap: 6px;
+  flex: 1;
 }
 
 .premium-feature-list li {
@@ -654,53 +808,93 @@ body.app-dark-active {
   padding: 5px 10px;
   font-size: 13px;
   font-weight: 600;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
 }
 
 .premium-cta {
   margin-top: 6px;
   width: 100%;
-  min-height: 42px;
-  border-radius: 12px;
-  border: 1px solid #2d66c2;
-  background: linear-gradient(180deg, #2e74dd, #1f5fbe);
+  min-height: 54px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: var(--brand);
   color: #ffffff;
-  font-weight: 800;
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 1;
   letter-spacing: 0.01em;
-  box-shadow: 0 10px 24px rgba(28, 92, 188, 0.24);
+  box-shadow: 0 2px 10px rgba(15, 111, 255, 0.24);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 14px;
 }
 
 .premium-cta:hover {
-  background: linear-gradient(180deg, #3b82eb, #2a67c6);
-  border-color: #2b6fd1;
+  background: var(--brand-dark);
+  box-shadow: 0 10px 24px rgba(15, 111, 255, 0.34);
 }
 
 .premium-card-featured .premium-cta {
-  border-color: #1f5cb8;
-  box-shadow: 0 12px 28px rgba(21, 86, 180, 0.28);
+  border-color: transparent;
 }
 
 .premium-cta-light {
-  border-color: #9ab9ea;
-  background: linear-gradient(180deg, #ffffff, #eef4ff);
-  color: #1f4f8d;
-  box-shadow: 0 8px 20px rgba(43, 90, 161, 0.14);
+  border-color: rgba(15, 111, 255, 0.16);
+  background: rgba(15, 111, 255, 0.05);
+  color: #2a4580;
+  box-shadow: 0 0 0 1px rgba(15, 111, 255, 0.02) inset;
 }
 
 .premium-cta-light:hover {
-  background: linear-gradient(180deg, #ffffff, #e5efff);
-  border-color: #87ace6;
+  background: rgba(15, 111, 255, 0.1);
+  border-color: rgba(15, 111, 255, 0.3);
+  color: #1e3f76;
+  box-shadow: none;
 }
 
 .premium-cta-dark {
-  border-color: #334d77;
-  background: linear-gradient(180deg, #2b3f62, #203450);
-  color: #f4f8ff;
-  box-shadow: 0 10px 24px rgba(23, 35, 58, 0.24);
+  border-color: rgba(15, 111, 255, 0.16);
+  background: rgba(15, 111, 255, 0.05);
+  color: #2a4580;
+  box-shadow: 0 0 0 1px rgba(15, 111, 255, 0.02) inset;
 }
 
 .premium-cta-dark:hover {
-  background: linear-gradient(180deg, #32496f, #263f60);
-  border-color: #3f5f8f;
+  background: rgba(15, 111, 255, 0.1);
+  border-color: rgba(15, 111, 255, 0.3);
+  color: #1e3f76;
+  box-shadow: none;
+}
+
+.app-shell.app-dark .premium-cta {
+  background: linear-gradient(180deg, #4c9dff, #2d74dd);
+  color: #ffffff;
+  box-shadow: 0 10px 24px rgba(38, 92, 174, 0.35);
+}
+
+.app-shell.app-dark .premium-cta:hover {
+  background: linear-gradient(180deg, #58a7ff, #337ce9);
+  box-shadow: 0 12px 28px rgba(38, 92, 174, 0.42);
+}
+
+.app-shell.app-dark .premium-cta-light,
+.app-shell.app-dark .premium-cta-dark {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #e8edf5;
+  box-shadow:
+    0 8px 20px rgba(0, 0, 0, 0.28),
+    0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+}
+
+.app-shell.app-dark .premium-cta-light:hover,
+.app-shell.app-dark .premium-cta-dark:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.35);
+  color: #ffffff;
 }
 
 .premium-card-featured {
@@ -712,6 +906,9 @@ body.app-dark-active {
   font-size: 20px;
   font-weight: 800;
   margin: 0;
+  min-height: 30px;
+  display: flex;
+  align-items: center;
 }
 
 .radar-panel .panel-head .item-actions {
@@ -798,6 +995,18 @@ body.app-dark-active {
   .radar-follow-item {
     grid-template-columns: 1fr;
   }
+
+  .explore-discovery-form {
+    grid-template-columns: 1fr;
+  }
+
+  .explore-discovery-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .explore-budget-list {
+    max-height: 320px;
+  }
 }
 
 .info-tip-box {
@@ -833,6 +1042,10 @@ body.app-dark-active {
 
 .eyebrow {
   margin: 0;
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  align-items: center;
   color: var(--brand);
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -923,6 +1136,21 @@ p {
 .account-panel {
   border-color: #b9cff8;
   background: linear-gradient(180deg, #ffffff, #f6fbff);
+}
+
+.auth-account-panel {
+  padding: 16px;
+  gap: 12px;
+}
+
+.account-close-btn {
+  width: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  font-size: 28px;
+  line-height: 1;
+  justify-content: center;
 }
 
 .auth-modal-backdrop {
@@ -1242,6 +1470,69 @@ p {
   color: #b7d8ff;
 }
 
+.app-shell.app-dark .auth-account-panel {
+  background: linear-gradient(175deg, rgba(11, 21, 37, 0.98), rgba(10, 24, 47, 0.98));
+  border-color: rgba(110, 139, 184, 0.38);
+}
+
+.app-shell.app-dark .account-user-box {
+  background: linear-gradient(180deg, rgba(20, 35, 58, 0.95), rgba(17, 31, 52, 0.96));
+  border-color: rgba(112, 144, 192, 0.38);
+}
+
+.app-shell.app-dark .account-user-box > strong {
+  color: #f1f6ff;
+}
+
+.app-shell.app-dark .account-user-email {
+  color: #b7c9e5;
+}
+
+.app-shell.app-dark .account-user-meta {
+  color: #9bb2d4;
+}
+
+.app-shell.app-dark .account-pricing-card {
+  background: linear-gradient(180deg, rgba(26, 42, 67, 0.96), rgba(22, 35, 56, 0.96));
+  border-color: rgba(112, 145, 193, 0.36);
+}
+
+.app-shell.app-dark .account-pricing-card strong {
+  color: #cfe3ff;
+}
+
+.app-shell.app-dark .account-pricing-card p {
+  color: #c0d2eb;
+}
+
+.app-shell.app-dark .account-actions .ghost {
+  background: rgba(20, 46, 82, 0.95);
+  border-color: rgba(94, 132, 189, 0.55);
+  color: #d9e8fb;
+}
+
+.app-shell.app-dark .account-actions .ghost:hover {
+  background: rgba(31, 66, 114, 0.95);
+  border-color: rgba(123, 162, 221, 0.72);
+}
+
+.app-shell.app-dark .account-actions .ghost.danger {
+  background: rgba(84, 31, 37, 0.92);
+  border-color: rgba(192, 85, 96, 0.7);
+  color: #ffc7cd;
+}
+
+.app-shell.app-dark .account-actions .ghost.danger:hover {
+  background: rgba(105, 36, 43, 0.92);
+  border-color: rgba(225, 109, 120, 0.82);
+}
+
+.app-shell.app-dark .onboarding-tip {
+  background: linear-gradient(180deg, rgba(31, 53, 85, 0.92), rgba(25, 42, 68, 0.94));
+  border-color: rgba(108, 142, 196, 0.45);
+  color: #c8dbf9;
+}
+
 .account-drawer-backdrop {
   position: fixed;
   inset: 0;
@@ -1354,11 +1645,27 @@ button,
   box-shadow: 0 10px 20px var(--brand-glow);
 }
 
-button:hover,
+button:hover:not(.landing-lang-trigger),
 .tab:hover {
   background: var(--brand-dark);
+  border-color: var(--hover-gold);
   box-shadow: 0 12px 24px rgba(15, 111, 255, 0.28);
   transform: translateY(-1px);
+}
+
+button:hover:not(.landing-lang-trigger),
+.tab:hover,
+.ghost:hover,
+.item-actions > a:hover,
+.landing-ctrl-btn:hover,
+.landing-cta-primary:hover,
+.landing-cta-ghost:hover,
+.landing-plan-cta:hover,
+.premium-cta:hover {
+  border-color: var(--hover-gold) !important;
+  box-shadow:
+    0 0 0 1px var(--hover-gold),
+    0 0 18px var(--hover-gold-glow) !important;
 }
 
 button:disabled {
@@ -1461,6 +1768,7 @@ select:focus {
   min-height: 96px;
   resize: vertical;
   border-radius: 12px;
+  padding: 12px 14px;
 }
 
 .ai-planner-hint {
@@ -1667,6 +1975,68 @@ select:focus {
   padding: 10px;
 }
 
+.account-user-box {
+  gap: 8px;
+  padding: 12px;
+}
+
+.account-user-box > strong {
+  font-size: 28px;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+}
+
+.account-user-email {
+  color: #446181;
+  font-weight: 600;
+}
+
+.account-user-meta {
+  color: #5a7698;
+  font-weight: 600;
+}
+
+.account-pricing-card {
+  background: #f7fbff;
+  border-color: #c0d6f8;
+}
+
+.account-pricing-card strong {
+  color: #1e4f97;
+}
+
+.account-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.account-actions > button {
+  width: 100%;
+  justify-content: center;
+}
+
+.account-mfa-input {
+  margin-top: 4px;
+}
+
+.onboarding-panel {
+  gap: 12px;
+}
+
+.onboarding-panel .panel-head {
+  padding-bottom: 12px;
+  margin-bottom: 4px;
+}
+
+.onboarding-tip {
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: linear-gradient(180deg, #f5f9ff, #ebf3ff);
+  border-color: #c8daf7;
+  color: #2e5689;
+}
+
 .alert {
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -1708,6 +2078,63 @@ select:focus {
   box-shadow: 0 10px 24px rgba(16, 45, 95, 0.08);
 }
 
+.watch-item.account-pricing-card {
+  background: #f7fbff;
+  border-color: #c0d6f8;
+}
+
+.app-shell.app-dark .result-card,
+.app-shell.app-dark .watch-item {
+  background: linear-gradient(180deg, rgba(27, 39, 56, 0.96), rgba(20, 31, 46, 0.96));
+  border-color: rgba(90, 116, 150, 0.5);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+}
+
+.app-shell.app-dark .result-card:hover,
+.app-shell.app-dark .watch-item:hover {
+  border-color: rgba(126, 163, 222, 0.72);
+  box-shadow: 0 12px 30px rgba(8, 18, 33, 0.34);
+}
+
+.app-shell.app-dark .watch-item.account-pricing-card {
+  background: linear-gradient(180deg, rgba(26, 42, 67, 0.96), rgba(22, 35, 56, 0.96));
+  border-color: rgba(112, 145, 193, 0.36);
+}
+
+.app-shell.app-dark .premium-card {
+  background: linear-gradient(180deg, rgba(23, 34, 50, 0.95), rgba(17, 27, 40, 0.95));
+  border-color: rgba(94, 120, 160, 0.5);
+}
+
+.app-shell.app-dark .premium-plan-tag {
+  background: rgba(35, 57, 89, 0.88);
+  border-color: rgba(118, 154, 209, 0.66);
+  color: #d8e9ff;
+}
+
+.app-shell.app-dark .premium-card-sub {
+  color: #b3c6df;
+}
+
+.app-shell.app-dark .premium-price {
+  color: #f2f7ff;
+}
+
+.app-shell.app-dark .opportunity-cluster-card {
+  background: linear-gradient(180deg, rgba(24, 35, 52, 0.95), rgba(18, 28, 42, 0.95));
+  border-color: rgba(96, 124, 163, 0.48);
+}
+
+.app-shell.app-dark .opportunity-card {
+  background: linear-gradient(180deg, rgba(24, 35, 51, 0.95), rgba(18, 28, 41, 0.95));
+  border-color: rgba(96, 124, 162, 0.48);
+}
+
+.app-shell.app-dark .opportunity-card p,
+.app-shell.app-dark .opportunity-cluster-trigger p {
+  color: #b6c8e1;
+}
+
 .alert-row-main {
   display: grid;
   gap: 8px;
@@ -1731,6 +2158,30 @@ select:focus {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.item-actions > a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  color: #ffffff;
+  text-decoration: none;
+  background: linear-gradient(180deg, #2f87ff, var(--brand));
+  box-shadow: 0 10px 20px var(--brand-glow);
+  transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, transform 0.18s ease;
+}
+
+.item-actions > a:hover {
+  text-decoration: none;
+  background: var(--brand-dark);
+  transform: translateY(-1px);
 }
 
 .compare-grid {
@@ -1922,6 +2373,14 @@ a:focus-visible {
     border-radius: 14px;
     padding: 14px 12px;
     gap: 10px;
+  }
+
+  .account-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .account-user-box > strong {
+    font-size: 24px;
   }
 
   .result-card,
@@ -2223,12 +2682,11 @@ a:focus-visible {
 }
 
 .landing-lang-trigger {
+  all: unset;
+  box-sizing: border-box;
   width: 100%;
   height: 100%;
   min-height: 100%;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2238,6 +2696,10 @@ a:focus-visible {
   padding: 0 14px;
   cursor: pointer;
   text-align: left;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  box-shadow: none;
   transition: none;
 }
 
@@ -2258,6 +2720,7 @@ a:focus-visible {
 
 .landing-lang-trigger:hover {
   background: transparent;
+  border-color: transparent !important;
   box-shadow: none;
   transform: none;
 }
@@ -3704,6 +4167,58 @@ body.landing-dark-active {
     0 0 0 1px rgba(255, 255, 255, 0.1) inset;
 }
 
+/* Final hover lock for app hero controls (prevents later overrides). */
+.app-shell .hero-controls .landing-theme-btn:hover,
+.app-shell .hero-controls .landing-lang-btn:hover {
+  border-color: var(--hover-gold) !important;
+  box-shadow:
+    0 0 0 1px var(--hover-gold),
+    0 0 18px var(--hover-gold-glow) !important;
+}
+
+/* Sign in keeps standard transparent/blue hover, no yellow outline. */
+.app-shell .hero-controls .landing-accedi-btn:hover {
+  border-color: transparent !important;
+  background: linear-gradient(180deg, #5ca9ff, #2f7ee8) !important;
+  box-shadow:
+    0 0 0 1px rgba(140, 189, 255, 0.35),
+    0 14px 32px rgba(15, 111, 255, 0.42) !important;
+}
+
+/* Single-outline hover for language control across all layouts. */
+.landing-lang-btn:hover,
+.landing-lang-btn:has(.landing-lang-trigger:hover) {
+  border-color: var(--hover-gold) !important;
+  box-shadow: 0 0 18px var(--hover-gold-glow) !important;
+}
+
+/* No yellow hover on main section tabs (Home/Explore/Radar/AI Travel/Premium). */
+.app-main-nav .tab:hover {
+  border-color: #8db4ff !important;
+  box-shadow: 0 8px 18px rgba(44, 88, 158, 0.18) !important;
+}
+
+.app-shell.app-dark .app-main-nav .tab:hover {
+  border-color: rgba(167, 194, 235, 0.95) !important;
+  box-shadow: 0 10px 20px rgba(8, 20, 38, 0.28) !important;
+}
+
+/* No yellow hover on opportunity hero CTAs. */
+.opportunity-hero .item-actions > button:not(.ghost):hover {
+  border-color: #2d74df !important;
+  box-shadow: 0 12px 24px rgba(15, 111, 255, 0.28) !important;
+}
+
+.opportunity-hero .item-actions > .ghost:hover {
+  border-color: #8db4ff !important;
+  box-shadow: 0 8px 18px rgba(44, 88, 158, 0.18) !important;
+}
+
+.app-shell.app-dark .opportunity-hero .item-actions > .ghost:hover {
+  border-color: #47566a !important;
+  box-shadow: none !important;
+}
+
 /* ── Contacts ──────────────────────────────────────────────────── */
 .landing-dark .landing-contacts-wrap {
   background: rgba(255, 255, 255, 0.02);
@@ -3729,6 +4244,112 @@ body.landing-dark-active {
   background: rgba(245, 197, 24, 0.14);
   border-color: rgba(245, 197, 24, 0.28);
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+}
+
+/* Final hover corrections (must stay at end of file). */
+.app-main-nav .tab:hover,
+.app-main-nav .tab.active:hover {
+  border-color: #8db4ff !important;
+  box-shadow: 0 8px 18px rgba(44, 88, 158, 0.18) !important;
+}
+
+.app-shell.app-dark .app-main-nav .tab:hover,
+.app-shell.app-dark .app-main-nav .tab.active:hover {
+  border-color: rgba(167, 194, 235, 0.95) !important;
+  box-shadow: 0 10px 20px rgba(8, 20, 38, 0.28) !important;
+}
+
+.opportunity-hero .item-actions > button:not(.ghost):hover {
+  border-color: #2d74df !important;
+  box-shadow: 0 12px 24px rgba(15, 111, 255, 0.28) !important;
+}
+
+.opportunity-hero .item-actions > .ghost:hover {
+  border-color: #8db4ff !important;
+  box-shadow: 0 8px 18px rgba(44, 88, 158, 0.18) !important;
+}
+
+.app-shell.app-dark .opportunity-hero .item-actions > .ghost:hover {
+  border-color: #47566a !important;
+  box-shadow: none !important;
+}
+
+/* Keep language hover with a single contour (no double ring). */
+.hero-controls .landing-lang-btn:hover,
+.hero-controls .landing-lang-btn:has(.landing-lang-trigger:hover) {
+  border-color: var(--hover-gold) !important;
+  box-shadow: 0 0 18px var(--hover-gold-glow) !important;
+}
+
+/* =====================================================================
+   Hover policy:
+   - Yellow glow only on landing page (.landing-shell)
+   - No yellow glow in app pages after entering/sign-in (.app-shell)
+   ===================================================================== */
+
+/* Landing page: keep yellow hover accent. */
+.landing-shell button:hover:not(.landing-lang-trigger),
+.landing-shell .tab:hover,
+.landing-shell .ghost:hover,
+.landing-shell .landing-ctrl-btn:hover,
+.landing-shell .landing-accedi-btn:hover,
+.landing-shell .landing-plan-cta:hover,
+.landing-shell .premium-cta:hover {
+  border-color: var(--hover-gold) !important;
+  box-shadow:
+    0 0 0 1px var(--hover-gold),
+    0 0 18px var(--hover-gold-glow) !important;
+}
+
+/* App pages: remove yellow hover everywhere (standard transparent/blue hover). */
+.app-shell button:hover,
+.app-shell .tab:hover,
+.app-shell .ghost:hover,
+.app-shell .item-actions > a:hover,
+.app-shell .landing-ctrl-btn:hover,
+.app-shell .landing-accedi-btn:hover,
+.app-shell .landing-plan-cta:hover,
+.app-shell .premium-cta:hover {
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+/* App main nav tabs keep classic non-yellow hover. */
+.app-shell .app-main-nav .tab:hover,
+.app-shell .app-main-nav .tab.active:hover {
+  border-color: #8db4ff !important;
+  box-shadow: 0 8px 18px rgba(44, 88, 158, 0.18) !important;
+}
+
+.app-shell.app-dark .app-main-nav .tab:hover,
+.app-shell.app-dark .app-main-nav .tab.active:hover {
+  border-color: rgba(167, 194, 235, 0.95) !important;
+  box-shadow: 0 10px 20px rgba(8, 20, 38, 0.28) !important;
+}
+
+/* App hero controls: theme stays subtle. */
+.app-shell .hero-controls .landing-theme-btn:hover {
+  border-color: rgba(255, 255, 255, 0.35) !important;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22) !important;
+}
+
+/* App language control: yellow hover (no transparent hover). */
+.app-shell .hero-controls .landing-lang-btn:hover,
+.app-shell .hero-controls .landing-lang-btn:has(.landing-lang-trigger:hover) {
+  border-color: var(--hover-gold) !important;
+  background: rgba(245, 197, 24, 0.14) !important;
+  box-shadow:
+    0 0 0 1px var(--hover-gold),
+    0 0 18px var(--hover-gold-glow) !important;
+}
+
+/* App Sign in must stay transparent/blue hover (no yellow). */
+.app-shell .hero-controls .landing-accedi-btn:hover {
+  border-color: transparent !important;
+  background: linear-gradient(180deg, #5ca9ff, #2f7ee8) !important;
+  box-shadow:
+    0 0 0 1px rgba(140, 189, 255, 0.35),
+    0 14px 32px rgba(15, 111, 255, 0.42) !important;
 }
 
 /* ── Footer ────────────────────────────────────────────────────── */
@@ -3782,4 +4403,53 @@ body.landing-dark-active {
     padding-left: 12px;
     padding-right: 12px;
   }
+}
+
+.opportunity-discover-cta,
+.opportunity-discover-cta:hover,
+.opportunity-discover-cta:focus-visible,
+.opportunity-discover-cta:active {
+  color: #ffffff !important;
+}
+
+/* Unified app-shell hover policy for discovery/radar CTAs: transparent -> white tint, no yellow. */
+.app-shell .opportunity-hero .item-actions > .opportunity-discover-cta:hover,
+.app-shell .opportunity-hero .item-actions > .opportunity-activate-radar-cta:hover {
+  background: rgba(255, 255, 255, 0.38) !important;
+  border-color: #e4efff !important;
+  box-shadow: 0 12px 26px rgba(112, 154, 217, 0.28) !important;
+  color: #ffffff !important;
+  transform: none !important;
+}
+
+.app-shell.app-dark .opportunity-hero .item-actions > .opportunity-discover-cta:hover,
+.app-shell.app-dark .opportunity-hero .item-actions > .opportunity-activate-radar-cta:hover {
+  background: rgba(255, 255, 255, 0.24) !important;
+  border-color: rgba(236, 244, 255, 0.9) !important;
+  color: #f5f9ff !important;
+  box-shadow: 0 14px 28px rgba(160, 188, 232, 0.32) !important;
+  transform: none !important;
+}
+
+.app-shell .opportunity-hero .item-actions > .ghost:not(.opportunity-activate-radar-cta):hover {
+  background: transparent !important;
+  border-color: #8db4ff !important;
+  box-shadow: none !important;
+}
+
+.app-shell.app-dark .opportunity-hero .item-actions > .ghost:not(.opportunity-activate-radar-cta):hover {
+  background: transparent !important;
+  border-color: #47566a !important;
+  box-shadow: none !important;
+}
+
+/* kept intentionally empty: covered by unified CTA hover block above */
+
+/* Landing dark hero secondary CTA: keep transparent hover, no yellow accent. */
+.landing-shell.landing-dark .landing-hero-cta .landing-cta-ghost:hover {
+  background: transparent !important;
+  border-color: rgba(255, 255, 255, 0.28) !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+  transform: none !important;
 }

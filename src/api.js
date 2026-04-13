@@ -2,6 +2,35 @@ const API_PREFIX = '/api';
 const COOKIE_SESSION_TOKEN = '__cookie_session__';
 let csrfToken = '';
 let refreshInFlight = null;
+const REQUEST_TIMEOUT_MS = Math.max(3000, Number(import.meta?.env?.VITE_API_TIMEOUT_MS || 15000));
+const REQUEST_RETRIES = Math.max(0, Math.min(3, Number(import.meta?.env?.VITE_API_RETRIES || 1)));
+const GET_CACHE = new Map();
+const GET_CACHE_MAX_ENTRIES = Math.max(50, Number(import.meta?.env?.VITE_GET_CACHE_MAX_ENTRIES || 300));
+
+function sweepExpiredCacheEntries(now = Date.now()) {
+  for (const [key, value] of GET_CACHE.entries()) {
+    if (!value || Number(value.expiresAt || 0) <= now) GET_CACHE.delete(key);
+  }
+}
+
+function evictLeastRecentlyUsed() {
+  let oldestKey = null;
+  let oldestSeenAt = Number.POSITIVE_INFINITY;
+  for (const [key, value] of GET_CACHE.entries()) {
+    const seenAt = Number(value?.lastAccessAt || 0);
+    if (seenAt < oldestSeenAt) {
+      oldestSeenAt = seenAt;
+      oldestKey = key;
+    }
+  }
+  if (oldestKey) GET_CACHE.delete(oldestKey);
+}
+
+function touchCacheEntry(key, entry, now = Date.now()) {
+  if (!entry) return;
+  entry.lastAccessAt = now;
+  GET_CACHE.set(key, entry);
+}
 
 export function setCsrfToken(nextToken) {
   csrfToken = String(nextToken || '');
@@ -12,6 +41,50 @@ function createRequestFailedError() {
   error.code = 'request_failed';
   error.requestId = null;
   return error;
+}
+
+function createTimeoutError() {
+  const error = new Error('Request timed out');
+  error.code = 'request_timeout';
+  error.requestId = null;
+  return error;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableStatus(status) {
+  return status === 429 || status === 502 || status === 503 || status === 504;
+}
+
+async function fetchWithPolicy(url, init = {}, { timeoutMs = REQUEST_TIMEOUT_MS, retries = REQUEST_RETRIES } = {}) {
+  const method = String(init?.method || 'GET').toUpperCase();
+  const retryBudget = ['GET', 'HEAD', 'OPTIONS'].includes(method) ? retries : 0;
+  for (let attempt = 0; attempt <= retryBudget; attempt += 1) {
+    const controller = new AbortController();
+    const timer = globalThis.setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(url, { ...init, signal: controller.signal });
+      if (attempt < retryBudget && isRetryableStatus(response.status)) {
+        const backoffMs = 200 * 2 ** attempt;
+        await sleep(backoffMs);
+        continue;
+      }
+      return response;
+    } catch (error) {
+      const isAbort = error?.name === 'AbortError';
+      if (attempt >= retryBudget) {
+        if (isAbort) throw createTimeoutError();
+        throw createRequestFailedError();
+      }
+      const backoffMs = 200 * 2 ** attempt;
+      await sleep(backoffMs);
+    } finally {
+      globalThis.clearTimeout(timer);
+    }
+  }
+  throw createRequestFailedError();
 }
 
 function createApiError(response, payload) {
@@ -38,14 +111,14 @@ function createApiError(response, payload) {
 async function refreshAccessToken() {
   if (refreshInFlight) return refreshInFlight;
   refreshInFlight = (async () => {
-    const response = await fetch(`${API_PREFIX}/auth/refresh`, {
+    const response = await fetchWithPolicy(`${API_PREFIX}/auth/refresh`, {
       method: 'POST',
       credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
         ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {})
       }
-    });
+    }, { retries: 0 });
     if (!response.ok) throw new Error('Session expired. Please sign in again.');
     const payload = await response.json().catch(() => ({}));
     setCsrfToken(payload.session?.csrfToken || '');
@@ -65,7 +138,7 @@ async function request(path, options = {}) {
   const hasBody = options.body !== undefined && options.body !== null;
   let response;
   try {
-    response = await fetch(`${API_PREFIX}${path}`, {
+    response = await fetchWithPolicy(`${API_PREFIX}${path}`, {
       headers: {
         ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
         ...(useBearer ? { Authorization: `Bearer ${options.token}` } : {}),
@@ -76,8 +149,8 @@ async function request(path, options = {}) {
       method: options.method || 'GET',
       body: hasBody ? JSON.stringify(options.body) : undefined
     });
-  } catch {
-    throw createRequestFailedError();
+  } catch (error) {
+    throw error?.code ? error : createRequestFailedError();
   }
 
   if (response.status === 401 && !options._retry && options.auth !== false) {
@@ -96,6 +169,23 @@ async function request(path, options = {}) {
   return payload;
 }
 
+async function requestCached(path, options = {}, ttlMs = 0) {
+  const safeTtl = Math.max(0, Number(ttlMs) || 0);
+  if (safeTtl <= 0) return request(path, options);
+  const key = `${String(options?.token || '')}|${path}`;
+  const now = Date.now();
+  sweepExpiredCacheEntries(now);
+  const hit = GET_CACHE.get(key);
+  if (hit && hit.expiresAt > now) {
+    touchCacheEntry(key, hit, now);
+    return hit.value;
+  }
+  const value = await request(path, options);
+  GET_CACHE.set(key, { value, expiresAt: now + safeTtl, lastAccessAt: now });
+  while (GET_CACHE.size > GET_CACHE_MAX_ENTRIES) evictLeastRecentlyUsed();
+  return value;
+}
+
 export const api = {
   health() {
     return request('/health', { auth: false });
@@ -110,10 +200,10 @@ export const api = {
     return request('/health/security', { auth: false });
   },
   opportunityDebug(token) {
-    return request('/system/opportunity-debug', { token });
+    return request('/system/data-status', { token, auth: false });
   },
   config() {
-    return request('/config', { auth: false });
+    return requestCached('/config', { auth: false }, 5 * 60 * 1000);
   },
   suggestions({ q, region = 'all', country = '', limit = 8 }) {
     const params = new URLSearchParams();
@@ -121,13 +211,13 @@ export const api = {
     if (region) params.set('region', region);
     if (country) params.set('country', country);
     params.set('limit', String(limit));
-    return request(`/suggestions?${params.toString()}`, { auth: false });
+    return requestCached(`/suggestions?${params.toString()}`, { auth: false }, 30 * 1000);
   },
   countries({ q = '', limit = 12 }) {
     const params = new URLSearchParams();
     if (q) params.set('q', q);
     params.set('limit', String(limit));
-    return request(`/countries?${params.toString()}`, { auth: false });
+    return requestCached(`/countries?${params.toString()}`, { auth: false }, 60 * 1000);
   },
   register(body) {
     return request('/auth/register', { method: 'POST', body, auth: false });
@@ -157,8 +247,7 @@ export const api = {
     return request('/security/activity', { token });
   },
   search(body, token) {
-    if (token) return request('/search', { method: 'POST', body, token, auth: false });
-    return request('/search/public', { method: 'POST', body, auth: false });
+    return request('/search', { method: 'POST', body, token, auth: false });
   },
   justGoDecision(body, token) {
     return request('/decision/just-go', { method: 'POST', body, token, auth: false });
@@ -187,8 +276,9 @@ export const api = {
   completeOnboarding(token, body) {
     return request('/user/onboarding/complete', { method: 'POST', token, body });
   },
-  billingPricing() {
-    return request('/billing/pricing', { auth: false });
+  billingPricing({ forceRefresh = false } = {}) {
+    if (forceRefresh) return request('/billing/pricing', { auth: false });
+    return requestCached('/billing/pricing', { auth: false }, 60 * 1000);
   },
   upgradeDemo(token) {
     return request('/billing/upgrade-demo', { method: 'POST', token });
@@ -203,23 +293,23 @@ export const api = {
     const useBearer = Boolean(token && token !== COOKIE_SESSION_TOKEN);
     let response;
     try {
-      response = await fetch(`${API_PREFIX}/outbound/report.csv`, {
+      response = await fetchWithPolicy(`${API_PREFIX}/outbound/report.csv`, {
         credentials: 'include',
         headers: {
           ...(useBearer ? { Authorization: `Bearer ${token}` } : {})
         }
       });
-    } catch {
-      throw createRequestFailedError();
+    } catch (error) {
+      throw error?.code ? error : createRequestFailedError();
     }
     if (response.status === 401) {
       await refreshAccessToken();
-      response = await fetch(`${API_PREFIX}/outbound/report.csv`, {
+      response = await fetchWithPolicy(`${API_PREFIX}/outbound/report.csv`, {
         credentials: 'include',
         headers: {
           ...(useBearer ? { Authorization: `Bearer ${token}` } : {})
         }
-      });
+      }, { retries: 0 });
     }
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}));
@@ -289,7 +379,13 @@ export const api = {
   subscription(token) {
     return request('/billing/subscription', { token });
   },
-  opportunityFeed(token, params = {}) {
+  billingClientToken(token) {
+    return request('/billing/client-token', { token });
+  },
+  billingCheckout(token, body) {
+    return request('/billing/checkout', { method: 'POST', token, body });
+  },
+  opportunityFeed(token, params = {}, options = {}) {
     const query = new URLSearchParams();
     if (params.origin) query.set('origin', String(params.origin).toUpperCase());
     if (params.budgetMax) query.set('budget_max', String(params.budgetMax));
@@ -301,23 +397,43 @@ export const api = {
     if (params.entity) query.set('entity', String(params.entity));
     if (params.limit) query.set('limit', String(params.limit));
     const suffix = query.toString() ? `?${query.toString()}` : '';
-    return request(`/opportunities/feed${suffix}`, { token, auth: false });
+    if (options?.forceRefresh) return request(`/opportunities/feed${suffix}`, { token, auth: false });
+    return requestCached(`/opportunities/feed${suffix}`, { token, auth: false }, 30 * 1000);
   },
-  opportunityClusters(token, params = {}) {
+  opportunityClusters(token, params = {}, options = {}) {
     const query = new URLSearchParams();
     if (params.region) query.set('region', String(params.region));
     if (params.limit) query.set('limit', String(params.limit));
     const suffix = query.toString() ? `?${query.toString()}` : '';
-    return request(`/opportunities/clusters${suffix}`, { token, auth: false });
+    if (options?.forceRefresh) return request(`/opportunities/clusters${suffix}`, { token, auth: false });
+    return requestCached(`/opportunities/clusters${suffix}`, { token, auth: false }, 45 * 1000);
   },
-  opportunityDetail(token, id) {
-    return request(`/opportunities/${id}`, { token, auth: false });
+  opportunityExploreBudget(token, params = {}) {
+    const query = new URLSearchParams();
+    if (params.origin) query.set('origin', String(params.origin).toUpperCase());
+    if (params.budgetMax) query.set('budget_max', String(params.budgetMax));
+    if (params.limit) query.set('limit', String(params.limit));
+    const suffix = query.toString() ? `?${query.toString()}` : '';
+    return request(`/opportunities/explore/budget${suffix}`, { token, auth: false });
+  },
+  opportunityExploreMap(token, params = {}) {
+    const query = new URLSearchParams();
+    if (params.origin) query.set('origin', String(params.origin).toUpperCase());
+    if (params.budgetMax) query.set('budget_max', String(params.budgetMax));
+    if (params.limit) query.set('limit', String(params.limit));
+    const suffix = query.toString() ? `?${query.toString()}` : '';
+    return request(`/opportunities/explore/map${suffix}`, { token, auth: false });
+  },
+  opportunityDetail(token, id, options = {}) {
+    if (options?.forceRefresh) return request(`/opportunities/${id}`, { token, auth: false });
+    return requestCached(`/opportunities/${id}`, { token, auth: false }, 60 * 1000);
   },
   followOpportunity(token, id) {
     return request(`/opportunities/${id}/follow`, { method: 'POST', token });
   },
-  opportunityRelated(token, id) {
-    return request(`/opportunities/${id}/related`, { token, auth: false });
+  opportunityRelated(token, id, options = {}) {
+    if (options?.forceRefresh) return request(`/opportunities/${id}/related`, { token, auth: false });
+    return requestCached(`/opportunities/${id}/related`, { token, auth: false }, 60 * 1000);
   },
   listFollows(token) {
     return request('/opportunities/me/follows', { token });

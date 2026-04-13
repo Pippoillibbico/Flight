@@ -29,7 +29,8 @@ const LandingSectionPropsSchema = z
     ),
     landingContactCards: z.array(z.object({ icon: z.string(), label: z.string(), value: z.string(), href: z.string().optional() })),
     onHeroPrimaryCta: z.function().optional(),
-    onHeroSecondaryCta: z.function().optional()
+    onHeroSecondaryCta: z.function().optional(),
+    onOpenAuth: z.function().optional()
   })
   .passthrough();
 
@@ -47,7 +48,8 @@ function LandingSection(props) {
     landingPricingPlans,
     landingContactCards,
     onHeroPrimaryCta,
-    onHeroSecondaryCta
+    onHeroSecondaryCta,
+    onOpenAuth
   } = validateProps(LandingSectionPropsSchema, props, 'LandingSection');
   return (
 <main className={`landing-shell${darkMode ? ' landing-dark' : ''}`}>
@@ -103,7 +105,13 @@ function LandingSection(props) {
             <button
               type="button"
               className="landing-accedi-btn"
-              onClick={() => { setShowLandingPage(false); setShowAccountPanel(true); }}
+              onClick={() => {
+                if (onOpenAuth) onOpenAuth();
+                else {
+                  setShowLandingPage(false);
+                  setShowAccountPanel(true);
+                }
+              }}
             >
               {t('navSignIn')}
             </button>

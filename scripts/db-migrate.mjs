@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { initSqlDb } from '../server/lib/sql-db.js';
 
 async function run() {

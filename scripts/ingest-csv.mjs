@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { initSqlDb } from '../server/lib/sql-db.js';

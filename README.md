@@ -44,6 +44,17 @@ npm test
 npm run test:security
 ```
 
+## Security Compliance (Strict Runtime)
+Requires reachable `DATABASE_URL` and `REDIS_URL` (no startup bypass):
+```bash
+npm run test:security:compliance:strict
+```
+
+Local helper (starts/stops docker `postgres` + `redis`, then runs strict):
+```bash
+npm run test:security:compliance:strict:local
+```
+
 ## Go-Live Smoke Tests
 ```bash
 npm run test:go-live
@@ -73,6 +84,9 @@ npm run seed:price-observations
 npm run worker:price-ingestion
 npm run worker:route-baseline
 npm run worker:discovery-alert
+npm run worker:flight-scan-scheduler
+npm run worker:flight-scan
+npm run worker:flight-scan-cycle
 ```
 
 ## Docker

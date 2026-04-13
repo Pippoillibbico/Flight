@@ -54,11 +54,44 @@ function formatPeriod(item, locale, labels) {
   return labels.flexibleDates;
 }
 
+function formatTripType(item, labels) {
+  const type = String(item?.trip_type || '').trim().toLowerCase();
+  if (type === 'one_way') return labels.oneWay;
+  return labels.roundTrip;
+}
+
+function formatBaggage(item, labels) {
+  if (item?.baggage_included === true) return labels.baggageIncluded;
+  if (item?.baggage_included === false) return labels.baggageExcluded;
+  return labels.baggageUnknown;
+}
+
 function levelBadge(level, labels) {
   if (level === 'Rare opportunity') return labels.rareBadge;
   if (level === 'Exceptional price') return labels.exceptionalBadge;
   if (level === 'Good deal' || level === 'Great deal') return labels.greatBadge;
   return labels.interestingBadge;
+}
+
+function localizeOpportunityDescription(item, language, labels) {
+  const raw = String(item?.ai_description || '').trim();
+  if (!raw) return '';
+  const isEnglish = String(language || 'it').toLowerCase().startsWith('en');
+  if (!isEnglish) return raw;
+
+  const lower = raw.toLowerCase();
+  const looksItalianDescription =
+    lower.includes('questa opportunit') ||
+    lower.includes('prezzo competitivo') ||
+    lower.includes('rotta') ||
+    lower.includes('finestra viaggio') ||
+    lower.includes('diretta') ||
+    lower.includes('scalo');
+  if (!looksItalianDescription) return raw;
+
+  const routePart = Number(item?.stops || 0) === 0 ? 'a direct route' : `a route with ${Number(item?.stops || 0)} stop${Number(item?.stops || 0) === 1 ? '' : 's'}`;
+  const period = item?.depart_date && item?.return_date ? `${item.depart_date} - ${item.return_date}` : labels.flexibleDates;
+  return `This opportunity combines a competitive price, ${routePart}, and travel window ${period}.`;
 }
 
 function OpportunityFeedSection(props) {
@@ -117,6 +150,12 @@ function OpportunityFeedSection(props) {
     opportunitiesLoading: tt('opportunityFeedLoading', 'Caricamento opportunita in corso...'),
     noItems: tt('noResults', 'Al momento non ci sono nuove opportunita per i tuoi filtri. Stiamo continuando ad analizzare nuove rotte.'),
     direct: tt('opportunityFeedDirect', 'Diretto'),
+    oneWay: tt('opportunityFeedOneWay', 'Solo andata'),
+    roundTrip: tt('opportunityFeedRoundTrip', 'Andata e ritorno'),
+    airlineLabel: tt('opportunityFeedAirline', 'Compagnia'),
+    baggageIncluded: tt('opportunityFeedBaggageIncluded', 'Bagaglio incluso'),
+    baggageExcluded: tt('opportunityFeedBaggageExcluded', 'Bagaglio non incluso'),
+    baggageUnknown: tt('opportunityFeedBaggageUnknown', 'Bagaglio da verificare'),
     stopsSuffix: tt('opportunityFeedStopsSuffix', 'scali'),
     viewItineraryCta: tt('opportunityFeedViewItineraryCta', 'Vedi itinerario'),
     activateAlertCta: tt('opportunityFeedActivateAlertCta', 'Attiva alert'),
@@ -138,6 +177,7 @@ function OpportunityFeedSection(props) {
     upgradePrimary: tt('opportunityFeedUpgradePrimaryCta', 'Upgrade a PRO'),
     upgradeSecondary: tt('opportunityFeedUpgradeSecondaryCta', 'Scopri ELITE')
   };
+  const errorMessages = Array.from(new Set([clustersError, error].map((value) => String(value || '').trim()).filter(Boolean)));
   const visibleItems = isAuthenticated ? items : items.slice(0, 5);
 
   return (
@@ -147,10 +187,10 @@ function OpportunityFeedSection(props) {
         <h2>{labels.heroTitle}</h2>
         <p className="hero-sub">{labels.heroSub}</p>
         <div className="item-actions">
-          <button type="button" onClick={onDiscover}>
+          <button type="button" className="opportunity-discover-cta" onClick={onDiscover}>
             {labels.discoverCta}
           </button>
-          <button type="button" className="ghost" onClick={onActivateRadar}>
+          <button type="button" className="ghost opportunity-activate-radar-cta" onClick={onActivateRadar}>
             {labels.activateRadarCta}
           </button>
           {onRefresh ? (
@@ -174,7 +214,9 @@ function OpportunityFeedSection(props) {
         ) : null}
       </div>
       {clustersLoading ? <p className="muted">{labels.clustersLoading}</p> : null}
-      {clustersError ? <p className="error">{clustersError}</p> : null}
+      {errorMessages.map((message) => (
+        <p key={message} className="error">{message}</p>
+      ))}
       {!clustersLoading && !clustersError && clusters.length === 0 ? (
         <p className="muted">{labels.noClusters}</p>
       ) : null}
@@ -197,7 +239,6 @@ function OpportunityFeedSection(props) {
         })}
       </div>
       {loading ? <p className="muted">{labels.opportunitiesLoading}</p> : null}
-      {error ? <p className="error">{error}</p> : null}
       {!loading && items.length === 0 ? (
         <p className="muted">{labels.noItems}</p>
       ) : null}
@@ -210,12 +251,16 @@ function OpportunityFeedSection(props) {
                 <strong>
                   {item.origin_city} {'->'} {item.destination_city}
                 </strong>
-                <span className="opportunity-badge">{item.short_badge_text || levelBadge(item.opportunity_level)}</span>
+                <span className="opportunity-badge">{item.short_badge_text || levelBadge(item.opportunity_level, labels)}</span>
               </div>
               <p>
-                {formatPrice(item.price, item.currency)} | {formatPeriod(item, locale, labels)} | {item.stops === 0 ? labels.direct : `${item.stops} ${labels.stopsSuffix}`}
+                {formatPrice(item.price, item.currency)} | {formatTripType(item, labels)} | {formatPeriod(item, locale, labels)} |{' '}
+                {item.stops === 0 ? labels.direct : `${item.stops} ${labels.stopsSuffix}`}
               </p>
-              {item.ai_description ? <p>{item.ai_description}</p> : null}
+              <p>
+                {labels.airlineLabel}: {item.airline || 'unknown'} | {formatBaggage(item, labels)}
+              </p>
+              {item.ai_description ? <p>{localizeOpportunityDescription(item, language, labels)}</p> : null}
             </div>
             <div className="item-actions">
               <button type="button" onClick={() => onView(item.id)}>
@@ -254,3 +299,4 @@ function OpportunityFeedSection(props) {
 }
 
 export default OpportunityFeedSection;
+

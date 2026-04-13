@@ -45,18 +45,29 @@ import { runProviderCollectionOnce } from './jobs/provider-collection-worker.js'
 import { runSeedImportOnce } from './jobs/seed-import-worker.js';
 import { runOpportunityPipelineOnce } from './jobs/opportunity-pipeline-worker.js';
 import { runRadarMatchPrecomputeOnce } from './jobs/radar-match-precompute-worker.js';
+import { runFlightScanCycleOnce, runFlightScanSchedulerOnce, runFlightScanWorkerOnce } from './jobs/flight-scan-worker.js';
+import { runDetectedDealsWorkerOnce } from './jobs/detected-deals-worker.js';
+import { runRoutePriceStatsWorkerOnce } from './jobs/route-price-stats-worker.js';
+import { runPriceAlertsWorkerOnce } from './jobs/price-alerts-worker.js';
+import { runDealsContentWorkerOnce } from './jobs/deals-content-worker.js';
 import { captureUserPriceObservation } from './lib/observation-capture.js';
 import { closeCacheClient, getCacheClient } from './lib/free-cache.js';
 import { createFlightProviderRegistry } from './lib/flight-provider.js';
 import { createProviderRegistry } from './lib/providers/provider-registry.js';
+import { getScanProviderAdapterMetrics } from './lib/scan/provider-adapter.js';
+import { createScanStatusService } from './lib/scan/scan-status-service.js';
 import { requestIdMiddleware } from './middleware/request-id.js';
 import { buildErrorPayload, errorHandler, getErrorCode, getHumanErrorMessage } from './middleware/error-handler.js';
 import { logger, requestLogger } from './lib/logger.js';
-import { getDataFoundationStatus } from './lib/deal-engine-store.js';
+import { getDataFoundationStatus, runIngestionJobsMaintenance } from './lib/deal-engine-store.js';
 import { getOpportunityIntelligenceDebugStats, getOpportunityPipelineStats } from './lib/opportunity-store.js';
+import { getDiscoveryFeedRuntimeMetrics } from './lib/discovery-feed-service.js';
 import { getRuntimeConfigAudit } from './lib/runtime-config.js';
 import { evaluateStartupReadiness } from './lib/startup-readiness.js';
 import { canUseAITravel, canUseRadar, resolveUserPlan } from './lib/plan-access.js';
+import { createNotificationScanService } from './lib/notification-scan-service.js';
+import { buildOutboundReport, outboundReportToCsv } from './lib/outbound-report.js';
+import { createAuditCheck, runFeatureAudit as runFeatureAuditModule } from './lib/feature-audit.js';
 
 dotenv.config();
 try {
@@ -100,12 +111,39 @@ const DISCOVERY_ALERT_WORKER_TIMEZONE = process.env.DISCOVERY_ALERT_WORKER_TIMEZ
 const PRICE_INGEST_WORKER_CRON = process.env.PRICE_INGEST_WORKER_CRON || '*/5 * * * *';
 const PRICE_INGEST_WORKER_TIMEZONE = process.env.PRICE_INGEST_WORKER_TIMEZONE || FREE_JOBS_TIMEZONE;
 const PROVIDER_COLLECTION_ENABLED = String(process.env.PROVIDER_COLLECTION_ENABLED || 'false').trim().toLowerCase() === 'true';
+const SCAN_PROVIDER_OVERLAP_POLICY = String(process.env.SCAN_PROVIDER_OVERLAP_POLICY || 'mutual_exclusive').trim().toLowerCase();
 const PROVIDER_COLLECTION_CRON = process.env.PROVIDER_COLLECTION_CRON || '17 * * * *';
 const PROVIDER_COLLECTION_TIMEZONE = process.env.PROVIDER_COLLECTION_TIMEZONE || FREE_JOBS_TIMEZONE;
 const OPPORTUNITY_PIPELINE_CRON = process.env.OPPORTUNITY_PIPELINE_CRON || '*/30 * * * *';
 const OPPORTUNITY_PIPELINE_TIMEZONE = process.env.OPPORTUNITY_PIPELINE_TIMEZONE || FREE_JOBS_TIMEZONE;
+const INGESTION_JOBS_MAINTENANCE_CRON = process.env.INGESTION_JOBS_MAINTENANCE_CRON || '*/15 * * * *';
+const INGESTION_JOBS_MAINTENANCE_TIMEZONE = process.env.INGESTION_JOBS_MAINTENANCE_TIMEZONE || FREE_JOBS_TIMEZONE;
+const ROUTE_PRICE_STATS_ENABLED = String(process.env.ROUTE_PRICE_STATS_ENABLED || 'true').trim().toLowerCase() === 'true';
+const ROUTE_PRICE_STATS_CRON = process.env.ROUTE_PRICE_STATS_CRON || '*/30 * * * *';
+const ROUTE_PRICE_STATS_TIMEZONE = process.env.ROUTE_PRICE_STATS_TIMEZONE || FREE_JOBS_TIMEZONE;
+const DETECTED_DEALS_ENABLED = String(process.env.DETECTED_DEALS_ENABLED || 'true').trim().toLowerCase() === 'true';
+const DETECTED_DEALS_CRON = process.env.DETECTED_DEALS_CRON || '*/20 * * * *';
+const DETECTED_DEALS_TIMEZONE = process.env.DETECTED_DEALS_TIMEZONE || FREE_JOBS_TIMEZONE;
+const DEALS_CONTENT_ENABLED = String(process.env.DEALS_CONTENT_ENABLED || 'true').trim().toLowerCase() === 'true';
+const DEALS_CONTENT_CRON = process.env.DEALS_CONTENT_CRON || '15 8 * * *';
+const DEALS_CONTENT_TIMEZONE = process.env.DEALS_CONTENT_TIMEZONE || FREE_JOBS_TIMEZONE;
+const DEALS_CONTENT_RUN_ON_STARTUP = String(process.env.DEALS_CONTENT_RUN_ON_STARTUP || 'false').trim().toLowerCase() === 'true';
+const PRICE_ALERTS_ENABLED = String(process.env.PRICE_ALERTS_ENABLED || 'true').trim().toLowerCase() === 'true';
+const PRICE_ALERTS_CRON = process.env.PRICE_ALERTS_CRON || '*/10 * * * *';
+const PRICE_ALERTS_TIMEZONE = process.env.PRICE_ALERTS_TIMEZONE || FREE_JOBS_TIMEZONE;
+const PRICE_ALERTS_WORKER_LIMIT_RAW = Number(process.env.PRICE_ALERTS_WORKER_LIMIT || 500);
+const PRICE_ALERTS_WORKER_LIMIT = Number.isFinite(PRICE_ALERTS_WORKER_LIMIT_RAW)
+  ? Math.max(1, Math.min(5000, PRICE_ALERTS_WORKER_LIMIT_RAW))
+  : 500;
 const RADAR_MATCH_PRECOMPUTE_CRON = process.env.RADAR_MATCH_PRECOMPUTE_CRON || '*/40 * * * *';
 const RADAR_MATCH_PRECOMPUTE_TIMEZONE = process.env.RADAR_MATCH_PRECOMPUTE_TIMEZONE || FREE_JOBS_TIMEZONE;
+const FLIGHT_SCAN_ENABLED = String(process.env.FLIGHT_SCAN_ENABLED || 'false').trim().toLowerCase() === 'true';
+const FLIGHT_SCAN_SCHEDULER_CRON = process.env.FLIGHT_SCAN_SCHEDULER_CRON || '7 * * * *';
+const FLIGHT_SCAN_WORKER_CRON = process.env.FLIGHT_SCAN_WORKER_CRON || '*/5 * * * *';
+const FLIGHT_SCAN_TIMEZONE = process.env.FLIGHT_SCAN_TIMEZONE || FREE_JOBS_TIMEZONE;
+const PROVIDER_COLLECTION_EFFECTIVE_ENABLED =
+  PROVIDER_COLLECTION_ENABLED &&
+  !(FLIGHT_SCAN_ENABLED && SCAN_PROVIDER_OVERLAP_POLICY === 'mutual_exclusive');
 const BOOTSTRAP_SEED_IMPORT_FILE = String(process.env.BOOTSTRAP_SEED_IMPORT_FILE || '').trim();
 const BOOTSTRAP_SEED_IMPORT_DRY_RUN = String(process.env.BOOTSTRAP_SEED_IMPORT_DRY_RUN || 'false').trim().toLowerCase() === 'true';
 const JSON_BODY_LIMIT = String(process.env.BODY_JSON_LIMIT || '256kb').trim() || '256kb';
@@ -128,10 +166,17 @@ const CORS_ALLOWLIST = new Set(ENV_CORS_ALLOWLIST.length > 0 ? ENV_CORS_ALLOWLIS
 const RATE_LIMIT_WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW || 60_000);
 const RATE_LIMIT_MAX = Number(process.env.RATE_LIMIT_MAX || process.env.RL_API_PER_MINUTE || 120);
 const RL_AUTH_PER_MINUTE = Number(process.env.RL_AUTH_PER_MINUTE || 15);
+const RUN_STARTUP_TASKS = String(process.env.RUN_STARTUP_TASKS || 'true').trim().toLowerCase() === 'true';
 const CRON_RETRY_ATTEMPTS = Math.max(0, Number(process.env.CRON_RETRY_ATTEMPTS || 1));
 const CRON_RETRY_DELAY_MS = Math.max(0, Number(process.env.CRON_RETRY_DELAY_MS || 1500));
+const SUBSCRIPTION_SCAN_CACHE_TTL_SEC = Math.max(60, Number(process.env.SUBSCRIPTION_SCAN_CACHE_TTL_SEC || 900));
+const SUBSCRIPTION_SCAN_LOCK_TTL_SEC = Math.max(30, Number(process.env.SUBSCRIPTION_SCAN_LOCK_TTL_SEC || 300));
 const SHUTDOWN_TIMEOUT_MS = Math.max(1_000, Number(process.env.SHUTDOWN_TIMEOUT_MS || 12_000));
 const ALLOW_INSECURE_STARTUP_FOR_TESTS = String(process.env.ALLOW_INSECURE_STARTUP_FOR_TESTS || 'false').trim().toLowerCase() === 'true';
+const ALLOW_INSECURE_STARTUP_IN_PRODUCTION = String(process.env.ALLOW_INSECURE_STARTUP_IN_PRODUCTION || 'false').trim().toLowerCase() === 'true';
+const INSECURE_STARTUP_BYPASS_ENABLED = ALLOW_INSECURE_STARTUP_FOR_TESTS && ALLOW_INSECURE_STARTUP_IN_PRODUCTION;
+const REQUIRE_PRIMARY_INFRA_IN_PRODUCTION = String(process.env.REQUIRE_PRIMARY_INFRA_IN_PRODUCTION || 'true').trim().toLowerCase() !== 'false';
+const PRIMARY_INFRA_CHECK_TIMEOUT_MS = Math.max(1_000, Number(process.env.PRIMARY_INFRA_CHECK_TIMEOUT_MS || 5000));
 const LOGIN_DUMMY_PASSWORD_HASH =
   '$2b$10$7EqJtq98hPqEX7fNZaFWoOHiA6fQh6J1M4nA4sIY5Pja/qvpDMAYA'; // bcrypt("password")
 const TRUST_PROXY_RAW = String(process.env.TRUST_PROXY || '').trim().toLowerCase();
@@ -250,6 +295,50 @@ function sendMachineError(req, res, status, error, extra = {}) {
   return res.status(status).json(payload);
 }
 
+function rateLimitKey(req) {
+  if (req.user?.sub || req.user?.id) return `user:${req.user.sub || req.user.id}`;
+  if (req.apiKeyId) return `api_key:${req.apiKeyId}`;
+  const ip = String(req.ip || req.socket?.remoteAddress || '').trim();
+  if (ip) return `ip:${ip}`;
+  return 'anonymous';
+}
+
+function createDistributedLimiter({ namespace, windowMs, limit }) {
+  const cache = getCacheClient();
+  const safeWindowMs = Math.max(1000, Number(windowMs) || 60_000);
+  const safeLimit = Math.max(1, Number(limit) || 60);
+  const ttlSec = Math.max(2, Math.ceil(safeWindowMs / 1000) + 2);
+  return async (req, res, next) => {
+    const now = Date.now();
+    const bucket = Math.floor(now / safeWindowMs);
+    const key = `${namespace}:${bucket}:${rateLimitKey(req)}`;
+    try {
+      const used = Number(await cache.incr(key));
+      if (Number.isFinite(used) && used === 1 && typeof cache.expire === 'function') {
+        await cache.expire(key, ttlSec);
+      }
+      const resetTs = (bucket + 1) * safeWindowMs;
+      const resetTime = new Date(resetTs);
+      const remaining = Math.max(0, safeLimit - used);
+      req.rateLimit = {
+        limit: safeLimit,
+        used,
+        remaining,
+        resetTime
+      };
+      res.setHeader('X-RateLimit-Limit', String(safeLimit));
+      res.setHeader('X-RateLimit-Remaining', String(remaining));
+      if (used > safeLimit) {
+        return sendMachineError(req, res, 429, 'limit_exceeded', { reset_at: resetTime.toISOString() });
+      }
+      return next();
+    } catch (error) {
+      logger.warn({ err: error, namespace }, 'distributed_rate_limit_failed_open');
+      return next();
+    }
+  };
+}
+
 function toIsoFromRateLimit(req) {
   const resetTime = req.rateLimit?.resetTime;
   if (resetTime instanceof Date) return resetTime.toISOString();
@@ -257,7 +346,15 @@ function toIsoFromRateLimit(req) {
   return fallback.toISOString();
 }
 
-const standardApiLimiter = rateLimit({
+const useDistributedRateLimiting = Boolean(String(process.env.REDIS_URL || '').trim());
+
+const standardApiLimiter = useDistributedRateLimiting
+  ? createDistributedLimiter({
+      namespace: 'rl:api',
+      windowMs: RATE_LIMIT_WINDOW_MS,
+      limit: RATE_LIMIT_MAX
+    })
+  : rateLimit({
   windowMs: RATE_LIMIT_WINDOW_MS,
   limit: RATE_LIMIT_MAX,
   standardHeaders: true,
@@ -265,7 +362,13 @@ const standardApiLimiter = rateLimit({
   handler: (req, res) => sendMachineError(req, res, 429, 'limit_exceeded', { reset_at: toIsoFromRateLimit(req) })
 });
 
-const strictAuthPathLimiter = rateLimit({
+const strictAuthPathLimiter = useDistributedRateLimiting
+  ? createDistributedLimiter({
+      namespace: 'rl:auth',
+      windowMs: 60 * 1000,
+      limit: RL_AUTH_PER_MINUTE
+    })
+  : rateLimit({
   windowMs: 60 * 1000,
   limit: RL_AUTH_PER_MINUTE,
   standardHeaders: true,
@@ -273,7 +376,13 @@ const strictAuthPathLimiter = rateLimit({
   handler: (req, res) => sendMachineError(req, res, 429, 'limit_exceeded', { reset_at: toIsoFromRateLimit(req) })
 });
 
-const moderateDemoLimiter = rateLimit({
+const moderateDemoLimiter = useDistributedRateLimiting
+  ? createDistributedLimiter({
+      namespace: 'rl:demo',
+      windowMs: 60 * 1000,
+      limit: Number(process.env.RL_DEMO_PER_MINUTE || 40)
+    })
+  : rateLimit({
   windowMs: 60 * 1000,
   limit: Number(process.env.RL_DEMO_PER_MINUTE || 40),
   standardHeaders: true,
@@ -308,7 +417,13 @@ app.use('/api/auth', (_req, res, next) => {
 app.use('/api', standardApiLimiter);
 app.use('/api', apiKeyAuth);
 app.use('/', buildFreeFoundationRouter({ corsAllowlist: Array.from(CORS_ALLOWLIST) }));
-const authLimiter = rateLimit({
+const authLimiter = useDistributedRateLimiting
+  ? createDistributedLimiter({
+      namespace: 'rl:auth:login',
+      windowMs: 15 * 60 * 1000,
+      limit: Number(process.env.RL_LOGIN_ATTEMPTS_15M || 12)
+    })
+  : rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: Number(process.env.RL_LOGIN_ATTEMPTS_15M || 12),
   standardHeaders: true,
@@ -328,10 +443,92 @@ const flightProviderRegistry = createFlightProviderRegistry({
     buildBookingLink({ origin, destinationIata, dateFrom, dateTo, travellers, cabinClass })
 });
 const dataProviderRegistry = createProviderRegistry();
+const scanStatusService = createScanStatusService({ providerRegistry: dataProviderRegistry });
+if (PROVIDER_COLLECTION_ENABLED && !PROVIDER_COLLECTION_EFFECTIVE_ENABLED) {
+  logger.warn(
+    { overlapPolicy: SCAN_PROVIDER_OVERLAP_POLICY, flightScanEnabled: FLIGHT_SCAN_ENABLED, providerCollectionEnabled: PROVIDER_COLLECTION_ENABLED },
+    'provider_collection_disabled_due_to_overlap_policy'
+  );
+}
 const startupReadiness = evaluateStartupReadiness();
 const runtimeConfigAudit = startupReadiness.runtimeAudit;
+
+function withInfraTimeout(promise, timeoutMs, label) {
+  const safeTimeoutMs = Math.max(500, Number(timeoutMs) || 5000);
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${label}_timeout`));
+    }, safeTimeoutMs);
+    Promise.resolve(promise)
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+  });
+}
+
+async function verifyPrimaryInfrastructureOrFail() {
+  const isProduction = String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
+  if (!isProduction || !REQUIRE_PRIMARY_INFRA_IN_PRODUCTION) return;
+
+  const failures = [];
+  if (!pgPool) {
+    failures.push('postgres_not_configured');
+  } else {
+    try {
+      await withInfraTimeout(pgPool.query('SELECT 1'), PRIMARY_INFRA_CHECK_TIMEOUT_MS, 'postgres');
+    } catch (error) {
+      failures.push(`postgres_unreachable:${error?.message || String(error)}`);
+    }
+  }
+
+  const redisUrlConfigured = Boolean(String(process.env.REDIS_URL || '').trim());
+  if (!redisUrlConfigured) {
+    failures.push('redis_not_configured');
+  } else {
+    try {
+      const cache = getCacheClient();
+      if (typeof cache?.ping !== 'function') {
+        failures.push('redis_ping_not_supported');
+      } else {
+        await withInfraTimeout(cache.ping(), PRIMARY_INFRA_CHECK_TIMEOUT_MS, 'redis');
+      }
+    } catch (error) {
+      failures.push(`redis_unreachable:${error?.message || String(error)}`);
+    }
+  }
+
+  if (failures.length === 0) return;
+  if (!INSECURE_STARTUP_BYPASS_ENABLED) {
+    logger.fatal(
+      {
+        failures,
+        requirePrimaryInfraInProduction: REQUIRE_PRIMARY_INFRA_IN_PRODUCTION,
+        primaryInfraCheckTimeoutMs: PRIMARY_INFRA_CHECK_TIMEOUT_MS
+      },
+      'startup_blocked_primary_infra_unavailable'
+    );
+    process.exit(1);
+  }
+
+  logger.warn(
+    {
+      failures,
+      allowInsecureStartupForTests: ALLOW_INSECURE_STARTUP_FOR_TESTS,
+      allowInsecureStartupInProduction: ALLOW_INSECURE_STARTUP_IN_PRODUCTION,
+      requirePrimaryInfraInProduction: REQUIRE_PRIMARY_INFRA_IN_PRODUCTION
+    },
+    'startup_primary_infra_unavailable_bypass_enabled'
+  );
+}
+
+await verifyPrimaryInfrastructureOrFail();
 if (!startupReadiness.ok && process.env.NODE_ENV === 'production') {
-  if (!ALLOW_INSECURE_STARTUP_FOR_TESTS) {
+  if (!INSECURE_STARTUP_BYPASS_ENABLED) {
     logger.fatal(
       {
         blockingRuntimeMissing: startupReadiness.blockingFailed.runtime,
@@ -344,6 +541,8 @@ if (!startupReadiness.ok && process.env.NODE_ENV === 'production') {
   }
   logger.warn(
     {
+      allowInsecureStartupForTests: ALLOW_INSECURE_STARTUP_FOR_TESTS,
+      allowInsecureStartupInProduction: ALLOW_INSECURE_STARTUP_IN_PRODUCTION,
       blockingRuntimeMissing: startupReadiness.blockingFailed.runtime,
       blockingPolicyMissing: startupReadiness.blockingFailed.policy,
       summary: startupReadiness.summary
@@ -477,7 +676,7 @@ const searchSchema = z
       z.string().min(1).max(80).optional()
     ),
     dateFrom: z.string(),
-    dateTo: z.string(),
+    dateTo: z.string().optional(),
     cheapOnly: z.boolean(),
     maxBudget: z.number().int().positive().optional(),
     connectionType: z.enum(CONNECTION_ENUM),
@@ -489,12 +688,12 @@ const searchSchema = z
   })
   .superRefine((payload, ctx) => {
     const from = new Date(payload.dateFrom);
-    const to = new Date(payload.dateTo);
-    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+    const to = payload.dateTo ? new Date(payload.dateTo) : null;
+    if (Number.isNaN(from.getTime()) || (to && Number.isNaN(to.getTime()))) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Invalid travel dates.' });
       return;
     }
-    if (to <= from) {
+    if (to && to <= from) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Return date must be after departure date.' });
     }
   });
@@ -1391,63 +1590,6 @@ async function completeOAuthLogin({ req, res, profile }) {
   };
 }
 
-function notifyScanDateWindow(subscription) {
-  const safeOffsetRaw = Number(subscription?.daysFromNow);
-  const safeStayRaw = Number(subscription?.stayDays);
-  const safeOffset = Number.isFinite(safeOffsetRaw) ? Math.min(365, Math.max(1, Math.floor(safeOffsetRaw))) : 14;
-  const safeStayDays = Number.isFinite(safeStayRaw) ? Math.min(30, Math.max(1, Math.floor(safeStayRaw))) : 7;
-  const start = addDays(new Date(), safeOffset);
-  const end = addDays(start, safeStayDays);
-  return {
-    dateFrom: format(start, 'yyyy-MM-dd'),
-    dateTo: format(end, 'yyyy-MM-dd')
-  };
-}
-
-function findCheapestWindowForSubscription(subscription) {
-  const horizonDays = 365;
-  const safeStayRaw = Number(subscription?.stayDays);
-  const safeStayDays = Number.isFinite(safeStayRaw) ? Math.min(30, Math.max(1, Math.floor(safeStayRaw))) : 7;
-  let best = null;
-
-  for (let offset = 1; offset <= horizonDays; offset += 1) {
-    const start = addDays(new Date(), offset);
-    const end = addDays(start, safeStayDays);
-    const dateFrom = format(start, 'yyyy-MM-dd');
-    const dateTo = format(end, 'yyyy-MM-dd');
-
-    const result = searchFlights({
-      origin: subscription.origin,
-      region: subscription.region,
-      country: subscription.country,
-      destinationQuery: subscription.destinationQuery,
-      dateFrom,
-      dateTo,
-      cheapOnly: subscription.cheapOnly,
-      maxBudget: undefined,
-      connectionType: subscription.connectionType || 'all',
-      maxStops: subscription.maxStops,
-      travelTime: subscription.travelTime || 'all',
-      minComfortScore: subscription.minComfortScore,
-      travellers: subscription.travellers,
-      cabinClass: subscription.cabinClass
-    });
-
-    let candidates = result.flights;
-    if (subscription.destinationIata) {
-      candidates = candidates.filter((f) => f.destinationIata === subscription.destinationIata);
-    }
-
-    const candidate = candidates[0];
-    if (!candidate) continue;
-    if (!best || candidate.price < best.price) {
-      best = { ...candidate, dateFrom, dateTo };
-    }
-  }
-
-  return best;
-}
-
 function buildDestinationInsights(params) {
   const horizonDays = Number.isFinite(params.horizonDays) ? params.horizonDays : 120;
   const windows = [];
@@ -1511,442 +1653,27 @@ function buildDestinationInsights(params) {
   return { stats, windows: top };
 }
 
-function createAuditCheck(id, label, ok, detail) {
-  return { id, label, ok: Boolean(ok), detail };
-}
-
-function buildOutboundReport(db, windowDays = 30) {
-  const since = addDays(new Date(), -windowDays).getTime();
-  const clicks = db.outboundClicks.filter((c) => new Date(c.at).getTime() >= since);
-  const searches = db.searches.filter((s) => new Date(s.at).getTime() >= since);
-
-  const partnerMap = new Map();
-  const routeMap = new Map();
-  const filterMap = new Map();
-  const campaignMap = new Map();
-  const sourceMediumMap = new Map();
-
-  for (const click of clicks) {
-    partnerMap.set(click.partner, (partnerMap.get(click.partner) || 0) + 1);
-    const route = `${click.origin}-${click.destinationIata}`;
-    routeMap.set(route, (routeMap.get(route) || 0) + 1);
-    const campaign = click.utmCampaign || 'organic';
-    campaignMap.set(campaign, (campaignMap.get(campaign) || 0) + 1);
-    const sourceMedium = `${click.utmSource || 'direct'} / ${click.utmMedium || 'none'}`;
-    sourceMediumMap.set(sourceMedium, (sourceMediumMap.get(sourceMedium) || 0) + 1);
-  }
-
-  for (const search of searches) {
-    const key = `${search.payload.connectionType || 'all'}|${search.payload.travelTime || 'all'}|stops:${Number.isFinite(search.payload.maxStops) ? search.payload.maxStops : 'any'}`;
-    filterMap.set(key, (filterMap.get(key) || 0) + 1);
-  }
-
-  const byPartner = [...partnerMap.entries()].map(([partner, clicksCount]) => ({ partner, clicks: clicksCount })).sort((a, b) => b.clicks - a.clicks);
-  const topRoutes = [...routeMap.entries()].map(([route, clicksCount]) => ({ route, clicks: clicksCount })).sort((a, b) => b.clicks - a.clicks).slice(0, 10);
-  const topDecisionPatterns = [...filterMap.entries()]
-    .map(([pattern, used]) => ({ pattern, used }))
-    .sort((a, b) => b.used - a.used)
-    .slice(0, 10);
-  const topCampaigns = [...campaignMap.entries()]
-    .map(([campaign, clicksCount]) => ({ campaign, clicks: clicksCount }))
-    .sort((a, b) => b.clicks - a.clicks)
-    .slice(0, 10);
-  const topSources = [...sourceMediumMap.entries()]
-    .map(([sourceMedium, clicksCount]) => ({ sourceMedium, clicks: clicksCount }))
-    .sort((a, b) => b.clicks - a.clicks)
-    .slice(0, 10);
-
-  return {
-    generatedAt: new Date().toISOString(),
-    policy: {
-      monetizationModel: 'decision_value',
-      scrapingUsed: false,
-      externalInventoryResale: false,
-      note: 'The portal generates value through decision analytics and intelligent filtering, not by reselling partner inventory.'
-    },
-    summary: {
-      windowDays,
-      searchCount: searches.length,
-      outboundClicks: clicks.length,
-      clickThroughRatePct: searches.length > 0 ? Math.round((clicks.length / searches.length) * 1000) / 10 : 0,
-      uniqueRoutesClicked: routeMap.size
-    },
-    byPartner,
-    topRoutes,
-    topDecisionPatterns,
-    topCampaigns,
-    topSources
-  };
-}
-
-function csvEscape(value) {
-  const text = String(value ?? '');
-  if (text.includes(',') || text.includes('"') || text.includes('\n')) {
-    return `"${text.replace(/"/g, '""')}"`;
-  }
-  return text;
-}
-
-function outboundReportToCsv(report) {
-  const lines = [];
-  lines.push(['section', 'key', 'value'].join(','));
-  lines.push(['summary', 'generatedAt', csvEscape(report.generatedAt)].join(','));
-  lines.push(['summary', 'windowDays', csvEscape(report.summary.windowDays)].join(','));
-  lines.push(['summary', 'searchCount', csvEscape(report.summary.searchCount)].join(','));
-  lines.push(['summary', 'outboundClicks', csvEscape(report.summary.outboundClicks)].join(','));
-  lines.push(['summary', 'clickThroughRatePct', csvEscape(report.summary.clickThroughRatePct)].join(','));
-  lines.push(['summary', 'uniqueRoutesClicked', csvEscape(report.summary.uniqueRoutesClicked)].join(','));
-
-  lines.push('');
-  lines.push(['partner', 'clicks'].join(','));
-  for (const row of report.byPartner || []) {
-    lines.push([csvEscape(row.partner), csvEscape(row.clicks)].join(','));
-  }
-
-  lines.push('');
-  lines.push(['route', 'clicks'].join(','));
-  for (const row of report.topRoutes || []) {
-    lines.push([csvEscape(row.route), csvEscape(row.clicks)].join(','));
-  }
-
-  lines.push('');
-  lines.push(['campaign', 'clicks'].join(','));
-  for (const row of report.topCampaigns || []) {
-    lines.push([csvEscape(row.campaign), csvEscape(row.clicks)].join(','));
-  }
-
-  lines.push('');
-  lines.push(['source_medium', 'clicks'].join(','));
-  for (const row of report.topSources || []) {
-    lines.push([csvEscape(row.sourceMedium), csvEscape(row.clicks)].join(','));
-  }
-
-  lines.push('');
-  lines.push(['decision_pattern', 'used'].join(','));
-  for (const row of report.topDecisionPatterns || []) {
-    lines.push([csvEscape(row.pattern), csvEscape(row.used)].join(','));
-  }
-
-  return lines.join('\n');
-}
-
-function runFeatureAudit() {
-  const checks = [];
-  const samplePayload = {
-    origin: 'MXP',
-    region: 'all',
-    country: undefined,
-    destinationQuery: undefined,
-    dateFrom: '2026-04-20',
-    dateTo: '2026-04-27',
-    cheapOnly: false,
-    maxBudget: undefined,
-    travellers: 1,
-    cabinClass: 'economy'
-  };
-
-  const directOnly = searchFlights({
-    ...samplePayload,
-    connectionType: 'direct',
-    maxStops: 0,
-    travelTime: 'all',
-    minComfortScore: undefined
-  });
-  checks.push(
-    createAuditCheck(
-      'direct_only_filter',
-      'Direct-only filter returns only direct flights',
-      directOnly.flights.every((f) => f.stopCount === 0),
-      `count=${directOnly.flights.length}`
-    )
-  );
-
-  const withStops = searchFlights({
-    ...samplePayload,
-    connectionType: 'with_stops',
-    maxStops: 2,
-    travelTime: 'all',
-    minComfortScore: undefined
-  });
-  checks.push(
-    createAuditCheck(
-      'with_stops_filter',
-      'With-stops filter excludes direct flights',
-      withStops.flights.every((f) => f.stopCount > 0),
-      `count=${withStops.flights.length}`
-    )
-  );
-
-  const nightOnly = searchFlights({
-    ...samplePayload,
-    connectionType: 'all',
-    maxStops: 2,
-    travelTime: 'night',
-    minComfortScore: undefined
-  });
-  checks.push(
-    createAuditCheck(
-      'night_time_filter',
-      'Night-time filter works',
-      nightOnly.flights.every((f) => f.isNightFlight),
-      `count=${nightOnly.flights.length}`
-    )
-  );
-
-  const dayOnly = searchFlights({
-    ...samplePayload,
-    connectionType: 'all',
-    maxStops: 2,
-    travelTime: 'day',
-    minComfortScore: undefined
-  });
-  checks.push(
-    createAuditCheck(
-      'day_time_filter',
-      'Day-time filter works',
-      dayOnly.flights.every((f) => !f.isNightFlight),
-      `count=${dayOnly.flights.length}`
-    )
-  );
-
-  const comfortFiltered = searchFlights({
-    ...samplePayload,
-    connectionType: 'all',
-    maxStops: 2,
-    travelTime: 'all',
-    minComfortScore: 70
-  });
-  checks.push(
-    createAuditCheck(
-      'comfort_filter',
-      'Comfort score filter is applied',
-      comfortFiltered.flights.every((f) => f.comfortScore >= 70),
-      `count=${comfortFiltered.flights.length}`
-    )
-  );
-
-  const maxOneStop = searchFlights({
-    ...samplePayload,
-    connectionType: 'all',
-    maxStops: 1,
-    travelTime: 'all',
-    minComfortScore: undefined
-  });
-  checks.push(
-    createAuditCheck(
-      'max_stops_filter',
-      'Max-stops filter is applied',
-      maxOneStop.flights.every((f) => f.stopCount <= 1),
-      `count=${maxOneStop.flights.length}`
-    )
-  );
-
-  const metadataSample = searchFlights({
-    ...samplePayload,
-    connectionType: 'all',
-    maxStops: 2,
-    travelTime: 'all',
-    minComfortScore: undefined
-  });
-  const first = metadataSample.flights[0];
-  checks.push(
-    createAuditCheck(
-      'flight_metadata',
-      'Flight cards have monetization metadata',
-      Boolean(first?.stopLabel && first?.departureTimeLabel && Number.isFinite(first?.comfortScore)),
-      first ? `sample=${first.stopLabel}, dep=${first.departureTimeLabel}, comfort=${first.comfortScore}` : 'no flights'
-    )
-  );
-
-  checks.push(
-    createAuditCheck(
-      'config_connection_types',
-      'Connection types configured',
-      CONNECTION_ENUM.includes('all') && CONNECTION_ENUM.includes('direct') && CONNECTION_ENUM.includes('with_stops'),
-      CONNECTION_ENUM.join(',')
-    )
-  );
-  checks.push(
-    createAuditCheck(
-      'config_travel_times',
-      'Travel time bands configured',
-      TRAVEL_TIME_ENUM.includes('all') && TRAVEL_TIME_ENUM.includes('day') && TRAVEL_TIME_ENUM.includes('night'),
-      TRAVEL_TIME_ENUM.join(',')
-    )
-  );
-  checks.push(
-    createAuditCheck(
-      'auth_hardening',
-      'Auth hardening enabled (rate limit + lock policy)',
-      LOGIN_MAX_FAILURES >= 3 && LOGIN_LOCK_MINUTES >= 10,
-      `maxFailures=${LOGIN_MAX_FAILURES}, lockMinutes=${LOGIN_LOCK_MINUTES}`
-    )
-  );
-  checks.push(
-    createAuditCheck(
-      'compliance_no_scraping',
-      'Compliance: no scraping and no external data resale model',
-      true,
-      'Monetization model is decision analytics + routing intelligence.'
-    )
-  );
-
-  const passed = checks.filter((c) => c.ok).length;
-  return {
-    generatedAt: new Date().toISOString(),
-    summary: {
-      total: checks.length,
-      passed,
-      failed: checks.length - passed,
-      readyForMonetization: checks.every((c) => c.ok)
-    },
-    checks
-  };
-}
-
-async function scanSubscriptionsOnce() {
-  const pendingEmails = [];
-  await withDb(async (db) => {
-    const todayTag = format(new Date(), 'yyyy-MM-dd');
-
-    for (const subscription of db.alertSubscriptions) {
-      if (!subscription.enabled) continue;
-
-      const smartDurationMode = !Number.isFinite(subscription.targetPrice) || subscription.scanMode === 'duration_auto';
-      if (smartDurationMode) {
-        const best = findCheapestWindowForSubscription(subscription);
-        if (!best) continue;
-
-        const departure = parseISO(best.dateFrom);
-        const monthLabel = format(departure, 'MMMM yyyy');
-        const dedupeKey = `${subscription.id}:smart:${best.destinationIata}:${best.dateFrom}:${best.dateTo}:${best.price}`;
-        const alreadySent = db.notifications.some((n) => n.dedupeKey === dedupeKey);
-        if (alreadySent) continue;
-
-        db.notifications.push({
-          id: nanoid(12),
-          dedupeKey,
-          userId: subscription.userId,
-          subscriptionId: subscription.id,
-          createdAt: new Date().toISOString(),
-          readAt: null,
-          title: '\u26A1 Opportunita rara trovata',
-          message: `${best.origin} -> ${best.destination}\n${Math.round(Number(best.price || 0))}\u20AC\nFinestra consigliata: ${monthLabel}.`,
-          data: {
-            origin: best.origin,
-            destination: best.destination,
-            destinationIata: best.destinationIata,
-            price: best.price,
-            targetPrice: null,
-            dateFrom: best.dateFrom,
-            dateTo: best.dateTo,
-            link: best.link
-          }
-        });
-        const user = db.users.find((u) => u.id === subscription.userId);
-        if (user?.email) {
-          pendingEmails.push({
-            userId: user.id,
-            email: user.email,
-            subject: '\u26A1 Opportunita rara trovata',
-            text: `${best.origin} -> ${best.destination}\n${Math.round(Number(best.price || 0))}\u20AC\nFinestra consigliata: ${monthLabel}.\nQuesto volo potrebbe sparire presto.`
-          });
-        }
-        continue;
-      }
-
-      const { dateFrom, dateTo } = notifyScanDateWindow(subscription);
-      const result = searchFlights({
-        origin: subscription.origin,
-        region: subscription.region,
-        country: subscription.country,
-        destinationQuery: subscription.destinationQuery,
-        dateFrom,
-        dateTo,
-        cheapOnly: subscription.cheapOnly,
-        maxBudget: subscription.targetPrice,
-        connectionType: subscription.connectionType || 'all',
-        maxStops: subscription.maxStops,
-        travelTime: subscription.travelTime || 'all',
-        minComfortScore: subscription.minComfortScore,
-        travellers: subscription.travellers,
-        cabinClass: subscription.cabinClass
-      });
-
-      let candidates = result.flights;
-      if (subscription.destinationIata) {
-        candidates = candidates.filter((f) => f.destinationIata === subscription.destinationIata);
-      }
-
-      const best = candidates[0];
-      if (!best || best.price > subscription.targetPrice) continue;
-
-      const dedupeKey = `${subscription.id}:${best.destinationIata}:${dateFrom}:${dateTo}:${todayTag}`;
-      const alreadySent = db.notifications.some((n) => n.dedupeKey === dedupeKey);
-      if (alreadySent) continue;
-
-      db.notifications.push({
-        id: nanoid(12),
-        dedupeKey,
-        userId: subscription.userId,
-        subscriptionId: subscription.id,
-        createdAt: new Date().toISOString(),
-        readAt: null,
-        title: '\uD83D\uDD25 Nuova occasione',
-        message: `${best.origin} -> ${best.destination}\n${Math.round(Number(best.price || 0))}\u20AC\nTarget radar: ${Math.round(Number(subscription.targetPrice || 0))}\u20AC.`,
-        data: {
-          origin: best.origin,
-          destination: best.destination,
-          destinationIata: best.destinationIata,
-          price: best.price,
-          targetPrice: subscription.targetPrice,
-          dateFrom,
-          dateTo,
-          link: best.link
-        }
-      });
-      const user = db.users.find((u) => u.id === subscription.userId);
-      if (user?.email) {
-        pendingEmails.push({
-          userId: user.id,
-          email: user.email,
-          subject: '\uD83D\uDD25 Nuova occasione',
-          text: `${best.origin} -> ${best.destination}\n${Math.round(Number(best.price || 0))}\u20AC\nTarget radar: ${Math.round(Number(subscription.targetPrice || 0))}\u20AC.\nQuesto volo potrebbe sparire presto.`
-        });
-      }
-    }
-
-    db.notifications = db.notifications.slice(-2000);
-    return db;
+const runFeatureAudit = () =>
+  runFeatureAuditModule({
+    searchFlights,
+    connectionTypes: CONNECTION_ENUM,
+    travelTimes: TRAVEL_TIME_ENUM,
+    loginMaxFailures: LOGIN_MAX_FAILURES,
+    loginLockMinutes: LOGIN_LOCK_MINUTES
   });
 
-  for (const item of pendingEmails) {
-    try {
-      const result = await sendMail({
-        to: item.email,
-        subject: item.subject,
-        text: item.text,
-        html: `<p>${item.text}</p>`
-      });
-      await insertEmailDeliveryLog({
-        userId: item.userId,
-        email: item.email,
-        subject: item.subject,
-        status: result.sent ? 'sent' : 'skipped',
-        providerMessageId: result.messageId || null,
-        errorMessage: result.reason || null
-      });
-    } catch (error) {
-      await insertEmailDeliveryLog({
-        userId: item.userId,
-        email: item.email,
-        subject: item.subject,
-        status: 'failed',
-        errorMessage: error?.message || 'mail_send_failed'
-      });
-    }
-  }
-}
+const { scanSubscriptionsOnce } = createNotificationScanService({
+  withDb,
+  searchFlights,
+  sendMail,
+  insertEmailDeliveryLog,
+  getCacheClient,
+  logger,
+  nanoid,
+  scanCacheTtlSec: SUBSCRIPTION_SCAN_CACHE_TTL_SEC,
+  scanLockTtlSec: SUBSCRIPTION_SCAN_LOCK_TTL_SEC
+});
+const scanPriceAlertsOnce = async ({ limit = PRICE_ALERTS_WORKER_LIMIT } = {}) => runPriceAlertsWorkerOnce({ limit });
 
 app.use(
   buildSystemRouter({
@@ -1967,11 +1694,22 @@ app.use(
     getOpportunityPipelineStats,
     getOpportunityIntelligenceDebugStats,
     providerRegistry: dataProviderRegistry,
+    getScanProviderAdapterMetrics,
+    getDiscoveryFeedRuntimeMetrics,
     getRuntimeConfigAudit,
     evaluateStartupReadiness,
     authGuard,
+    csrfGuard,
     requireApiScope,
-    quotaGuard
+    quotaGuard,
+    FLIGHT_SCAN_ENABLED,
+    getFlightScanStatus: () =>
+      scanStatusService.getStatus({
+        recentRunsLimit: Math.max(1, Math.min(100, Number(process.env.FLIGHT_SCAN_STATUS_RECENT_RUNS || 20)))
+      }),
+    runFlightScanSchedulerOnce,
+    runFlightScanWorkerOnce,
+    runFlightScanCycleOnce
   })
 );
 app.get('/api/security/audit/verify', authGuard, async (_req, res) => {
@@ -1997,6 +1735,7 @@ app.get('/api/monetization/report', authGuard, async (_req, res) => {
 app.get('/api/billing/pricing', async (_req, res, next) => {
   try {
     const pricing = await getPricingConfig();
+    res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=120');
     return res.json(pricing);
   } catch (err) {
     next(err);
@@ -2038,7 +1777,9 @@ app.use(
     insertSearchEvent,
     nanoid,
     sendMachineError,
-    captureUserPriceObservation
+    captureUserPriceObservation,
+    searchProviderOffers: (params) => dataProviderRegistry.searchOffers(params),
+    cacheClient: getCacheClient()
   })
 );
 app.post('/api/auth/register', authLimiter, async (req, res) => {
@@ -3072,6 +2813,7 @@ app.use(
     withDb,
     nanoid,
     scanSubscriptionsOnce,
+    scanPriceAlertsOnce,
     watchlistSchema,
     alertSubscriptionSchema,
     alertSubscriptionUpdateSchema,
@@ -3109,11 +2851,31 @@ const httpServer = app.listen(PORT, () => {
   logger.info({ port: PORT, version: BUILD_VERSION }, 'server_started');
 });
 const cronTasks = [];
+const cronRunningJobs = new Set();
+const CRON_ALLOW_OVERLAP_JOBS = new Set(
+  String(process.env.CRON_ALLOW_OVERLAP_JOBS || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean)
+);
 
 function scheduleCronJob(name, expression, jobFn, options = {}) {
   const task = cron.schedule(
     expression,
     async () => {
+      const overlapAllowed = CRON_ALLOW_OVERLAP_JOBS.has(name);
+      if (!overlapAllowed && cronRunningJobs.has(name)) {
+        logger.warn(
+          {
+            job: name,
+            schedule: expression,
+            timezone: options?.timezone || 'system'
+          },
+          'cron_job_skipped_overlap'
+        );
+        return;
+      }
+      if (!overlapAllowed) cronRunningJobs.add(name);
       const startedAt = Date.now();
       try {
         let attempt = 0;
@@ -3151,6 +2913,8 @@ function scheduleCronJob(name, expression, jobFn, options = {}) {
           },
           'cron_job_failed'
         );
+      } finally {
+        if (!overlapAllowed) cronRunningJobs.delete(name);
       }
     },
     options
@@ -3199,25 +2963,67 @@ scheduleCronJob('baseline_recompute_worker', DEAL_BASELINE_CRON, () => runBaseli
 scheduleCronJob('discovery_alert_worker', DISCOVERY_ALERT_WORKER_CRON, () => runDiscoveryAlertWorkerOnce(), { timezone: DISCOVERY_ALERT_WORKER_TIMEZONE });
 scheduleCronJob('price_ingestion_worker', PRICE_INGEST_WORKER_CRON, () => runPriceIngestionWorkerOnce({ maxJobs: 500 }), { timezone: PRICE_INGEST_WORKER_TIMEZONE });
 scheduleCronJob('opportunity_pipeline_worker', OPPORTUNITY_PIPELINE_CRON, () => runOpportunityPipelineOnce(), { timezone: OPPORTUNITY_PIPELINE_TIMEZONE });
+scheduleCronJob('ingestion_jobs_maintenance', INGESTION_JOBS_MAINTENANCE_CRON, () => runIngestionJobsMaintenance({ force: true }), {
+  timezone: INGESTION_JOBS_MAINTENANCE_TIMEZONE
+});
+if (ROUTE_PRICE_STATS_ENABLED) {
+  scheduleCronJob('route_price_stats_worker', ROUTE_PRICE_STATS_CRON, () => runRoutePriceStatsWorkerOnce(), { timezone: ROUTE_PRICE_STATS_TIMEZONE });
+}
+if (DETECTED_DEALS_ENABLED) {
+  scheduleCronJob('detected_deals_worker', DETECTED_DEALS_CRON, () => runDetectedDealsWorkerOnce(), { timezone: DETECTED_DEALS_TIMEZONE });
+}
+if (DEALS_CONTENT_ENABLED) {
+  scheduleCronJob('deals_content_worker', DEALS_CONTENT_CRON, () => runDealsContentWorkerOnce(), { timezone: DEALS_CONTENT_TIMEZONE });
+}
+if (PRICE_ALERTS_ENABLED) {
+  scheduleCronJob('price_alerts_worker', PRICE_ALERTS_CRON, () => runPriceAlertsWorkerOnce({ limit: PRICE_ALERTS_WORKER_LIMIT }), {
+    timezone: PRICE_ALERTS_TIMEZONE
+  });
+}
 scheduleCronJob('radar_match_precompute_worker', RADAR_MATCH_PRECOMPUTE_CRON, () => runRadarMatchPrecomputeOnce(), { timezone: RADAR_MATCH_PRECOMPUTE_TIMEZONE });
-if (PROVIDER_COLLECTION_ENABLED) {
+if (FLIGHT_SCAN_ENABLED) {
+  scheduleCronJob('flight_scan_scheduler', FLIGHT_SCAN_SCHEDULER_CRON, () => runFlightScanSchedulerOnce({ enabled: true }), { timezone: FLIGHT_SCAN_TIMEZONE });
+  scheduleCronJob('flight_scan_worker', FLIGHT_SCAN_WORKER_CRON, () => runFlightScanWorkerOnce({ enabled: true }), { timezone: FLIGHT_SCAN_TIMEZONE });
+}
+if (PROVIDER_COLLECTION_EFFECTIVE_ENABLED) {
   scheduleCronJob('provider_collection_worker', PROVIDER_COLLECTION_CRON, () => runProviderCollectionOnce(), { timezone: PROVIDER_COLLECTION_TIMEZONE });
 }
 
-runStartupTask('ai_pricing_startup_check', () => monitorAndUpdateSubscriptionPricing({ reason: 'startup' }));
-runStartupTask('free_precompute_startup', () => runNightlyFreePrecompute({ reason: 'startup' }));
-runStartupTask('route_baseline_startup', () => runNightlyRouteBaselineJob({ reason: 'startup' }));
-runStartupTask('baseline_recompute_startup', () => runBaselineRecomputeOnce());
-runStartupTask('discovery_alert_worker_startup', () => runDiscoveryAlertWorkerOnce({ limit: 200 }));
-runStartupTask('price_ingestion_worker_startup', () => runPriceIngestionWorkerOnce({ maxJobs: 500 }));
-runStartupTask('opportunity_seed_bootstrap_startup', () => bootstrapOpportunitySeedIfEmpty());
-runStartupTask('opportunity_pipeline_startup', () => runOpportunityPipelineOnce());
-runStartupTask('radar_match_precompute_startup', () => runRadarMatchPrecomputeOnce());
-if (PROVIDER_COLLECTION_ENABLED) {
-  runStartupTask('provider_collection_startup', () => runProviderCollectionOnce());
-}
-if (BOOTSTRAP_SEED_IMPORT_FILE) {
-  runStartupTask('seed_import_startup', () => runSeedImportOnce({ filePath: BOOTSTRAP_SEED_IMPORT_FILE, dryRun: BOOTSTRAP_SEED_IMPORT_DRY_RUN }));
+if (RUN_STARTUP_TASKS) {
+  runStartupTask('ai_pricing_startup_check', () => monitorAndUpdateSubscriptionPricing({ reason: 'startup' }));
+  runStartupTask('free_precompute_startup', () => runNightlyFreePrecompute({ reason: 'startup' }));
+  runStartupTask('route_baseline_startup', () => runNightlyRouteBaselineJob({ reason: 'startup' }));
+  runStartupTask('baseline_recompute_startup', () => runBaselineRecomputeOnce());
+  runStartupTask('discovery_alert_worker_startup', () => runDiscoveryAlertWorkerOnce({ limit: 200 }));
+  runStartupTask('price_ingestion_worker_startup', () => runPriceIngestionWorkerOnce({ maxJobs: 500 }));
+  runStartupTask('ingestion_jobs_maintenance_startup', () => runIngestionJobsMaintenance({ force: true }));
+  runStartupTask('opportunity_seed_bootstrap_startup', () => bootstrapOpportunitySeedIfEmpty());
+  runStartupTask('opportunity_pipeline_startup', () => runOpportunityPipelineOnce());
+  if (ROUTE_PRICE_STATS_ENABLED) {
+    runStartupTask('route_price_stats_startup', () => runRoutePriceStatsWorkerOnce());
+  }
+  if (DETECTED_DEALS_ENABLED) {
+    runStartupTask('detected_deals_startup', () => runDetectedDealsWorkerOnce());
+  }
+  if (DEALS_CONTENT_ENABLED && DEALS_CONTENT_RUN_ON_STARTUP) {
+    runStartupTask('deals_content_startup', () => runDealsContentWorkerOnce());
+  }
+  if (PRICE_ALERTS_ENABLED) {
+    runStartupTask('price_alerts_startup', () => runPriceAlertsWorkerOnce({ limit: PRICE_ALERTS_WORKER_LIMIT }));
+  }
+  runStartupTask('radar_match_precompute_startup', () => runRadarMatchPrecomputeOnce());
+  if (FLIGHT_SCAN_ENABLED) {
+    runStartupTask('flight_scan_scheduler_startup', () => runFlightScanSchedulerOnce({ enabled: true }));
+    runStartupTask('flight_scan_worker_startup', () => runFlightScanWorkerOnce({ enabled: true }));
+  }
+  if (PROVIDER_COLLECTION_EFFECTIVE_ENABLED) {
+    runStartupTask('provider_collection_startup', () => runProviderCollectionOnce());
+  }
+  if (BOOTSTRAP_SEED_IMPORT_FILE) {
+    runStartupTask('seed_import_startup', () => runSeedImportOnce({ filePath: BOOTSTRAP_SEED_IMPORT_FILE, dryRun: BOOTSTRAP_SEED_IMPORT_DRY_RUN }));
+  }
+} else {
+  logger.info({ runStartupTasks: false }, 'startup_tasks_skipped_disabled');
 }
 
 let shuttingDown = false;
@@ -3299,6 +3105,9 @@ process.on('uncaughtException', (error) => {
     process.exit(1);
   });
 });
+
+
+
 
 
 
