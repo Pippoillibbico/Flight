@@ -2,30 +2,31 @@ import en from './lang/en.js';
 
 export const LANGUAGE_OPTIONS = [
   {
-    "value": "en",
-    "label": "English"
+    value: 'en',
+    label: 'English'
   },
   {
-    "value": "it",
-    "label": "Italiano"
+    value: 'it',
+    label: 'Italiano'
   },
   {
-    "value": "de",
-    "label": "Deutsch"
+    value: 'de',
+    label: 'Deutsch'
   },
   {
-    "value": "fr",
-    "label": "Français"
+    value: 'fr',
+    label: 'Francais'
   },
   {
-    "value": "es",
-    "label": "Español"
+    value: 'es',
+    label: 'Espanol'
   },
   {
-    "value": "pt",
-    "label": "Português"
+    value: 'pt',
+    label: 'Portugues'
   }
 ];
+
 export const LANGS = LANGUAGE_OPTIONS.map((item) => item.value);
 export const DEFAULT_LANGUAGE = 'en';
 export const DEFAULT_LANGUAGE_PACK = en;

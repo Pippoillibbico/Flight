@@ -606,11 +606,14 @@ export async function scoreDeal({ origin, destination, departureDate, price }) {
   const confidence = confidenceForCount(count);
   const delta = round2(p50 - requestedPrice);
   const sign = delta >= 0 ? 'below' : 'above';
+  const savingPct = p50 > 0 ? Math.round(((p50 - requestedPrice) / p50) * 10000) / 100 : 0;
 
   return {
     dealLevel,
     dealScore,
     why: `Price is ${Math.abs(delta).toFixed(2)} ${sign} route median (${p50.toFixed(2)}) for ${travelMonth}.`,
+    baselineMedian: round2(p50),
+    savingPct,
     confidence: {
       level: confidence.level,
       score: confidence.score,
