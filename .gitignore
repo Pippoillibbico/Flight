@@ -31,3 +31,17 @@ node_modules
 
 # build
 dist
+
+# test artifacts
+test-results/
+
+# local tooling
+.claude/
+
+# local logs/screenshots
+app-dev*.log
+app-devweb*.log
+cookie-*.png
+playwright-*.png
+verify-*.png
+footer-*.png
