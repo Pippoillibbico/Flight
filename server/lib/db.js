@@ -1,8 +1,10 @@
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const DB_FILE = new URL('../../data/db.json', import.meta.url);
+const DEFAULT_DB_FILE = fileURLToPath(new URL('../../data/db.json', import.meta.url));
+const DB_FILE = resolve(String(process.env.FLIGHT_DB_FILE || DEFAULT_DB_FILE));
 
 const initialData = {
   users: [],
@@ -44,7 +46,7 @@ let queue = Promise.resolve();
 
 async function ensureDb() {
   if (existsSync(DB_FILE)) return;
-  await mkdir(dirname(DB_FILE.pathname), { recursive: true });
+  await mkdir(dirname(DB_FILE), { recursive: true });
   await writeFile(DB_FILE, JSON.stringify(initialData, null, 2));
 }
 

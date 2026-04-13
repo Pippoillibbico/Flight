@@ -20,12 +20,15 @@
 4. `npm run build`
 5. `npm run test:security`
 6. `npm run test:go-live` (with server up)
+7. `npm run preflight:prod`
+   - must report `ok: true` with both runtime checks and startup policy checks.
 
 ## 3) Run prod-like locally (docker compose)
 1. `docker compose up --build`
 2. Verify:
    - `GET /api/health`
    - `GET /api/health/security`
+   - `GET /api/health/deploy-readiness`
    - `GET /api/engine/deal-score` with sample query.
 
 ## 4) Post-deploy checks

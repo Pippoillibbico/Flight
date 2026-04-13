@@ -12,9 +12,12 @@ export function buildSystemRouter({
   CORS_ALLOWLIST,
   LOGIN_MAX_FAILURES,
   LOGIN_LOCK_MINUTES,
+  RL_AUTH_PER_MINUTE,
   runFeatureAudit,
   getDataFoundationStatus,
-  providerRegistry
+  providerRegistry,
+  getRuntimeConfigAudit,
+  evaluateStartupReadiness
 }) {
   const router = Router();
 
@@ -141,15 +144,34 @@ export function buildSystemRouter({
   router.get('/api/health/security', async (_req, res) => {
     const db = await readDb();
     const auditChain = await verifyImmutableAudit();
+    const runtimeAudit = getRuntimeConfigAudit();
+    const startupReadiness = evaluateStartupReadiness();
     const auditHmacConfigured = Boolean(String(process.env.AUDIT_LOG_HMAC_KEY || '').trim());
     const googleConfigured = Boolean(String(process.env.GOOGLE_CLIENT_IDS || process.env.GOOGLE_CLIENT_ID || '').trim());
     const appleConfigured = Boolean(String(process.env.APPLE_CLIENT_IDS || process.env.APPLE_CLIENT_ID || '').trim());
     const facebookConfigured = Boolean(String(process.env.FACEBOOK_CLIENT_IDS || process.env.FACEBOOK_CLIENT_ID || '').trim());
+    const jwtCheck = runtimeAudit.checks.find((check) => check.key === 'JWT_SECRET');
     const checks = [
-      createAuditCheck('jwt_secret', 'JWT secret configured and strong', true, 'JWT_SECRET is required (>= 32 chars)'),
+      createAuditCheck(
+        'runtime_config_blocking',
+        'Blocking runtime config present',
+        runtimeAudit.summary.blockingFailed === 0,
+        runtimeAudit.summary.blockingFailed === 0
+          ? 'all blocking runtime keys configured'
+          : `missing=${runtimeAudit.blockingFailedKeys.join(',')}`
+      ),
+      createAuditCheck('jwt_secret', 'JWT secret configured and strong', jwtCheck?.ok, jwtCheck?.detail || 'JWT_SECRET check unavailable'),
+      createAuditCheck(
+        'startup_policy',
+        'Startup production policy checks',
+        startupReadiness.summary.policy.blockingFailed === 0,
+        startupReadiness.summary.policy.blockingFailed === 0
+          ? 'startup policy checks passed'
+          : `missing=${startupReadiness.blockingFailed.policy.join(',')}`
+      ),
       createAuditCheck('helmet', 'Helmet security headers enabled', true, 'helmet middleware active'),
       createAuditCheck('cors_allowlist', 'CORS allowlist enforced', CORS_ALLOWLIST.size > 0, `allowedOrigins=${CORS_ALLOWLIST.size}`),
-      createAuditCheck('auth_rate_limit', 'Auth rate limiting enabled', true, '20 attempts / 15 minutes'),
+      createAuditCheck('auth_rate_limit', 'Auth rate limiting enabled', true, `${RL_AUTH_PER_MINUTE} attempts / minute`),
       createAuditCheck('login_lock', 'Account lock on failed login enabled', true, `maxFailures=${LOGIN_MAX_FAILURES}, lockMinutes=${LOGIN_LOCK_MINUTES}`),
       createAuditCheck('cookie_http_only', 'Auth cookie uses HttpOnly + SameSite', true, 'cookie: HttpOnly, SameSite=Lax'),
       createAuditCheck('csrf_guard', 'CSRF token required for cookie-auth state changes', true, 'x-csrf-token checked against JWT csrf claim'),
@@ -194,6 +216,22 @@ export function buildSystemRouter({
       auditHmacKeyMissing: !auditHmacConfigured,
       summary: { total: checks.length, passed, failed: checks.length - passed },
       checks
+    });
+  });
+
+  router.get('/api/health/deploy-readiness', (_req, res) => {
+    const startupReadiness = evaluateStartupReadiness();
+    const runtimeAudit = startupReadiness.runtimeAudit;
+    return res.status(startupReadiness.ok ? 200 : 503).json({
+      ok: startupReadiness.ok,
+      now: new Date().toISOString(),
+      summary: startupReadiness.summary,
+      blockingMissing: startupReadiness.blockingFailed,
+      recommendedMissing: startupReadiness.recommendedFailed,
+      checks: {
+        runtime: runtimeAudit.checks,
+        policy: startupReadiness.policyChecks
+      }
     });
   });
 
