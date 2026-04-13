@@ -14,9 +14,12 @@ const GOOGLE_CLIENT_ID = String(process.env.GOOGLE_CLIENT_ID || process.env.GOOG
   .find(Boolean);
 const GOOGLE_CLIENT_SECRET = String(process.env.GOOGLE_CLIENT_SECRET || '').trim();
 const GOOGLE_REDIRECT_URI = String(process.env.GOOGLE_REDIRECT_URI || process.env.GOOGLE_OAUTH_REDIRECT_URI || 'http://localhost:8080/auth/google/callback').trim();
-const FACEBOOK_APP_ID = String(process.env.FACEBOOK_APP_ID || '').trim();
-const FACEBOOK_APP_SECRET = String(process.env.FACEBOOK_APP_SECRET || '').trim();
-const FACEBOOK_REDIRECT_URI = String(process.env.FACEBOOK_REDIRECT_URI || '').trim();
+const FACEBOOK_APP_ID = String(process.env.FACEBOOK_APP_ID || process.env.FACEBOOK_CLIENT_ID || process.env.FACEBOOK_CLIENT_IDS || '')
+  .split(',')
+  .map((value) => value.trim())
+  .find(Boolean);
+const FACEBOOK_APP_SECRET = String(process.env.FACEBOOK_APP_SECRET || process.env.FACEBOOK_CLIENT_SECRET || '').trim();
+const FACEBOOK_REDIRECT_URI = String(process.env.FACEBOOK_REDIRECT_URI || process.env.FACEBOOK_OAUTH_REDIRECT_URI || 'http://localhost:8080/auth/facebook/callback').trim();
 const FRONTEND_URL = String(process.env.FRONTEND_URL || 'http://localhost:5173').trim();
 
 app.use(
@@ -61,6 +64,7 @@ app.get('/auth/google', ensureGoogleConfig, async (_req, res) => {
     googleDialogUrl.searchParams.set('redirect_uri', GOOGLE_REDIRECT_URI);
     googleDialogUrl.searchParams.set('response_type', 'code');
     googleDialogUrl.searchParams.set('scope', 'openid email profile');
+    console.log('[oauth] google_auth_url', googleDialogUrl.toString());
 
     return res.redirect(googleDialogUrl.toString());
   } catch (error) {
@@ -144,6 +148,7 @@ app.get('/auth/facebook', ensureFacebookConfig, async (_req, res) => {
     facebookDialogUrl.searchParams.set('redirect_uri', FACEBOOK_REDIRECT_URI);
     facebookDialogUrl.searchParams.set('scope', 'email,public_profile');
     facebookDialogUrl.searchParams.set('response_type', 'code');
+    console.log('[oauth] facebook_auth_url', facebookDialogUrl.toString());
 
     return res.redirect(facebookDialogUrl.toString());
   } catch (error) {
