@@ -28,10 +28,24 @@ cp .env.example .env
 ```bash
 npm run dev
 ```
+`npm run dev` starts frontend + API runtime (without cron workers).  
+Use `npm run dev:all` to run frontend + API + worker + backoffice together.
 
 ## Backend Only
 ```bash
 npm run dev:server
+```
+Runs API-only runtime (`server/api.js`).
+
+## Split Runtime (API + Worker)
+```bash
+npm run dev:api
+npm run dev:worker
+```
+
+Single command for split backend only:
+```bash
+npm run dev:split
 ```
 
 ## Tests
@@ -58,6 +72,23 @@ npm run test:security:compliance:strict:local
 ## Go-Live Smoke Tests
 ```bash
 npm run test:go-live
+```
+
+## External Production Audit
+```bash
+PROD_BASE_URL=https://your-domain.tld npm run test:prod:external
+```
+Validates DNS + HTTPS endpoint reachability + health/readiness + security headers + billing webhook route.
+
+## Production Ops Readiness
+```bash
+npm run ops:prod:readiness
+```
+Runs a single P0-oriented check sequence (secrets, infra reachability, preflight, migrations, external audit when configured).
+
+## One-Click Rollback
+```bash
+ROLLBACK_DEPLOY_COMMAND="your platform rollback command" PROD_BASE_URL=https://your-domain.tld npm run ops:rollback:one-click
 ```
 
 ## Local Log Report
@@ -96,10 +127,15 @@ docker compose up --build
 - API: `http://localhost:3000`
 - Frontend: `http://localhost`
 
+## Production Compose Template
+```bash
+docker compose -f deploy/docker-compose.production.yml up -d --build
+```
+
 ## Entry Points
-- API server: `server/index.js`
-- Discovery alert worker schedule: configured in `server/index.js`
-- Price ingestion worker schedule: configured in `server/index.js`
+- Combined runtime (API + worker scheduler): `server/index.js`
+- API-only runtime: `server/api.js`
+- Worker-only runtime: `server/worker.js`
 
 ## Important Env Vars
 - `JWT_SECRET` (required)
@@ -117,3 +153,6 @@ docker compose up --build
 - [Backup Strategy](docs/backup-strategy.md)
 - [Security Operations Checklist](docs/SECURITY_OPERATIONS_CHECKLIST.md)
 - [Threat Model P0/P1](docs/THREAT_MODEL_P0_P1.md)
+- [Stripe Billing Integration](docs/stripe-billing-integration.md)
+- [Production Infrastructure Runbook](docs/production-infra-runbook.md)
+- [Production Cutover Playbook](docs/production-cutover-playbook.md)

@@ -4,28 +4,26 @@ on:
   push:
     branches: [main, master]
   pull_request:
+  workflow_dispatch:
+    inputs:
+      target_env:
+        description: "Target environment for strict security gate"
+        required: true
+        default: "staging"
+        type: choice
+        options:
+          - staging
+          - production
+          - both
+  schedule:
+    - cron: "0 4 * * *"
 
 jobs:
-  security-gate:
+  security-baseline:
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    env:
-      NODE_ENV: production
-      JWT_SECRET: 12345678901234567890123456789012
-      AUDIT_LOG_HMAC_KEY: 1234567890123456789012345678901234567890123456789012345678901234
-      INTERNAL_INGEST_TOKEN: 12345678901234567890123456789012
-      FRONTEND_ORIGIN: https://app.flight.example
-      CORS_ORIGIN: https://app.flight.example
-      CORS_ALLOWLIST: https://app.flight.example
-      TRUST_PROXY: 1
-      DATABASE_URL: postgresql://ci:ci@db.example:5432/flight
-      REDIS_URL: redis://cache.example:6379
-      SMTP_HOST: smtp.example
-      SMTP_USER: ci@example.com
-      SMTP_PASS: ci-password
-      BILLING_PROVIDER: stripe
-      STRIPE_WEBHOOK_SECRET: whsec_ci_example
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -35,9 +33,143 @@ jobs:
       - run: npm ci
       - name: Security smoke
         run: npm run test:security
-      - name: Security compliance
-        run: npm run test:security:compliance
-      - name: Preflight production readiness
-        run: npm run preflight:prod
       - name: Dependency vulnerability audit
         run: npm audit --omit=dev
+
+  security-staging:
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (inputs.target_env == 'staging' || inputs.target_env == 'both'))
+    runs-on: ubuntu-latest
+    environment: staging
+    permissions:
+      contents: read
+    env:
+      NODE_ENV: production
+      TRUST_PROXY: 1
+      BILLING_PROVIDER: stripe
+      ALLOW_MOCK_BILLING_UPGRADES: "false"
+      STRIPE_ALLOW_INLINE_PRICE_DATA: "false"
+      AI_ALLOW_FREE_USERS: "false"
+      SOFT_LAUNCH_PROVIDER_PROFILE: "true"
+      SOFT_LAUNCH_AFFILIATE_PROFILE: "true"
+      ENABLE_PROVIDER_DUFFEL: "true"
+      ENABLE_PROVIDER_KIWI: "false"
+      ENABLE_PROVIDER_SKYSCANNER: "false"
+      ENABLE_TRAVELPAYOUTS_AFFILIATE: "true"
+      AFFILIATE_TRAVELPAYOUTS_MARKER: ${{ secrets.AFFILIATE_TRAVELPAYOUTS_MARKER }}
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      OUTBOUND_CLICK_SECRET: ${{ secrets.OUTBOUND_CLICK_SECRET }}
+      AUDIT_LOG_HMAC_KEY: ${{ secrets.AUDIT_LOG_HMAC_KEY }}
+      INTERNAL_INGEST_TOKEN: ${{ secrets.INTERNAL_INGEST_TOKEN }}
+      FRONTEND_ORIGIN: ${{ secrets.FRONTEND_ORIGIN }}
+      CORS_ALLOWLIST: ${{ secrets.CORS_ALLOWLIST }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      REDIS_URL: ${{ secrets.REDIS_URL }}
+      STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+      STRIPE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_PUBLISHABLE_KEY }}
+      STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+      STRIPE_PRICE_PRO: ${{ secrets.STRIPE_PRICE_PRO }}
+      STRIPE_PRICE_CREATOR: ${{ secrets.STRIPE_PRICE_CREATOR }}
+      RELEASE_ALERT_WEBHOOK_URL: ${{ secrets.RELEASE_ALERT_WEBHOOK_URL }}
+      TARGET_BASE_URL: ${{ secrets.STAGING_BASE_URL }}
+      DB_REQUIRED_TX_ISOLATION: ${{ vars.DB_REQUIRED_TX_ISOLATION || 'read committed' }}
+      LOAD_GATE_BACKEND_RPM_MAX: ${{ vars.LOAD_GATE_BACKEND_RPM_MAX || '120000' }}
+      LOAD_GATE_PROVIDER_RPM_MAX: ${{ vars.LOAD_GATE_PROVIDER_RPM_MAX || '30000' }}
+      LOAD_GATE_PROVIDER_MONTHLY_MAX: ${{ vars.LOAD_GATE_PROVIDER_MONTHLY_MAX || '10000000' }}
+      VALIDATE_RELEASE_ALERT_WEBHOOK_DELIVERY: ${{ vars.VALIDATE_RELEASE_ALERT_WEBHOOK_DELIVERY || 'false' }}
+      OPS_READINESS_STRICT: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Validate staging security config
+        run: node scripts/validate-workflow-env.mjs
+        env:
+          REQUIRED_ENV_LIST: JWT_SECRET,OUTBOUND_CLICK_SECRET,AUDIT_LOG_HMAC_KEY,INTERNAL_INGEST_TOKEN,FRONTEND_ORIGIN,CORS_ALLOWLIST,DATABASE_URL,REDIS_URL,STRIPE_SECRET_KEY,STRIPE_PUBLISHABLE_KEY,STRIPE_WEBHOOK_SECRET,STRIPE_PRICE_PRO,STRIPE_PRICE_CREATOR,TARGET_BASE_URL,RELEASE_ALERT_WEBHOOK_URL,AFFILIATE_TRAVELPAYOUTS_MARKER
+          URL_ENV_LIST: DATABASE_URL,REDIS_URL
+          HTTPS_URL_ENV_LIST: TARGET_BASE_URL,FRONTEND_ORIGIN,RELEASE_ALERT_WEBHOOK_URL
+          MIN_LENGTH_RULES: JWT_SECRET:32,OUTBOUND_CLICK_SECRET:24,AUDIT_LOG_HMAC_KEY:24,INTERNAL_INGEST_TOKEN:24,STRIPE_SECRET_KEY:16,STRIPE_PUBLISHABLE_KEY:16,STRIPE_WEBHOOK_SECRET:12,AFFILIATE_TRAVELPAYOUTS_MARKER:6
+          EXACT_MATCH_RULES: AI_ALLOW_FREE_USERS:false,ALLOW_MOCK_BILLING_UPGRADES:false,STRIPE_ALLOW_INLINE_PRICE_DATA:false,ENABLE_PROVIDER_DUFFEL:true,ENABLE_PROVIDER_KIWI:false,ENABLE_PROVIDER_SKYSCANNER:false,ENABLE_TRAVELPAYOUTS_AFFILIATE:true,SOFT_LAUNCH_PROVIDER_PROFILE:true,SOFT_LAUNCH_AFFILIATE_PROFILE:true
+      - name: Security smoke
+        run: npm run test:security
+      - name: Security compliance (strict)
+        run: npm run test:security:compliance
+        env:
+          SECURITY_COMPLIANCE_STRICT: "true"
+      - name: Ops readiness (strict)
+        run: npm run ops:prod:readiness
+      - name: Notify security gate failure
+        if: failure() && env.RELEASE_ALERT_WEBHOOK_URL != ''
+        run: npm run ci:release:alert
+        env:
+          RELEASE_GATE_STATUS: security_staging_failed
+
+  security-production:
+    if: github.event_name == 'workflow_dispatch' && (inputs.target_env == 'production' || inputs.target_env == 'both')
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+    env:
+      NODE_ENV: production
+      TRUST_PROXY: 1
+      BILLING_PROVIDER: stripe
+      ALLOW_MOCK_BILLING_UPGRADES: "false"
+      STRIPE_ALLOW_INLINE_PRICE_DATA: "false"
+      AI_ALLOW_FREE_USERS: "false"
+      SOFT_LAUNCH_PROVIDER_PROFILE: "true"
+      SOFT_LAUNCH_AFFILIATE_PROFILE: "true"
+      ENABLE_PROVIDER_DUFFEL: "true"
+      ENABLE_PROVIDER_KIWI: "false"
+      ENABLE_PROVIDER_SKYSCANNER: "false"
+      ENABLE_TRAVELPAYOUTS_AFFILIATE: "true"
+      AFFILIATE_TRAVELPAYOUTS_MARKER: ${{ secrets.AFFILIATE_TRAVELPAYOUTS_MARKER }}
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      OUTBOUND_CLICK_SECRET: ${{ secrets.OUTBOUND_CLICK_SECRET }}
+      AUDIT_LOG_HMAC_KEY: ${{ secrets.AUDIT_LOG_HMAC_KEY }}
+      INTERNAL_INGEST_TOKEN: ${{ secrets.INTERNAL_INGEST_TOKEN }}
+      FRONTEND_ORIGIN: ${{ secrets.FRONTEND_ORIGIN }}
+      CORS_ALLOWLIST: ${{ secrets.CORS_ALLOWLIST }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      REDIS_URL: ${{ secrets.REDIS_URL }}
+      STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+      STRIPE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_PUBLISHABLE_KEY }}
+      STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+      STRIPE_PRICE_PRO: ${{ secrets.STRIPE_PRICE_PRO }}
+      STRIPE_PRICE_CREATOR: ${{ secrets.STRIPE_PRICE_CREATOR }}
+      RELEASE_ALERT_WEBHOOK_URL: ${{ secrets.RELEASE_ALERT_WEBHOOK_URL }}
+      TARGET_BASE_URL: ${{ secrets.PROD_BASE_URL }}
+      RUN_DB_MIGRATION_AUDIT: ${{ vars.RUN_DB_MIGRATION_AUDIT || 'false' }}
+      DB_REQUIRED_TX_ISOLATION: ${{ vars.DB_REQUIRED_TX_ISOLATION || 'read committed' }}
+      VALIDATE_RELEASE_ALERT_WEBHOOK_DELIVERY: ${{ vars.VALIDATE_RELEASE_ALERT_WEBHOOK_DELIVERY || 'false' }}
+      OPS_READINESS_STRICT: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Validate production security config
+        run: node scripts/validate-workflow-env.mjs
+        env:
+          REQUIRED_ENV_LIST: JWT_SECRET,OUTBOUND_CLICK_SECRET,AUDIT_LOG_HMAC_KEY,INTERNAL_INGEST_TOKEN,FRONTEND_ORIGIN,CORS_ALLOWLIST,DATABASE_URL,REDIS_URL,STRIPE_SECRET_KEY,STRIPE_PUBLISHABLE_KEY,STRIPE_WEBHOOK_SECRET,STRIPE_PRICE_PRO,STRIPE_PRICE_CREATOR,TARGET_BASE_URL,RELEASE_ALERT_WEBHOOK_URL,AFFILIATE_TRAVELPAYOUTS_MARKER
+          URL_ENV_LIST: DATABASE_URL,REDIS_URL
+          HTTPS_URL_ENV_LIST: TARGET_BASE_URL,FRONTEND_ORIGIN,RELEASE_ALERT_WEBHOOK_URL
+          MIN_LENGTH_RULES: JWT_SECRET:32,OUTBOUND_CLICK_SECRET:24,AUDIT_LOG_HMAC_KEY:24,INTERNAL_INGEST_TOKEN:24,STRIPE_SECRET_KEY:16,STRIPE_PUBLISHABLE_KEY:16,STRIPE_WEBHOOK_SECRET:12,AFFILIATE_TRAVELPAYOUTS_MARKER:6
+          EXACT_MATCH_RULES: AI_ALLOW_FREE_USERS:false,ALLOW_MOCK_BILLING_UPGRADES:false,STRIPE_ALLOW_INLINE_PRICE_DATA:false,ENABLE_PROVIDER_DUFFEL:true,ENABLE_PROVIDER_KIWI:false,ENABLE_PROVIDER_SKYSCANNER:false,ENABLE_TRAVELPAYOUTS_AFFILIATE:true,SOFT_LAUNCH_PROVIDER_PROFILE:true,SOFT_LAUNCH_AFFILIATE_PROFILE:true
+      - name: Security smoke
+        run: npm run test:security
+      - name: Security compliance (strict)
+        run: npm run test:security:compliance
+        env:
+          SECURITY_COMPLIANCE_STRICT: "true"
+      - name: Ops readiness (strict)
+        run: npm run ops:prod:readiness
+      - name: Notify security gate failure
+        if: failure() && env.RELEASE_ALERT_WEBHOOK_URL != ''
+        run: npm run ci:release:alert
+        env:
+          RELEASE_GATE_STATUS: security_production_failed

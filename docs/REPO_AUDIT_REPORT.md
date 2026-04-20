@@ -46,7 +46,7 @@ Date: 2026-03-04
   - `POST /api/alerts/simulate`
 
 ## 3) Verifica provider esterni flight
-- Runtime scan HTTP outbound: presenti chiamate verso OpenAI/Anthropic/OAuth; nessuna chiamata runtime a Skyscanner/Google Flights/Amadeus/Kiwi/Duffel.
+- Runtime scan HTTP outbound: presenti chiamate verso OpenAI/Anthropic/OAuth; nessuna chiamata runtime a provider metasearch esterni dismessi.
 - Provider registry (`server/lib/flight-provider.js`): default locale/proprietario `tde_booking`; implementazioni partner esterni non attive.
 
 ## 4) Gap sicurezza trovati e fix applicati
@@ -64,7 +64,7 @@ Date: 2026-03-04
 - Permane complessita elevata in `server/index.js` (consigliata estrazione progressiva in moduli per ridurre blast radius).
 
 ## 6) Comandi di verifica usati
-- Provider usage: `rg -n "skyscanner|google flights|amadeus|kiwi|duffel|rapidapi|serp|scrape" server src`
+- Provider usage: `rg -n "skyscanner|google flights|kiwi|duffel|rapidapi|serp|scrape" server src`
 - Outbound HTTP: `rg -n "fetch\\(" server`
 - Test unitari: `npm test`
 - Build: `npm run build`

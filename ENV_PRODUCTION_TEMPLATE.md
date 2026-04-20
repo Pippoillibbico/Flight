@@ -1,6 +1,6 @@
 # ENV Production Template (Security-Critical)
 
-Last updated: 2026-04-04  
+Last updated: 2026-04-15  
 Use this file as deployment handoff input for production environment configuration.
 
 ## 1. Security-Blocking Variables (must be valid before release)
@@ -17,11 +17,15 @@ Use this file as deployment handoff input for production environment configurati
 | `CORS_ALLOWLIST` or `CORS_ORIGIN` | Yes | empty in production | startup blocked (unless insecure bypass flags) | Yes | `CORS_ALLOWLIST=https://app.example.com,https://admin.example.com` |
 | `DATABASE_URL` | Yes | empty/invalid | startup readiness infra/runtime blocking | Yes | `DATABASE_URL=postgresql://flight_app:***@db-prod:5432/flight` |
 | `REDIS_URL` | Yes | empty/invalid | startup readiness infra/runtime blocking | Yes | `REDIS_URL=rediss://:***@redis-prod:6379/0` |
-| `BILLING_PROVIDER` | Yes | unsupported value | runtime blocking check fails | Yes | `BILLING_PROVIDER=braintree` |
-| `BT_MERCHANT_ID` | Yes when braintree | empty/placeholder | runtime blocking check fails | Yes (conditional) | `BT_MERCHANT_ID=merchant_live_xxx` |
-| `BT_PUBLIC_KEY` | Yes when braintree | empty/placeholder | runtime blocking check fails | Yes (conditional) | `BT_PUBLIC_KEY=public_live_xxx` |
-| `BT_PRIVATE_KEY` | Yes when braintree | empty/placeholder | runtime blocking check fails | Yes (conditional) | `BT_PRIVATE_KEY=private_live_xxx` |
-| `BT_ENVIRONMENT` | Yes when braintree | not `sandbox`/`production` | runtime blocking check fails | Yes (conditional) | `BT_ENVIRONMENT=production` |
+| `BILLING_PROVIDER` | Yes | unsupported value | runtime blocking check fails | Yes | `BILLING_PROVIDER=stripe` |
+| `STRIPE_SECRET_KEY` | Yes (Stripe active) | empty/placeholder | runtime blocking check fails | Yes (conditional) | `STRIPE_SECRET_KEY=sk_live_***` |
+| `STRIPE_PUBLISHABLE_KEY` | Yes (Stripe active) | empty/placeholder | runtime blocking check fails | Yes (conditional) | `STRIPE_PUBLISHABLE_KEY=pk_live_***` |
+| `STRIPE_WEBHOOK_SECRET` | Yes (Stripe active) | empty/placeholder | runtime blocking check fails | Yes (conditional) | `STRIPE_WEBHOOK_SECRET=whsec_***` |
+| `STRIPE_PRICE_PRO` | Yes (Stripe active) | empty/placeholder | checkout cannot sell PRO | Yes (conditional) | `STRIPE_PRICE_PRO=price_live_pro_monthly` |
+| `STRIPE_PRICE_CREATOR` | Yes (Stripe active) | empty/placeholder | checkout cannot sell ELITE/CREATOR | Yes (conditional) | `STRIPE_PRICE_CREATOR=price_live_creator_monthly` |
+| `STRIPE_ALLOW_INLINE_PRICE_DATA` | Yes (prod Stripe) | `true` | bypasses explicit price catalog mapping | Yes (conditional) | `STRIPE_ALLOW_INLINE_PRICE_DATA=false` |
+| `AI_ALLOW_FREE_USERS` | Yes (`false`) | `true` | free users can reach paid AI paths | Yes | `AI_ALLOW_FREE_USERS=false` |
+| `AI_ALLOWED_PLAN_TYPES` | Yes | includes `free` | free users can be authorized by policy | Yes | `AI_ALLOWED_PLAN_TYPES=elite,creator` |
 
 ## 2. High-Risk Variables (must be enforced by release gate)
 
@@ -90,11 +94,15 @@ BACKOFFICE_TRUST_PROXY=1
 BACKOFFICE_ADMIN_CREDENTIALS=secadmin@example.com=<long-random-password>
 BACKOFFICE_ALLOW_SHARED_PASSWORD_IN_PRODUCTION=false
 
-BILLING_PROVIDER=braintree
-BT_ENVIRONMENT=production
-BT_MERCHANT_ID=<merchant-id>
-BT_PUBLIC_KEY=<public-key>
-BT_PRIVATE_KEY=<private-key>
+BILLING_PROVIDER=stripe
+STRIPE_SECRET_KEY=sk_live_<redacted>
+STRIPE_PUBLISHABLE_KEY=pk_live_<redacted>
+STRIPE_WEBHOOK_SECRET=whsec_<redacted>
+STRIPE_PRICE_PRO=price_live_pro_monthly
+STRIPE_PRICE_CREATOR=price_live_creator_monthly
+STRIPE_ALLOW_INLINE_PRICE_DATA=false
+AI_ALLOW_FREE_USERS=false
+AI_ALLOWED_PLAN_TYPES=elite,creator
 ```
 
 ## 6. What Not To Do

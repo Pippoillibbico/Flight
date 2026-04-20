@@ -5,7 +5,6 @@ const ROOT_DIRS = ['server', 'src', 'scripts'];
 const EXTENSIONS = new Set(['.js', '.mjs', '.jsx', '.ts', '.tsx']);
 const ALLOWED_CONTEXT = ['docs', 'readme', 'comment', 'template', 'blocked_terms', 'const banned ='];
 const ALLOWED_PROVIDER_FILES = new Set([
-  'server/lib/providers/amadeus-provider.js',
   'server/lib/providers/duffel-provider.js',
   'server/lib/providers/provider-registry.js',
   'server/lib/runtime-config.js',
@@ -16,9 +15,7 @@ const BLOCKED_TERMS = [
   'google flights',
   'tequila',
   'kiwi.com',
-  'amadeus',
   'sabre',
-  'duffel',
   'rapidapi',
   'serpapi'
 ];

@@ -25,7 +25,8 @@ const STAGES = [
   { id: 'lint', label: 'Lint', command: 'npm', args: ['run', 'lint'] },
   { id: 'lintProviders', label: 'Provider Lint', command: 'npm', args: ['run', 'lint:providers'] },
   { id: 'nodeTests', label: 'Node Tests', command: 'npm', args: ['test'] },
-  { id: 'e2e', label: 'E2E Playwright', command: 'npx', args: ['playwright', 'test'] }
+  { id: 'e2e', label: 'E2E Playwright', command: 'npx', args: ['playwright', 'test'] },
+  { id: 'gitClean', label: 'Git Clean', command: 'npm', args: ['run', 'ci:git-clean'] }
 ];
 
 const ACTIVE_STAGES = TEST_INTELLIGENCE_SKIP_E2E ? STAGES.filter((stage) => stage.id !== 'e2e') : STAGES;

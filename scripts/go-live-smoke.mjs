@@ -154,7 +154,9 @@ async function cleanupLocalProfileDbFiles() {
   }
   await Promise.all(
     targets.map((entryPath) =>
-      rm(entryPath, { force: true }).catch(() => {})
+      rm(entryPath, { force: true }).catch((error) => {
+        console.warn(`go-live-smoke: cleanup failed for ${entryPath}: ${error?.message || error}`);
+      })
     )
   );
 }

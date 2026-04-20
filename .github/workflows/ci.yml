@@ -8,6 +8,8 @@ on:
 jobs:
   build-test:
     runs-on: ubuntu-latest
+    env:
+      JWT_SECRET: 12345678901234567890123456789012
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -15,9 +17,4 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run lint
-      - run: npm test
-        env:
-          JWT_SECRET: 12345678901234567890123456789012
-      - run: npm run build
-
+      - run: npm run ci

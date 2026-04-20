@@ -1,6 +1,6 @@
 # Environment Requirements (Production)
 
-Last updated: 2026-04-03  
+Last updated: 2026-04-15  
 Source of truth: implemented checks in `server/lib/runtime-config.js` + runtime behavior in `server/index.js`, `server/lib/db.js`, `server/lib/legal-pages.js`.
 
 ## 1. Blocking Variables (must be valid in production)
@@ -14,13 +14,16 @@ Source of truth: implemented checks in `server/lib/runtime-config.js` + runtime 
 | `CORS_ORIGIN` or `CORS_ALLOWLIST` (or equivalent valid origin set) | Yes | CORS/Security | Prod startup blocks if allowlist is effectively empty. |
 | `DATABASE_URL` | Yes | Data | Primary SQL DB URL required. |
 | `REDIS_URL` | Yes | Rate limit/cache | Required by production runtime checks. |
-| `BILLING_PROVIDER` | Yes | Billing | In production runtime checks require braintree lock path. |
-| `BT_MERCHANT_ID` | Cond. Yes | Billing | Required when `BILLING_PROVIDER=braintree`. |
-| `BT_PUBLIC_KEY` | Cond. Yes | Billing | Required when `BILLING_PROVIDER=braintree`. |
-| `BT_PRIVATE_KEY` | Cond. Yes | Billing | Required when `BILLING_PROVIDER=braintree`. |
-| `BT_ENVIRONMENT` | Cond. Yes | Billing | Must be `sandbox` or `production` when braintree is used. |
+| `BILLING_PROVIDER` | Yes | Billing | Must be `stripe` in this codebase. |
+| `STRIPE_SECRET_KEY` | Cond. Yes | Billing | Required when Stripe billing is active (`sk_live_...` in prod). |
+| `STRIPE_PUBLISHABLE_KEY` | Cond. Yes | Billing | Required in prod when Stripe is active. |
+| `STRIPE_WEBHOOK_SECRET` | Cond. Yes | Billing | Required in prod when Stripe is active. |
+| `STRIPE_PRICE_PRO` | Cond. Yes | Billing | Required in prod when Stripe is active. |
+| `STRIPE_PRICE_CREATOR` | Cond. Yes | Billing | Required in prod when Stripe is active. |
+| `STRIPE_ALLOW_INLINE_PRICE_DATA` | Yes (when Stripe active in prod) | Billing | Must be `false` in production. |
+| `AI_ALLOW_FREE_USERS` | Yes (`false`) | AI Security | Must stay disabled in production to prevent free AI access. |
+| `AI_ALLOWED_PLAN_TYPES` | Yes | AI Security | Must not include `free` in production. |
 | `DUFFEL_API_KEY` | Cond. Yes | Provider | Required if `ENABLE_PROVIDER_DUFFEL=true`. |
-| `AMADEUS_CLIENT_ID`, `AMADEUS_CLIENT_SECRET` | Cond. Yes | Provider | Required if `ENABLE_PROVIDER_AMADEUS=true`. |
 
 ## 2. Strongly Recommended Variables
 
@@ -33,6 +36,8 @@ Source of truth: implemented checks in `server/lib/runtime-config.js` + runtime 
 | `AUTH_RETURN_ACCESS_TOKEN` | Auth Security | Keep `false` in production to avoid exposing JWT in response payloads. |
 | `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS` | Auth/Email | Needed for password reset email reliability. |
 | `STRIPE_WEBHOOK_SECRET` | Billing | Required when Stripe webhook path is active. |
+| `SKYSCANNER_POLL_DELAY_MS` | Providers | Keep at `1500` by default to avoid poll starvation under provider timeout. |
+| `PROVIDER_SEARCH_TIMEOUT_MS` | Providers | Increase to `20000` if Skyscanner poll delay/attempts are raised. |
 | `DATA_RETENTION_AUTH_EVENTS_DAYS` | Privacy/Security | Retention control for auth/security events. |
 | `DATA_RETENTION_CLIENT_TELEMETRY_DAYS` | Privacy/Analytics | Retention control for telemetry events. |
 | `DATA_RETENTION_OUTBOUND_EVENTS_DAYS` | Privacy/Operations | Retention control for outbound operational events. |

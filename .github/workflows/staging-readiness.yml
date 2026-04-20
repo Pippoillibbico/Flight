@@ -1,0 +1,76 @@
+name: staging-readiness
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 3 * * *"
+
+jobs:
+  staging-gate:
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    env:
+      NODE_ENV: production
+      TRUST_PROXY: 1
+      BILLING_PROVIDER: stripe
+      ALLOW_MOCK_BILLING_UPGRADES: "false"
+      STRIPE_ALLOW_INLINE_PRICE_DATA: "false"
+      AI_ALLOW_FREE_USERS: "false"
+      SOFT_LAUNCH_PROVIDER_PROFILE: "true"
+      SOFT_LAUNCH_AFFILIATE_PROFILE: "true"
+      ENABLE_PROVIDER_DUFFEL: "true"
+      ENABLE_PROVIDER_KIWI: "false"
+      ENABLE_PROVIDER_SKYSCANNER: "false"
+      ENABLE_TRAVELPAYOUTS_AFFILIATE: "true"
+      AFFILIATE_TRAVELPAYOUTS_MARKER: ${{ secrets.AFFILIATE_TRAVELPAYOUTS_MARKER }}
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      OUTBOUND_CLICK_SECRET: ${{ secrets.OUTBOUND_CLICK_SECRET }}
+      AUDIT_LOG_HMAC_KEY: ${{ secrets.AUDIT_LOG_HMAC_KEY }}
+      INTERNAL_INGEST_TOKEN: ${{ secrets.INTERNAL_INGEST_TOKEN }}
+      FRONTEND_ORIGIN: ${{ secrets.FRONTEND_ORIGIN }}
+      CORS_ALLOWLIST: ${{ secrets.CORS_ALLOWLIST }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      REDIS_URL: ${{ secrets.REDIS_URL }}
+      STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+      STRIPE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_PUBLISHABLE_KEY }}
+      STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+      STRIPE_PRICE_PRO: ${{ secrets.STRIPE_PRICE_PRO }}
+      STRIPE_PRICE_CREATOR: ${{ secrets.STRIPE_PRICE_CREATOR }}
+      RELEASE_ALERT_WEBHOOK_URL: ${{ secrets.RELEASE_ALERT_WEBHOOK_URL }}
+      TARGET_BASE_URL: ${{ secrets.STAGING_BASE_URL }}
+      DB_REQUIRED_TX_ISOLATION: ${{ vars.DB_REQUIRED_TX_ISOLATION || 'read committed' }}
+      LOAD_GATE_BACKEND_RPM_MAX: ${{ vars.LOAD_GATE_BACKEND_RPM_MAX || '120000' }}
+      LOAD_GATE_PROVIDER_RPM_MAX: ${{ vars.LOAD_GATE_PROVIDER_RPM_MAX || '30000' }}
+      LOAD_GATE_PROVIDER_MONTHLY_MAX: ${{ vars.LOAD_GATE_PROVIDER_MONTHLY_MAX || '10000000' }}
+      VALIDATE_RELEASE_ALERT_WEBHOOK_DELIVERY: ${{ vars.VALIDATE_RELEASE_ALERT_WEBHOOK_DELIVERY || 'false' }}
+      OPS_READINESS_STRICT: "true"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - name: Validate staging env wiring
+        run: node scripts/validate-workflow-env.mjs
+        env:
+          REQUIRED_ENV_LIST: JWT_SECRET,OUTBOUND_CLICK_SECRET,AUDIT_LOG_HMAC_KEY,INTERNAL_INGEST_TOKEN,FRONTEND_ORIGIN,CORS_ALLOWLIST,DATABASE_URL,REDIS_URL,STRIPE_SECRET_KEY,STRIPE_PUBLISHABLE_KEY,STRIPE_WEBHOOK_SECRET,STRIPE_PRICE_PRO,STRIPE_PRICE_CREATOR,TARGET_BASE_URL,RELEASE_ALERT_WEBHOOK_URL,AFFILIATE_TRAVELPAYOUTS_MARKER
+          URL_ENV_LIST: DATABASE_URL,REDIS_URL
+          HTTPS_URL_ENV_LIST: TARGET_BASE_URL,FRONTEND_ORIGIN,RELEASE_ALERT_WEBHOOK_URL
+          MIN_LENGTH_RULES: JWT_SECRET:32,OUTBOUND_CLICK_SECRET:24,AUDIT_LOG_HMAC_KEY:24,INTERNAL_INGEST_TOKEN:24,STRIPE_SECRET_KEY:16,STRIPE_PUBLISHABLE_KEY:16,STRIPE_WEBHOOK_SECRET:12,AFFILIATE_TRAVELPAYOUTS_MARKER:6
+          EXACT_MATCH_RULES: AI_ALLOW_FREE_USERS:false,ALLOW_MOCK_BILLING_UPGRADES:false,STRIPE_ALLOW_INLINE_PRICE_DATA:false,ENABLE_PROVIDER_DUFFEL:true,ENABLE_PROVIDER_KIWI:false,ENABLE_PROVIDER_SKYSCANNER:false,ENABLE_TRAVELPAYOUTS_AFFILIATE:true,SOFT_LAUNCH_PROVIDER_PROFILE:true,SOFT_LAUNCH_AFFILIATE_PROFILE:true
+
+      - name: Staging production-readiness gate
+        run: npm run ops:prod:readiness
+
+      - name: Staging go-live smoke (remote)
+        run: npm run test:go-live
+        env:
+          SMOKE_BASE_URL: ${{ secrets.STAGING_BASE_URL }}
+          SMOKE_AUTO_START_SERVER: "false"
+          SMOKE_LOCAL_PROFILE: "false"

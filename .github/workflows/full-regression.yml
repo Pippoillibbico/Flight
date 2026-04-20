@@ -1,0 +1,65 @@
+name: full-regression
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 2 * * *"
+  push:
+    branches: [main, master]
+
+jobs:
+  full-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      JWT_SECRET: 12345678901234567890123456789012
+      TEST_INTELLIGENCE_TEST_ISOLATION_NONE: "true"
+      TEST_INTELLIGENCE_ALLOW_E2E_SPAWN_EPERM_SKIP: "false"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium firefox webkit
+
+      - name: Full regression (lint + providers + node tests + e2e)
+        run: npm run test:intelligent
+
+  pg-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: flight
+          POSTGRES_PASSWORD: flight
+          POSTGRES_DB: flight
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U flight -d flight"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://flight:flight@localhost:5432/flight
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Prepare PG extension
+        run: psql "$DATABASE_URL" -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
+      - name: Run migration status
+        run: npm run db:migrations:status
+      - name: Run PG concurrency integration tests
+        run: npm run test:pg
