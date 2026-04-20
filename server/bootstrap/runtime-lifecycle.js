@@ -6,6 +6,7 @@ export function startRuntimeLifecycle({
   app,
   port,
   buildVersion,
+  runtimeMode = 'all',
   logger,
   pgPool,
   closeCacheClient,
@@ -22,9 +23,21 @@ export function startRuntimeLifecycle({
   jobs,
   getDataFoundationStatus
 }) {
-  const httpServer = app.listen(port, () => {
-    logger.info({ port, version: buildVersion }, 'server_started');
-  });
+  const normalizedRuntimeMode = String(runtimeMode || 'all').trim().toLowerCase();
+  const runHttp = normalizedRuntimeMode !== 'worker';
+  const runWorkers = normalizedRuntimeMode !== 'api';
+
+  const httpServer = runHttp
+    ? app.listen(port, () => {
+        logger.info({ port, version: buildVersion, runtimeMode: normalizedRuntimeMode }, 'server_started');
+      })
+    : null;
+  if (!runHttp) {
+    logger.info({ runtimeMode: normalizedRuntimeMode }, 'http_listener_disabled_runtime_mode');
+  }
+  if (!runWorkers) {
+    logger.info({ runtimeMode: normalizedRuntimeMode }, 'worker_scheduler_disabled_runtime_mode');
+  }
 
   const cronTasks = [];
   const cronRunningJobs = new Set();
@@ -130,109 +143,111 @@ export function startRuntimeLifecycle({
     return { skipped: false, seeded };
   }
 
-  scheduleCronJob('notifications_scan', schedules.cronSchedule, () => jobs.scanSubscriptionsOnce());
-  scheduleCronJob(
-    'ai_pricing',
-    schedules.aiPricingCron,
-    () => jobs.monitorAndUpdateSubscriptionPricing({ reason: 'scheduled' }),
-    { timezone: schedules.aiPricingTimezone }
-  );
-  scheduleCronJob('free_precompute', schedules.freePrecomputeCron, () => jobs.runNightlyFreePrecompute({ reason: 'scheduled' }), {
-    timezone: schedules.freeJobsTimezone
-  });
-  scheduleCronJob('free_alert_worker', schedules.freeAlertWorkerCron, () => jobs.runFreeAlertWorkerOnce(), { timezone: schedules.freeJobsTimezone });
-  scheduleCronJob('route_baseline', schedules.dealBaselineCron, () => jobs.runNightlyRouteBaselineJob({ reason: 'scheduled' }), {
-    timezone: schedules.dealBaselineTimezone
-  });
-  scheduleCronJob('baseline_recompute_worker', schedules.dealBaselineCron, () => jobs.runBaselineRecomputeOnce(), {
-    timezone: schedules.dealBaselineTimezone
-  });
-  scheduleCronJob('discovery_alert_worker', schedules.discoveryAlertWorkerCron, () => jobs.runDiscoveryAlertWorkerOnce(), {
-    timezone: schedules.discoveryAlertWorkerTimezone
-  });
-  scheduleCronJob('price_ingestion_worker', schedules.priceIngestWorkerCron, () => jobs.runPriceIngestionWorkerOnce({ maxJobs: 500 }), {
-    timezone: schedules.priceIngestWorkerTimezone
-  });
-  scheduleCronJob('opportunity_pipeline_worker', schedules.opportunityPipelineCron, () => jobs.runOpportunityPipelineOnce(), {
-    timezone: schedules.opportunityPipelineTimezone
-  });
-  scheduleCronJob('ingestion_jobs_maintenance', schedules.ingestionJobsMaintenanceCron, () => jobs.runIngestionJobsMaintenance({ force: true }), {
-    timezone: schedules.ingestionJobsMaintenanceTimezone
-  });
-  if (flags.routePriceStatsEnabled) {
-    scheduleCronJob('route_price_stats_worker', schedules.routePriceStatsCron, () => jobs.runRoutePriceStatsWorkerOnce(), {
-      timezone: schedules.routePriceStatsTimezone
+  if (runWorkers) {
+    scheduleCronJob('notifications_scan', schedules.cronSchedule, () => jobs.scanSubscriptionsOnce());
+    scheduleCronJob(
+      'ai_pricing',
+      schedules.aiPricingCron,
+      () => jobs.monitorAndUpdateSubscriptionPricing({ reason: 'scheduled' }),
+      { timezone: schedules.aiPricingTimezone }
+    );
+    scheduleCronJob('free_precompute', schedules.freePrecomputeCron, () => jobs.runNightlyFreePrecompute({ reason: 'scheduled' }), {
+      timezone: schedules.freeJobsTimezone
     });
-  }
-  if (flags.detectedDealsEnabled) {
-    scheduleCronJob('detected_deals_worker', schedules.detectedDealsCron, () => jobs.runDetectedDealsWorkerOnce(), {
-      timezone: schedules.detectedDealsTimezone
+    scheduleCronJob('free_alert_worker', schedules.freeAlertWorkerCron, () => jobs.runFreeAlertWorkerOnce(), { timezone: schedules.freeJobsTimezone });
+    scheduleCronJob('route_baseline', schedules.dealBaselineCron, () => jobs.runNightlyRouteBaselineJob({ reason: 'scheduled' }), {
+      timezone: schedules.dealBaselineTimezone
     });
-  }
-  if (flags.dealsContentEnabled) {
-    scheduleCronJob('deals_content_worker', schedules.dealsContentCron, () => jobs.runDealsContentWorkerOnce(), {
-      timezone: schedules.dealsContentTimezone
+    scheduleCronJob('baseline_recompute_worker', schedules.dealBaselineCron, () => jobs.runBaselineRecomputeOnce(), {
+      timezone: schedules.dealBaselineTimezone
     });
-  }
-  if (flags.priceAlertsEnabled) {
-    scheduleCronJob('price_alerts_worker', schedules.priceAlertsCron, () => jobs.runPriceAlertsWorkerOnce({ limit: limits.priceAlertsWorkerLimit }), {
-      timezone: schedules.priceAlertsTimezone
+    scheduleCronJob('discovery_alert_worker', schedules.discoveryAlertWorkerCron, () => jobs.runDiscoveryAlertWorkerOnce(), {
+      timezone: schedules.discoveryAlertWorkerTimezone
     });
-  }
-  scheduleCronJob('radar_match_precompute_worker', schedules.radarMatchPrecomputeCron, () => jobs.runRadarMatchPrecomputeOnce(), {
-    timezone: schedules.radarMatchPrecomputeTimezone
-  });
-  if (flags.flightScanEnabled) {
-    scheduleCronJob('flight_scan_scheduler', schedules.flightScanSchedulerCron, () => jobs.runFlightScanSchedulerOnce({ enabled: true }), {
-      timezone: schedules.flightScanTimezone
+    scheduleCronJob('price_ingestion_worker', schedules.priceIngestWorkerCron, () => jobs.runPriceIngestionWorkerOnce({ maxJobs: 500 }), {
+      timezone: schedules.priceIngestWorkerTimezone
     });
-    scheduleCronJob('flight_scan_worker', schedules.flightScanWorkerCron, () => jobs.runFlightScanWorkerOnce({ enabled: true }), {
-      timezone: schedules.flightScanTimezone
+    scheduleCronJob('opportunity_pipeline_worker', schedules.opportunityPipelineCron, () => jobs.runOpportunityPipelineOnce(), {
+      timezone: schedules.opportunityPipelineTimezone
     });
-  }
-  if (flags.providerCollectionEffectiveEnabled) {
-    scheduleCronJob('provider_collection_worker', schedules.providerCollectionCron, () => jobs.runProviderCollectionOnce(), {
-      timezone: schedules.providerCollectionTimezone
+    scheduleCronJob('ingestion_jobs_maintenance', schedules.ingestionJobsMaintenanceCron, () => jobs.runIngestionJobsMaintenance({ force: true }), {
+      timezone: schedules.ingestionJobsMaintenanceTimezone
     });
-  }
-
-  if (runStartupTasks) {
-    runStartupTask('ai_pricing_startup_check', () => jobs.monitorAndUpdateSubscriptionPricing({ reason: 'startup' }));
-    runStartupTask('free_precompute_startup', () => jobs.runNightlyFreePrecompute({ reason: 'startup' }));
-    runStartupTask('route_baseline_startup', () => jobs.runNightlyRouteBaselineJob({ reason: 'startup' }));
-    runStartupTask('baseline_recompute_startup', () => jobs.runBaselineRecomputeOnce());
-    runStartupTask('discovery_alert_worker_startup', () => jobs.runDiscoveryAlertWorkerOnce({ limit: 200 }));
-    runStartupTask('price_ingestion_worker_startup', () => jobs.runPriceIngestionWorkerOnce({ maxJobs: 500 }));
-    runStartupTask('ingestion_jobs_maintenance_startup', () => jobs.runIngestionJobsMaintenance({ force: true }));
-    runStartupTask('opportunity_seed_bootstrap_startup', () => bootstrapOpportunitySeedIfEmpty());
-    runStartupTask('opportunity_pipeline_startup', () => jobs.runOpportunityPipelineOnce());
     if (flags.routePriceStatsEnabled) {
-      runStartupTask('route_price_stats_startup', () => jobs.runRoutePriceStatsWorkerOnce());
+      scheduleCronJob('route_price_stats_worker', schedules.routePriceStatsCron, () => jobs.runRoutePriceStatsWorkerOnce(), {
+        timezone: schedules.routePriceStatsTimezone
+      });
     }
     if (flags.detectedDealsEnabled) {
-      runStartupTask('detected_deals_startup', () => jobs.runDetectedDealsWorkerOnce());
+      scheduleCronJob('detected_deals_worker', schedules.detectedDealsCron, () => jobs.runDetectedDealsWorkerOnce(), {
+        timezone: schedules.detectedDealsTimezone
+      });
     }
-    if (flags.dealsContentEnabled && flags.dealsContentRunOnStartup) {
-      runStartupTask('deals_content_startup', () => jobs.runDealsContentWorkerOnce());
+    if (flags.dealsContentEnabled) {
+      scheduleCronJob('deals_content_worker', schedules.dealsContentCron, () => jobs.runDealsContentWorkerOnce(), {
+        timezone: schedules.dealsContentTimezone
+      });
     }
     if (flags.priceAlertsEnabled) {
-      runStartupTask('price_alerts_startup', () => jobs.runPriceAlertsWorkerOnce({ limit: limits.priceAlertsWorkerLimit }));
+      scheduleCronJob('price_alerts_worker', schedules.priceAlertsCron, () => jobs.runPriceAlertsWorkerOnce({ limit: limits.priceAlertsWorkerLimit }), {
+        timezone: schedules.priceAlertsTimezone
+      });
     }
-    runStartupTask('radar_match_precompute_startup', () => jobs.runRadarMatchPrecomputeOnce());
+    scheduleCronJob('radar_match_precompute_worker', schedules.radarMatchPrecomputeCron, () => jobs.runRadarMatchPrecomputeOnce(), {
+      timezone: schedules.radarMatchPrecomputeTimezone
+    });
     if (flags.flightScanEnabled) {
-      runStartupTask('flight_scan_scheduler_startup', () => jobs.runFlightScanSchedulerOnce({ enabled: true }));
-      runStartupTask('flight_scan_worker_startup', () => jobs.runFlightScanWorkerOnce({ enabled: true }));
+      scheduleCronJob('flight_scan_scheduler', schedules.flightScanSchedulerCron, () => jobs.runFlightScanSchedulerOnce({ enabled: true }), {
+        timezone: schedules.flightScanTimezone
+      });
+      scheduleCronJob('flight_scan_worker', schedules.flightScanWorkerCron, () => jobs.runFlightScanWorkerOnce({ enabled: true }), {
+        timezone: schedules.flightScanTimezone
+      });
     }
     if (flags.providerCollectionEffectiveEnabled) {
-      runStartupTask('provider_collection_startup', () => jobs.runProviderCollectionOnce());
+      scheduleCronJob('provider_collection_worker', schedules.providerCollectionCron, () => jobs.runProviderCollectionOnce(), {
+        timezone: schedules.providerCollectionTimezone
+      });
     }
-    if (bootstrapSeedImportFile) {
-      runStartupTask('seed_import_startup', () =>
-        jobs.runSeedImportOnce({ filePath: bootstrapSeedImportFile, dryRun: bootstrapSeedImportDryRun })
-      );
+
+    if (runStartupTasks) {
+      runStartupTask('ai_pricing_startup_check', () => jobs.monitorAndUpdateSubscriptionPricing({ reason: 'startup' }));
+      runStartupTask('free_precompute_startup', () => jobs.runNightlyFreePrecompute({ reason: 'startup' }));
+      runStartupTask('route_baseline_startup', () => jobs.runNightlyRouteBaselineJob({ reason: 'startup' }));
+      runStartupTask('baseline_recompute_startup', () => jobs.runBaselineRecomputeOnce());
+      runStartupTask('discovery_alert_worker_startup', () => jobs.runDiscoveryAlertWorkerOnce({ limit: 200 }));
+      runStartupTask('price_ingestion_worker_startup', () => jobs.runPriceIngestionWorkerOnce({ maxJobs: 500 }));
+      runStartupTask('ingestion_jobs_maintenance_startup', () => jobs.runIngestionJobsMaintenance({ force: true }));
+      runStartupTask('opportunity_seed_bootstrap_startup', () => bootstrapOpportunitySeedIfEmpty());
+      runStartupTask('opportunity_pipeline_startup', () => jobs.runOpportunityPipelineOnce());
+      if (flags.routePriceStatsEnabled) {
+        runStartupTask('route_price_stats_startup', () => jobs.runRoutePriceStatsWorkerOnce());
+      }
+      if (flags.detectedDealsEnabled) {
+        runStartupTask('detected_deals_startup', () => jobs.runDetectedDealsWorkerOnce());
+      }
+      if (flags.dealsContentEnabled && flags.dealsContentRunOnStartup) {
+        runStartupTask('deals_content_startup', () => jobs.runDealsContentWorkerOnce());
+      }
+      if (flags.priceAlertsEnabled) {
+        runStartupTask('price_alerts_startup', () => jobs.runPriceAlertsWorkerOnce({ limit: limits.priceAlertsWorkerLimit }));
+      }
+      runStartupTask('radar_match_precompute_startup', () => jobs.runRadarMatchPrecomputeOnce());
+      if (flags.flightScanEnabled) {
+        runStartupTask('flight_scan_scheduler_startup', () => jobs.runFlightScanSchedulerOnce({ enabled: true }));
+        runStartupTask('flight_scan_worker_startup', () => jobs.runFlightScanWorkerOnce({ enabled: true }));
+      }
+      if (flags.providerCollectionEffectiveEnabled) {
+        runStartupTask('provider_collection_startup', () => jobs.runProviderCollectionOnce());
+      }
+      if (bootstrapSeedImportFile) {
+        runStartupTask('seed_import_startup', () =>
+          jobs.runSeedImportOnce({ filePath: bootstrapSeedImportFile, dryRun: bootstrapSeedImportDryRun })
+        );
+      }
+    } else {
+      logger.info({ runStartupTasks: false }, 'startup_tasks_skipped_disabled');
     }
-  } else {
-    logger.info({ runStartupTasks: false }, 'startup_tasks_skipped_disabled');
   }
 
   let shuttingDown = false;
@@ -249,21 +264,23 @@ export function startRuntimeLifecycle({
       }
     }
 
-    await Promise.race([
-      new Promise((resolveClose) => {
-        httpServer.close((error) => {
-          if (error) logger.error({ err: error }, 'http_server_close_failed');
-          else logger.info({}, 'http_server_closed');
-          resolveClose();
-        });
-      }),
-      new Promise((resolveTimeout) => {
-        setTimeout(() => {
-          logger.warn({ timeoutMs: shutdownTimeoutMs }, 'http_server_close_timeout');
-          resolveTimeout();
-        }, shutdownTimeoutMs);
-      })
-    ]);
+    if (httpServer) {
+      await Promise.race([
+        new Promise((resolveClose) => {
+          httpServer.close((error) => {
+            if (error) logger.error({ err: error }, 'http_server_close_failed');
+            else logger.info({}, 'http_server_closed');
+            resolveClose();
+          });
+        }),
+        new Promise((resolveTimeout) => {
+          setTimeout(() => {
+            logger.warn({ timeoutMs: shutdownTimeoutMs }, 'http_server_close_timeout');
+            resolveTimeout();
+          }, shutdownTimeoutMs);
+        })
+      ]);
+    }
 
     if (pgPool) {
       try {

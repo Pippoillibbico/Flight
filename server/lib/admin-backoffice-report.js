@@ -158,7 +158,8 @@ export function buildAdminBackofficeReport({
   db,
   followSignals = { total: 0, topRoutes: [] },
   now = Date.now(),
-  windowDays = 30
+  windowDays = 30,
+  costMonitoring = null
 }) {
   const safeDb = db || {};
   const users = Array.isArray(safeDb.users) ? safeDb.users : [];
@@ -250,6 +251,71 @@ export function buildAdminBackofficeReport({
   const proInterestCount = upgradePrimaryEvents.filter((event) => parsePlanType(event?.planType) === 'pro').length;
   const eliteInterestCount = upgradePrimaryEvents.filter((event) => parsePlanType(event?.planType) === 'elite').length;
 
+  // Upgrade conversion funnel: shown → clicked → checkout_started → checkout_completed
+  const ctaShownEvents = telemetryWindow.filter((event) => toLower(event?.eventType) === 'upgrade_cta_shown');
+  const ctaClickedEvents = telemetryWindow.filter((event) =>
+    toLower(event?.eventType) === 'upgrade_cta_clicked' || toLower(event?.eventType) === 'upgrade_primary_cta_clicked'
+  );
+  const checkoutStartedEvents = telemetryWindow.filter((event) => toLower(event?.eventType) === 'checkout_started');
+  const checkoutCompletedEvents = telemetryWindow.filter((event) => toLower(event?.eventType) === 'checkout_completed');
+
+  const ctaShownCount = ctaShownEvents.length;
+  const ctaClickedCount = ctaClickedEvents.length;
+  const checkoutStartedCount = checkoutStartedEvents.length;
+  const checkoutCompletedCount = checkoutCompletedEvents.length;
+
+  const conversionFunnel = [
+    { step: 'upgrade_cta_shown', count: ctaShownCount, conversionPct: 100 },
+    {
+      step: 'upgrade_cta_clicked',
+      count: ctaClickedCount,
+      conversionPct: ctaShownCount > 0 ? Math.round((ctaClickedCount / ctaShownCount) * 1000) / 10 : null
+    },
+    {
+      step: 'checkout_started',
+      count: checkoutStartedCount,
+      conversionPct: ctaClickedCount > 0 ? Math.round((checkoutStartedCount / ctaClickedCount) * 1000) / 10 : null
+    },
+    {
+      step: 'checkout_completed',
+      count: checkoutCompletedCount,
+      conversionPct: checkoutStartedCount > 0 ? Math.round((checkoutCompletedCount / checkoutStartedCount) * 1000) / 10 : null
+    }
+  ];
+
+  // Trial funnel: trial_started (= registration) → trial_banner_shown → trial_upgrade_clicked → checkout_completed
+  const trialStartedCount = users.filter((u) => u?.trialEndsAt).length;
+  const trialBannerShownCount = telemetryWindow.filter((event) => toLower(event?.eventType) === 'trial_banner_shown').length;
+  const trialUpgradeClickedCount = telemetryWindow.filter((event) => toLower(event?.eventType) === 'trial_upgrade_clicked').length;
+  const monitoring = costMonitoring && typeof costMonitoring === 'object'
+    ? {
+        callsPerUser: costMonitoring.callsPerUser || null,
+        costPerUser: costMonitoring.costPerUser || null,
+        budgetUsedPercent: {
+          providerDailyCalls: Number(costMonitoring?.provider?.budgetUsedPercent || 0),
+          aiMonthlyTokens: Number(costMonitoring?.ai?.budgetUsedPercent || 0)
+        },
+        search429Count: Number(costMonitoring?.search?.throttled429 || 0),
+        search429Pct: (() => {
+          const totalSearch = Number(costMonitoring?.search?.total || 0);
+          const blocked = Number(costMonitoring?.search?.throttled429 || 0);
+          const denominator = totalSearch + blocked;
+          if (!Number.isFinite(denominator) || denominator <= 0) return 0;
+          return Math.round((blocked / denominator) * 1000) / 10;
+        })(),
+        usersActiveEstimated: Number(costMonitoring?.search?.activeUsers || 0),
+        feedViews: Number(costMonitoring?.monetization?.feedViews || 0),
+        redirectClicks: Number(costMonitoring?.monetization?.redirectClicks || 0),
+        ctrPercent: Number(costMonitoring?.monetization?.ctrPercent || 0),
+        providerCostTotalEur: Number(costMonitoring?.costs?.providerCostEur || 0),
+        aiCostTotalEur: Number(costMonitoring?.costs?.aiCostEur || 0),
+        providerBudgetExceededEvents: Number(costMonitoring?.provider?.budgetExceededEvents || 0),
+        aiBudgetExceededEvents: Number(costMonitoring?.ai?.budgetExceededEvents || 0),
+        alerts: Array.isArray(costMonitoring?.alerts) ? costMonitoring.alerts : [],
+        suggestions: Array.isArray(costMonitoring?.suggestions) ? costMonitoring.suggestions : []
+      }
+    : null;
+
   return {
     generatedAt: new Date(nowMs).toISOString(),
     windowDays,
@@ -278,7 +344,14 @@ export function buildAdminBackofficeReport({
       planDistribution: toTopItems(planCountMap, 3, (plan) => String(plan || 'free').toUpperCase()),
       proInterestCount,
       eliteInterestCount,
-      triggerSurfaces: toTopItems(upgradeSourceMap, 8, (surface) => surface || 'unknown')
+      triggerSurfaces: toTopItems(upgradeSourceMap, 8, (surface) => surface || 'unknown'),
+      conversionFunnel,
+      trial: {
+        usersInTrial: trialStartedCount,
+        bannerShown: trialBannerShownCount,
+        upgradeClicked: trialUpgradeClickedCount,
+        conversionPct: trialStartedCount > 0 ? Math.round((checkoutCompletedEvents.filter((e) => e?.source === 'trial_banner').length / trialStartedCount) * 1000) / 10 : null
+      }
     },
     operations: {
       authFailures24h: authFailures24h.length,
@@ -286,6 +359,7 @@ export function buildAdminBackofficeReport({
       rateLimitEvents24h,
       recentErrors: recentErrorItems
     },
-    recentActivity
+    recentActivity,
+    monitoring
   };
 }

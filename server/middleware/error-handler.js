@@ -14,6 +14,7 @@ export function getErrorCode(err, status) {
   if (raw === 'email_already_exists') return 'email_already_exists';
   if (raw === 'registration_disabled') return 'registration_disabled';
   if (raw === 'service_unavailable') return 'service_unavailable';
+  if (raw === 'premium_required') return 'premium_required';
   if (raw === 'rate_limited' || raw === 'limit_exceeded') return 'rate_limited';
   if (raw === 'unauthorized' || raw === 'auth_required' || raw === 'auth_invalid' || raw === 'token_revoked') return 'unauthorized';
   if (raw === 'forbidden' || raw === 'request_forbidden' || raw === 'csrf_failed' || raw === 'insufficient_scope') return 'forbidden';
@@ -24,6 +25,7 @@ export function getErrorCode(err, status) {
   if (status === 429) return 'rate_limited';
   if (status === 401) return 'unauthorized';
   if (status === 403) return 'forbidden';
+  if (status === 402) return 'premium_required';
   if (status === 413) return 'payload_too_large';
   if (status === 400) return 'invalid_payload';
   if (status >= 500) return 'internal_error';
@@ -35,6 +37,7 @@ export function getHumanErrorMessage(code, fallbackMessage) {
   if (code === 'email_already_exists') return 'An account with this email already exists.';
   if (code === 'registration_disabled') return 'Registration is currently unavailable.';
   if (code === 'service_unavailable') return 'Service temporarily unavailable. Please try again shortly.';
+  if (code === 'premium_required') return 'This feature requires a higher plan.';
   if (code === 'rate_limited') return 'Too many requests. Wait a moment and try again.';
   if (code === 'unauthorized') return 'Session expired. Please sign in again.';
   if (code === 'forbidden') return 'You do not have permission for this action.';

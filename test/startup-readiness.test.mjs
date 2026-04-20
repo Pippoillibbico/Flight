@@ -14,13 +14,22 @@ function baseProdEnv() {
     DATABASE_URL: 'postgresql://user:pass@db.flightsuite.internal:5432/flight',
     REDIS_URL: 'redis://cache.flightsuite.internal:6379',
     CORS_ALLOWLIST: 'https://app.flightsuite.test',
-    BILLING_PROVIDER: 'braintree',
-    BT_MERCHANT_ID: 'merchant_test',
-    BT_PUBLIC_KEY: 'public_test',
-    BT_PRIVATE_KEY: 'private_key_test_12345',
-    BT_ENVIRONMENT: 'sandbox',
-    BT_PLAN_PRO_ID: 'plan_pro_test',
-    BT_PLAN_CREATOR_ID: 'plan_elite_test'
+    BILLING_PROVIDER: 'stripe',
+    STRIPE_SECRET_KEY: 'sk_live_test_1234567890abcdef',
+    STRIPE_WEBHOOK_SECRET: 'whsec_test_1234567890',
+    STRIPE_PUBLISHABLE_KEY: 'pk_live_test_1234567890abcdef',
+    STRIPE_PRICE_PRO: 'price_live_pro_12345',
+    STRIPE_PRICE_CREATOR: 'price_live_creator_12345',
+    STRIPE_ALLOW_INLINE_PRICE_DATA: 'false',
+    AI_ALLOW_FREE_USERS: 'false',
+    ENABLE_PROVIDER_DUFFEL: 'true',
+    DUFFEL_API_KEY: 'duffel_test_key_123456789',
+    ENABLE_PROVIDER_KIWI: 'false',
+    ENABLE_PROVIDER_SKYSCANNER: 'false',
+    ENABLE_TRAVELPAYOUTS_AFFILIATE: 'true',
+    AFFILIATE_TRAVELPAYOUTS_MARKER: 'tp_marker_test_123456',
+    SOFT_LAUNCH_PROVIDER_PROFILE: 'true',
+    SOFT_LAUNCH_AFFILIATE_PROFILE: 'true'
   };
 }
 

@@ -4,9 +4,6 @@ import { createHmac } from 'node:crypto';
 import express from 'express';
 import { buildBillingRouter } from '../server/routes/billing.js';
 
-// ---------------------------------------------------------------------------
-// Stripe signature helper — mirrors the production verification logic.
-// ---------------------------------------------------------------------------
 function generateStripeSignature(rawBody, secret) {
   const timestamp = Math.floor(Date.now() / 1000);
   const payload = `${timestamp}.${rawBody}`;
@@ -17,10 +14,27 @@ function generateStripeSignature(rawBody, secret) {
 function withStripeSecret(secret, fn) {
   const prev = process.env.STRIPE_WEBHOOK_SECRET;
   process.env.STRIPE_WEBHOOK_SECRET = secret;
-  return Promise.resolve().then(fn).finally(() => {
-    if (prev === undefined) delete process.env.STRIPE_WEBHOOK_SECRET;
-    else process.env.STRIPE_WEBHOOK_SECRET = prev;
-  });
+  return Promise.resolve()
+    .then(fn)
+    .finally(() => {
+      if (prev === undefined) delete process.env.STRIPE_WEBHOOK_SECRET;
+      else process.env.STRIPE_WEBHOOK_SECRET = prev;
+    });
+}
+
+function withStripePrices(fn) {
+  const prevPro = process.env.STRIPE_PRICE_PRO;
+  const prevCreator = process.env.STRIPE_PRICE_CREATOR;
+  process.env.STRIPE_PRICE_PRO = process.env.STRIPE_PRICE_PRO || 'price_pro_test_123';
+  process.env.STRIPE_PRICE_CREATOR = process.env.STRIPE_PRICE_CREATOR || 'price_creator_test_123';
+  return Promise.resolve()
+    .then(fn)
+    .finally(() => {
+      if (prevPro === undefined) delete process.env.STRIPE_PRICE_PRO;
+      else process.env.STRIPE_PRICE_PRO = prevPro;
+      if (prevCreator === undefined) delete process.env.STRIPE_PRICE_CREATOR;
+      else process.env.STRIPE_PRICE_CREATOR = prevCreator;
+    });
 }
 
 async function withServer(app, fn) {
@@ -35,7 +49,7 @@ async function withServer(app, fn) {
   }
 }
 
-function createAuthGuard(user = { id: 'user_1', sub: 'user_1' }, authSource = 'bearer') {
+function createAuthGuard(user = { id: 'user_1', sub: 'user_1', email: 'user@example.com' }, authSource = 'cookie') {
   return (req, _res, next) => {
     req.user = user;
     req.authSource = authSource;
@@ -43,8 +57,12 @@ function createAuthGuard(user = { id: 'user_1', sub: 'user_1' }, authSource = 'b
   };
 }
 
-function createApp({ deps, authSource = 'bearer', requireSessionAuth = (_req, _res, next) => next() }) {
+function createApp({ deps = {}, authSource = 'cookie', requireSessionAuth = (_req, _res, next) => next() } = {}) {
   const app = express();
+  app.use('/api/billing/webhook', express.raw({ type: 'application/json' }), (req, _res, next) => {
+    if (Buffer.isBuffer(req.body)) req.rawBody = req.body.toString('utf8');
+    next();
+  });
   app.use(express.json());
   app.use(
     '/api/billing',
@@ -60,232 +78,14 @@ function createApp({ deps, authSource = 'bearer', requireSessionAuth = (_req, _r
   return app;
 }
 
-function withPlanEnv(fn) {
-  const prevPro = process.env.BT_PLAN_PRO_ID;
-  const prevCreator = process.env.BT_PLAN_CREATOR_ID;
-  process.env.BT_PLAN_PRO_ID = process.env.BT_PLAN_PRO_ID || 'plan_pro_test';
-  process.env.BT_PLAN_CREATOR_ID = process.env.BT_PLAN_CREATOR_ID || 'plan_creator_test';
-  return Promise.resolve()
-    .then(fn)
-    .finally(() => {
-      if (prevPro === undefined) delete process.env.BT_PLAN_PRO_ID;
-      else process.env.BT_PLAN_PRO_ID = prevPro;
-      if (prevCreator === undefined) delete process.env.BT_PLAN_CREATOR_ID;
-      else process.env.BT_PLAN_CREATOR_ID = prevCreator;
-    });
-}
-
-test('billing router returns Braintree client token', async () => {
-  const gateway = {
-    clientToken: {
-      generate: async () => ({ clientToken: 'token_abc123' })
-    }
-  };
-  const app = createApp({
-    deps: {
-      billingProvider: 'braintree',
-      isBraintreeConfigured: () => true,
-      getBraintreeGateway: () => gateway,
-      getUserById: async () => ({ id: 'user_1', email: 'user@example.com', name: 'Test User' }),
-      ensureBraintreeCustomerForUser: async () => 'bt_cust_1'
-    }
-  });
-
-  await withServer(app, async (baseUrl) => {
-    const response = await fetch(`${baseUrl}/api/billing/client-token`);
-    assert.equal(response.status, 200);
-    const body = await response.json();
-    assert.equal(body.provider, 'braintree');
-    assert.equal(body.clientToken, 'token_abc123');
-  });
-});
-
-test('billing router performs checkout and upgrades plan only on successful payment', async () => {
-  const calls = {
-    upsert: [],
-    setPlan: [],
-    audit: []
-  };
-  const gateway = {
-    paymentMethod: {
-      create: async () => ({ success: true, paymentMethod: { token: 'pm_token_1' } })
-    },
-    subscription: {
-      create: async () => ({
-        success: true,
-        subscription: {
-          id: 'sub_001',
-          status: 'Active',
-          billingPeriodStartDate: '2026-03-01T00:00:00.000Z',
-          billingPeriodEndDate: '2026-04-01T00:00:00.000Z'
-        }
-      })
-    }
-  };
-
-  await withPlanEnv(async () => {
-    const app = createApp({
-      deps: {
-        billingProvider: 'braintree',
-        isBraintreeConfigured: () => true,
-        getBraintreeGateway: () => gateway,
-        getUserById: async () => ({ id: 'user_1', email: 'user@example.com', name: 'Test User' }),
-        ensureBraintreeCustomerForUser: async () => 'bt_cust_1',
-        upsertSubscriptionFromProvider: async (payload) => {
-          calls.upsert.push(payload);
-        },
-        setUserPlan: async (payload) => {
-          calls.setPlan.push(payload);
-        },
-        appendImmutableAudit: async (payload) => {
-          calls.audit.push(payload);
-        }
-      }
-    });
-    await withServer(app, async (baseUrl) => {
-      const response = await fetch(`${baseUrl}/api/billing/checkout`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          planType: 'pro',
-          paymentMethodNonce: 'fake_nonce_12345678'
-        })
-      });
-      assert.equal(response.status, 201);
-      const body = await response.json();
-      assert.equal(body.ok, true);
-      assert.equal(body.planType, 'pro');
-      assert.equal(body.subscription.id, 'sub_001');
-    });
-  });
-
-  assert.equal(calls.upsert.length, 1);
-  assert.equal(calls.upsert[0].planId, 'pro');
-  assert.equal(calls.setPlan.length, 1);
-  assert.equal(calls.setPlan[0].planType, 'pro');
-  assert.equal(calls.audit.length, 1);
-});
-
-test('billing router does not upgrade plan when payment method verification fails', async () => {
-  const calls = {
-    upsert: 0,
-    setPlan: 0
-  };
-  const gateway = {
-    paymentMethod: {
-      create: async () => ({ success: false, message: 'Card verification failed.' })
-    },
-    subscription: {
-      create: async () => ({ success: true, subscription: { id: 'sub_unused' } })
-    }
-  };
-
-  await withPlanEnv(async () => {
-    const app = createApp({
-      deps: {
-        billingProvider: 'braintree',
-        isBraintreeConfigured: () => true,
-        getBraintreeGateway: () => gateway,
-        getUserById: async () => ({ id: 'user_1', email: 'user@example.com', name: 'Test User' }),
-        ensureBraintreeCustomerForUser: async () => 'bt_cust_1',
-        upsertSubscriptionFromProvider: async () => {
-          calls.upsert += 1;
-        },
-        setUserPlan: async () => {
-          calls.setPlan += 1;
-        }
-      }
-    });
-    await withServer(app, async (baseUrl) => {
-      const response = await fetch(`${baseUrl}/api/billing/checkout`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          planType: 'elite',
-          paymentMethodNonce: 'fake_nonce_12345678'
-        })
-      });
-      assert.equal(response.status, 402);
-      const body = await response.json();
-      assert.equal(body.error, 'payment_method_failed');
-    });
-  });
-
-  assert.equal(calls.upsert, 0);
-  assert.equal(calls.setPlan, 0);
-});
-
-test('billing router returns 400 when checkout payload is invalid', async () => {
-  const app = createApp({
-    deps: {
-      billingProvider: 'braintree',
-      isBraintreeConfigured: () => true,
-      getBraintreeGateway: () => ({
-        paymentMethod: { create: async () => ({ success: true, paymentMethod: { token: 'pm_token_1' } }) },
-        subscription: { create: async () => ({ success: true, subscription: { id: 'sub_001' } }) }
-      }),
-      getUserById: async () => ({ id: 'user_1', email: 'user@example.com', name: 'Test User' }),
-      ensureBraintreeCustomerForUser: async () => 'bt_cust_1'
-    }
-  });
-
-  await withServer(app, async (baseUrl) => {
-    const response = await fetch(`${baseUrl}/api/billing/checkout`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        planType: 'pro'
-      })
-    });
-    assert.equal(response.status, 400);
-    const body = await response.json();
-    assert.ok(String(body.error || '').length > 0);
-  });
-});
-
-test('billing router returns 503 when braintree is not configured', async () => {
-  const app = createApp({
-    deps: {
-      billingProvider: 'braintree',
-      isBraintreeConfigured: () => false,
-      getUserById: async () => ({ id: 'user_1', email: 'user@example.com', name: 'Test User' })
-    }
-  });
-
-  await withServer(app, async (baseUrl) => {
-    const tokenRes = await fetch(`${baseUrl}/api/billing/client-token`);
-    assert.equal(tokenRes.status, 503);
-    const tokenBody = await tokenRes.json();
-    assert.equal(tokenBody.error, 'billing_not_configured');
-
-    const checkoutRes = await fetch(`${baseUrl}/api/billing/checkout`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        planType: 'pro',
-        paymentMethodNonce: 'fake_nonce_12345678'
-      })
-    });
-    assert.equal(checkoutRes.status, 503);
-    const checkoutBody = await checkoutRes.json();
-    assert.equal(checkoutBody.error, 'billing_not_configured');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Webhook tests — Stripe
-// ---------------------------------------------------------------------------
-
-test('billing webhook: Stripe valid signature accepts event and returns received', async () => {
-  // Note: handleStripeEvent calls the module-level upsertSubscriptionFromStripe directly
-  // (not the injected dep). We therefore test HTTP behavior only: valid sig → 200.
+test('billing webhook accepts a valid Stripe signature', async () => {
   const webhookSecret = 'whsec_test_32chars_secret_xxxyyy';
-  const app = createApp({ deps: { billingProvider: 'stripe' } });
+  const app = createApp();
 
   await withStripeSecret(webhookSecret, async () => {
     await withServer(app, async (baseUrl) => {
       const event = {
-        id: `evt_test_http_${Date.now()}`, // unique per run so persistent DB doesn't dedup
+        id: `evt_test_http_${Date.now()}`,
         type: 'customer.subscription.created',
         data: {
           object: {
@@ -311,19 +111,14 @@ test('billing webhook: Stripe valid signature accepts event and returns received
       assert.equal(response.status, 200);
       const body = await response.json();
       assert.equal(body.received, true);
-      assert.notEqual(body.deduped, true); // first delivery is NOT a duplicate
+      assert.notEqual(body.deduped, true);
     });
   });
 });
 
-test('billing webhook: Stripe invalid signature returns 400', async () => {
+test('billing webhook rejects invalid Stripe signature', async () => {
   const webhookSecret = 'whsec_test_32chars_secret_xxxyyy';
-  const app = createApp({
-    deps: {
-      billingProvider: 'stripe',
-      upsertSubscriptionFromProvider: async () => {}
-    }
-  });
+  const app = createApp();
 
   await withStripeSecret(webhookSecret, async () => {
     await withServer(app, async (baseUrl) => {
@@ -343,13 +138,8 @@ test('billing webhook: Stripe invalid signature returns 400', async () => {
   });
 });
 
-test('billing webhook: Stripe missing secret returns 503 in production', async () => {
-  const app = createApp({
-    deps: {
-      billingProvider: 'stripe',
-      upsertSubscriptionFromProvider: async () => {}
-    }
-  });
+test('billing webhook returns 503 in production when Stripe webhook secret is missing', async () => {
+  const app = createApp();
 
   const prevSecret = process.env.STRIPE_WEBHOOK_SECRET;
   const prevEnv = process.env.NODE_ENV;
@@ -374,112 +164,7 @@ test('billing webhook: Stripe missing secret returns 503 in production', async (
   }
 });
 
-// ---------------------------------------------------------------------------
-// Webhook tests — Braintree
-// ---------------------------------------------------------------------------
-
-test('billing webhook: Braintree processes subscription event', async () => {
-  const calls = { upsert: [] };
-  const notification = {
-    kind: 'subscription_charged_successfully',
-    subscription: {
-      id: 'bt_sub_001',
-      status: 'Active',
-      planId: process.env.BT_PLAN_PRO_ID || 'plan_pro_test',
-      transactions: [{ customerDetails: { id: 'bt_cust_001' }, customerId: 'bt_cust_001' }]
-    }
-  };
-  const gateway = {
-    webhookNotification: {
-      parse: async () => notification
-    }
-  };
-
-  await withPlanEnv(async () => {
-    const app = createApp({
-      deps: {
-        billingProvider: 'braintree',
-        isBraintreeConfigured: () => true,
-        getBraintreeGateway: () => gateway,
-        upsertSubscriptionFromProvider: async (payload) => { calls.upsert.push(payload); },
-        appendImmutableAudit: async () => {}
-      }
-    });
-    await withServer(app, async (baseUrl) => {
-      const response = await fetch(`${baseUrl}/api/billing/webhook`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: 'bt_signature=sig_test&bt_payload=payload_test'
-      });
-      assert.equal(response.status, 200);
-      const body = await response.json();
-      assert.equal(body.received, true);
-    });
-  });
-
-  // upsert called even though userId resolution fails (no matching user in db stub)
-  // — the important check is that the webhook parsed and didn't crash
-  assert.equal(typeof calls.upsert.length, 'number');
-});
-
-test('billing webhook: Braintree invalid signature returns 400', async () => {
-  const gateway = {
-    webhookNotification: {
-      parse: async () => { throw new Error('Invalid Braintree signature'); }
-    }
-  };
-  const app = createApp({
-    deps: {
-      billingProvider: 'braintree',
-      isBraintreeConfigured: () => true,
-      getBraintreeGateway: () => gateway
-    }
-  });
-
-  await withServer(app, async (baseUrl) => {
-    const response = await fetch(`${baseUrl}/api/billing/webhook`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: 'bt_signature=badsig&bt_payload=badpayload'
-    });
-    assert.equal(response.status, 400);
-    const body = await response.json();
-    assert.ok(body.error);
-  });
-});
-
-test('billing webhook: Braintree not configured returns 503 in production', async () => {
-  const app = createApp({
-    deps: {
-      billingProvider: 'braintree',
-      isBraintreeConfigured: () => false
-    }
-  });
-
-  const prevEnv = process.env.NODE_ENV;
-  process.env.NODE_ENV = 'production';
-  try {
-    await withServer(app, async (baseUrl) => {
-      const response = await fetch(`${baseUrl}/api/billing/webhook`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: 'bt_signature=sig&bt_payload=data'
-      });
-      assert.equal(response.status, 503);
-      const body = await response.json();
-      assert.equal(body.error, 'billing_not_configured');
-    });
-  } finally {
-    process.env.NODE_ENV = prevEnv;
-  }
-});
-
-// ---------------------------------------------------------------------------
-// Webhook idempotency
-// ---------------------------------------------------------------------------
-
-test('billing webhook: duplicate Stripe event is deduped', async () => {
-  // Uses a unique event ID per test run to avoid cross-test DB state contamination.
+test('billing webhook deduplicates repeated Stripe events', async () => {
   const webhookSecret = 'whsec_test_32chars_secret_dedupexx';
   const uniqueEventId = `evt_dedupe_${Date.now()}`;
   const event = {
@@ -499,50 +184,599 @@ test('billing webhook: duplicate Stripe event is deduped', async () => {
     }
   };
   const rawBody = JSON.stringify(event);
-  const app = createApp({ deps: { billingProvider: 'stripe' } });
+  const app = createApp();
 
   await withStripeSecret(webhookSecret, async () => {
     await withServer(app, async (baseUrl) => {
       const sig = generateStripeSignature(rawBody, webhookSecret);
       const headers = { 'Content-Type': 'application/json', 'stripe-signature': sig };
 
-      // First delivery — not a duplicate
-      const r1 = await fetch(`${baseUrl}/api/billing/webhook`, { method: 'POST', headers, body: rawBody });
-      assert.equal(r1.status, 200);
-      const b1 = await r1.json();
-      assert.equal(b1.received, true);
-      assert.notEqual(b1.deduped, true);
+      const first = await fetch(`${baseUrl}/api/billing/webhook`, { method: 'POST', headers, body: rawBody });
+      assert.equal(first.status, 200);
+      const firstBody = await first.json();
+      assert.equal(firstBody.received, true);
+      assert.notEqual(firstBody.deduped, true);
 
-      // Second delivery of the exact same event ID — must be deduped
-      const r2 = await fetch(`${baseUrl}/api/billing/webhook`, { method: 'POST', headers, body: rawBody });
-      assert.equal(r2.status, 200);
-      const b2 = await r2.json();
-      assert.equal(b2.received, true);
-      assert.equal(b2.deduped, true);
+      const second = await fetch(`${baseUrl}/api/billing/webhook`, { method: 'POST', headers, body: rawBody });
+      assert.equal(second.status, 200);
+      const secondBody = await second.json();
+      assert.equal(secondBody.received, true);
+      assert.equal(secondBody.deduped, true);
     });
   });
 });
 
-test('billing router enforces session auth for sensitive endpoints', async () => {
+test('billing webhook rejects livemode mismatch in production with live Stripe key', async () => {
+  const webhookSecret = 'whsec_test_32chars_secret_modecheck';
+  const prevEnv = process.env.NODE_ENV;
+  const prevKey = process.env.STRIPE_SECRET_KEY;
+  process.env.NODE_ENV = 'production';
+  process.env.STRIPE_SECRET_KEY = 'sk_live_example_key_1234567890';
+
+  const app = createApp();
+  const event = {
+    id: `evt_mode_mismatch_${Date.now()}`,
+    type: 'customer.subscription.updated',
+    livemode: false,
+    data: {
+      object: {
+        id: 'sub_mode',
+        customer: 'cus_mode',
+        status: 'active',
+        cancel_at_period_end: false,
+        current_period_start: 1700000000,
+        current_period_end: 1702678400,
+        metadata: { user_id: 'user_mode' },
+        items: { data: [{ price: { id: 'price_unknown' } }] }
+      }
+    }
+  };
+  const rawBody = JSON.stringify(event);
+
+  try {
+    await withStripeSecret(webhookSecret, async () => {
+      await withServer(app, async (baseUrl) => {
+        const sig = generateStripeSignature(rawBody, webhookSecret);
+        const response = await fetch(`${baseUrl}/api/billing/webhook`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'stripe-signature': sig },
+          body: rawBody
+        });
+        assert.equal(response.status, 400);
+        const body = await response.json();
+        assert.equal(body.error, 'stripe_webhook_mode_mismatch');
+      });
+    });
+  } finally {
+    process.env.NODE_ENV = prevEnv;
+    if (prevKey === undefined) delete process.env.STRIPE_SECRET_KEY;
+    else process.env.STRIPE_SECRET_KEY = prevKey;
+  }
+});
+
+test('billing webhook syncs subscription state on invoice.payment_succeeded when invoice contains subscription id', async () => {
+  const webhookSecret = 'whsec_test_32chars_secret_invoice_sxx';
+  const calls = { retrieve: 0 };
+  const stripeClient = {
+    subscriptions: {
+      retrieve: async (subscriptionId) => {
+        calls.retrieve += 1;
+        return {
+          id: subscriptionId,
+          customer: 'cus_invoice_sync',
+          status: 'active',
+          cancel_at_period_end: false,
+          current_period_start: 1700000000,
+          current_period_end: 1702678400,
+          metadata: { user_id: 'user_invoice_sync', plan_type: 'pro' },
+          items: { data: [{ price: { id: 'price_pro_test_123' } }] }
+        };
+      }
+    }
+  };
+  const app = createApp({
+    deps: {
+      getStripeClient: () => stripeClient,
+      isStripeConfigured: () => true,
+      resolveUserIdFromStripeCustomer: async () => 'user_invoice_sync',
+      appendImmutableAudit: async () => {}
+    }
+  });
+  const event = {
+    id: `evt_invoice_succeeded_${Date.now()}`,
+    type: 'invoice.payment_succeeded',
+    data: {
+      object: {
+        id: 'in_test_001',
+        customer: 'cus_invoice_sync',
+        subscription: 'sub_invoice_sync_001',
+        amount_paid: 1299,
+        currency: 'eur'
+      }
+    }
+  };
+  const rawBody = JSON.stringify(event);
+
+  await withStripeSecret(webhookSecret, async () => {
+    await withServer(app, async (baseUrl) => {
+      const sig = generateStripeSignature(rawBody, webhookSecret);
+      const response = await fetch(`${baseUrl}/api/billing/webhook`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'stripe-signature': sig },
+        body: rawBody
+      });
+      assert.equal(response.status, 200);
+    });
+  });
+
+  assert.equal(calls.retrieve, 1);
+});
+
+test('billing webhook syncs subscription state on invoice.payment_failed when invoice contains subscription id', async () => {
+  const webhookSecret = 'whsec_test_32chars_secret_invoice_fxx';
+  const calls = { retrieve: 0 };
+  const stripeClient = {
+    subscriptions: {
+      retrieve: async (subscriptionId) => {
+        calls.retrieve += 1;
+        return {
+          id: subscriptionId,
+          customer: 'cus_invoice_failed_sync',
+          status: 'past_due',
+          cancel_at_period_end: false,
+          current_period_start: 1700000000,
+          current_period_end: 1702678400,
+          metadata: { user_id: 'user_invoice_failed_sync', plan_type: 'pro' },
+          items: { data: [{ price: { id: 'price_pro_test_123' } }] }
+        };
+      }
+    }
+  };
+  const app = createApp({
+    deps: {
+      getStripeClient: () => stripeClient,
+      isStripeConfigured: () => true,
+      resolveUserIdFromStripeCustomer: async () => 'user_invoice_failed_sync',
+      appendImmutableAudit: async () => {}
+    }
+  });
+  const event = {
+    id: `evt_invoice_failed_${Date.now()}`,
+    type: 'invoice.payment_failed',
+    data: {
+      object: {
+        id: 'in_test_002',
+        customer: 'cus_invoice_failed_sync',
+        subscription: 'sub_invoice_failed_sync_001',
+        amount_due: 1299,
+        currency: 'eur'
+      }
+    }
+  };
+  const rawBody = JSON.stringify(event);
+
+  await withStripeSecret(webhookSecret, async () => {
+    await withServer(app, async (baseUrl) => {
+      const sig = generateStripeSignature(rawBody, webhookSecret);
+      const response = await fetch(`${baseUrl}/api/billing/webhook`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'stripe-signature': sig },
+        body: rawBody
+      });
+      assert.equal(response.status, 200);
+    });
+  });
+
+  assert.equal(calls.retrieve, 1);
+});
+
+test('billing checkout creates a Stripe checkout session', async () => {
+  const calls = { checkout: [], audit: [] };
+  let expectedProPrice = '';
+  const stripeClient = {
+    checkout: {
+      sessions: {
+        create: async (payload) => {
+          calls.checkout.push(payload);
+          return { id: 'cs_test_001', url: 'https://checkout.stripe.com/c/pay/test_session_001' };
+        }
+      }
+    }
+  };
+
+  await withStripePrices(async () => {
+    expectedProPrice = String(process.env.STRIPE_PRICE_PRO || '');
+    const app = createApp({
+      deps: {
+        isStripeConfigured: () => true,
+        getStripeClient: () => stripeClient,
+        getUserById: async () => ({ id: 'user_1', email: 'user@example.com', name: 'Test User' }),
+        ensureStripeCustomerForUser: async () => 'cus_test_001',
+        appendImmutableAudit: async (payload) => {
+          calls.audit.push(payload);
+        }
+      }
+    });
+
+    await withServer(app, async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/billing/checkout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ planType: 'pro' })
+      });
+      assert.equal(response.status, 201);
+      const body = await response.json();
+      assert.equal(body.ok, true);
+      assert.equal(body.provider, 'stripe');
+      assert.equal(body.planType, 'pro');
+      assert.equal(body.sessionId, 'cs_test_001');
+    });
+  });
+
+  assert.equal(calls.checkout.length, 1);
+  assert.equal(calls.checkout[0].mode, 'subscription');
+  assert.equal(calls.checkout[0].line_items[0].price, expectedProPrice);
+  assert.equal(calls.audit.length, 1);
+});
+
+test('billing checkout returns 503 when Stripe is not configured', async () => {
+  const app = createApp({
+    deps: {
+      isStripeConfigured: () => false
+    }
+  });
+
+  await withServer(app, async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/billing/checkout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ planType: 'pro' })
+    });
+    assert.equal(response.status, 503);
+    const body = await response.json();
+    assert.equal(body.error, 'billing_not_configured');
+  });
+});
+
+test('billing checkout does not allow inline price-data fallback in production', async () => {
+  const prevEnv = process.env.NODE_ENV;
+  const prevInline = process.env.STRIPE_ALLOW_INLINE_PRICE_DATA;
+  const prevPro = process.env.STRIPE_PRICE_PRO;
+  const prevCreator = process.env.STRIPE_PRICE_CREATOR;
+  process.env.NODE_ENV = 'production';
+  process.env.STRIPE_ALLOW_INLINE_PRICE_DATA = 'true';
+  delete process.env.STRIPE_PRICE_PRO;
+  delete process.env.STRIPE_PRICE_CREATOR;
+
+  const app = createApp({
+    deps: {
+      isStripeConfigured: () => true,
+      getUserById: async () => ({ id: 'user_1', email: 'user@example.com', name: 'Test User' })
+    }
+  });
+
+  try {
+    await withServer(app, async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/billing/checkout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ planType: 'pro' })
+      });
+      assert.equal(response.status, 500);
+      const body = await response.json();
+      assert.equal(body.error, 'billing_plan_not_configured');
+    });
+  } finally {
+    process.env.NODE_ENV = prevEnv;
+    if (prevInline === undefined) delete process.env.STRIPE_ALLOW_INLINE_PRICE_DATA;
+    else process.env.STRIPE_ALLOW_INLINE_PRICE_DATA = prevInline;
+    if (prevPro === undefined) delete process.env.STRIPE_PRICE_PRO;
+    else process.env.STRIPE_PRICE_PRO = prevPro;
+    if (prevCreator === undefined) delete process.env.STRIPE_PRICE_CREATOR;
+    else process.env.STRIPE_PRICE_CREATOR = prevCreator;
+  }
+});
+
+test('billing portal creates a Stripe customer portal session', async () => {
+  const stripeClient = {
+    billingPortal: {
+      sessions: {
+        create: async () => ({ url: 'https://billing.stripe.com/p/session_001' })
+      }
+    }
+  };
+
+  const app = createApp({
+    deps: {
+      isStripeConfigured: () => true,
+      getStripeClient: () => stripeClient,
+      getUserById: async () => ({ id: 'user_1', email: 'user@example.com', name: 'Test User' }),
+      ensureStripeCustomerForUser: async () => 'cus_test_001'
+    }
+  });
+
+  await withServer(app, async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/billing/portal`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.ok, true);
+    assert.equal(body.provider, 'stripe');
+    assert.equal(body.url, 'https://billing.stripe.com/p/session_001');
+  });
+});
+
+test('billing change-plan updates Stripe subscription price and returns normalized subscription', async () => {
+  const calls = { update: [] };
+  await withStripePrices(async () => {
+    const expectedCreatorPrice = String(process.env.STRIPE_PRICE_CREATOR || '');
+    const stripeClient = {
+      subscriptions: {
+        retrieve: async () => ({
+          id: 'sub_test_001',
+          customer: 'cus_test_001',
+          status: 'active',
+          cancel_at_period_end: false,
+          current_period_start: 1700000000,
+          current_period_end: 1702678400,
+          metadata: { user_id: 'user_1', plan_type: 'pro' },
+          items: {
+            data: [{ id: 'si_test_001', price: { id: String(process.env.STRIPE_PRICE_PRO || '') } }]
+          }
+        }),
+        list: async () => ({ data: [] }),
+        update: async (_subscriptionId, payload) => {
+          calls.update.push(payload);
+          return {
+            id: 'sub_test_001',
+            customer: 'cus_test_001',
+            status: 'active',
+            cancel_at_period_end: false,
+            current_period_start: 1700000000,
+            current_period_end: 1702678400,
+            metadata: { user_id: 'user_1', plan_type: 'elite' },
+            items: {
+              data: [{ id: 'si_test_001', price: { id: expectedCreatorPrice } }]
+            }
+          };
+        }
+      }
+    };
+
+    const app = createApp({
+      deps: {
+        isStripeConfigured: () => true,
+        getStripeClient: () => stripeClient,
+        getUserById: async () => ({ id: 'user_1', email: 'user@example.com', name: 'Test User', stripeCustomerId: 'cus_test_001' }),
+        getOrCreateSubscription: async () => ({
+          id: 'sub_local_1',
+          user_id: 'user_1',
+          stripe_subscription_id: 'sub_test_001',
+          plan_id: 'pro',
+          status: 'active'
+        }),
+        upsertSubscriptionFromProvider: async () => {},
+        setUserPlan: async () => {},
+        appendImmutableAudit: async () => {}
+      }
+    });
+
+    await withServer(app, async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/billing/subscription/change-plan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ planType: 'elite' })
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json();
+      assert.equal(body.ok, true);
+      assert.equal(body.provider, 'stripe');
+      assert.equal(body.subscription.planId, 'creator');
+      assert.equal(body.subscription.planType, 'elite');
+      assert.equal(body.subscription.status, 'active');
+    });
+
+    assert.equal(calls.update.length, 1);
+    assert.equal(calls.update[0].items[0].price, expectedCreatorPrice);
+  });
+});
+
+test('billing cancel marks subscription cancel_at_period_end when requested', async () => {
+  const calls = { update: [] };
+  const stripeClient = {
+    subscriptions: {
+      retrieve: async () => ({
+        id: 'sub_test_001',
+        customer: 'cus_test_001',
+        status: 'active',
+        cancel_at_period_end: false,
+        current_period_start: 1700000000,
+        current_period_end: 1702678400,
+        metadata: { user_id: 'user_1', plan_type: 'pro' },
+        items: { data: [{ id: 'si_test_001', price: { id: String(process.env.STRIPE_PRICE_PRO || 'price_pro_test_123') } }] }
+      }),
+      list: async () => ({ data: [] }),
+      update: async (_subscriptionId, payload) => {
+        calls.update.push(payload);
+        return {
+          id: 'sub_test_001',
+          customer: 'cus_test_001',
+          status: 'active',
+          cancel_at_period_end: true,
+          current_period_start: 1700000000,
+          current_period_end: 1702678400,
+          metadata: { user_id: 'user_1', plan_type: 'pro' },
+          items: { data: [{ id: 'si_test_001', price: { id: String(process.env.STRIPE_PRICE_PRO || 'price_pro_test_123') } }] }
+        };
+      },
+      cancel: async () => {
+        throw new Error('cancel should not be called in this test');
+      }
+    }
+  };
+
+  const app = createApp({
+    deps: {
+      isStripeConfigured: () => true,
+      getStripeClient: () => stripeClient,
+      getUserById: async () => ({ id: 'user_1', email: 'user@example.com', name: 'Test User', stripeCustomerId: 'cus_test_001' }),
+      getOrCreateSubscription: async () => ({
+        id: 'sub_local_1',
+        user_id: 'user_1',
+        stripe_subscription_id: 'sub_test_001',
+        plan_id: 'pro',
+        status: 'active'
+      }),
+      upsertSubscriptionFromProvider: async () => {},
+      setUserPlan: async () => {},
+      appendImmutableAudit: async () => {}
+    }
+  });
+
+  await withServer(app, async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/billing/subscription/cancel`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cancelAtPeriodEnd: true })
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.ok, true);
+    assert.equal(body.canceledAtPeriodEnd, true);
+    assert.equal(body.subscription.cancelAtPeriodEnd, true);
+  });
+
+  assert.equal(calls.update.length, 1);
+  assert.equal(calls.update[0].cancel_at_period_end, true);
+});
+
+test('billing resume clears cancel_at_period_end', async () => {
+  const calls = { update: [] };
+  const stripeClient = {
+    subscriptions: {
+      retrieve: async () => ({
+        id: 'sub_test_001',
+        customer: 'cus_test_001',
+        status: 'active',
+        cancel_at_period_end: true,
+        current_period_start: 1700000000,
+        current_period_end: 1702678400,
+        metadata: { user_id: 'user_1', plan_type: 'pro' },
+        items: { data: [{ id: 'si_test_001', price: { id: String(process.env.STRIPE_PRICE_PRO || 'price_pro_test_123') } }] }
+      }),
+      list: async () => ({ data: [] }),
+      update: async (_subscriptionId, payload) => {
+        calls.update.push(payload);
+        return {
+          id: 'sub_test_001',
+          customer: 'cus_test_001',
+          status: 'active',
+          cancel_at_period_end: false,
+          current_period_start: 1700000000,
+          current_period_end: 1702678400,
+          metadata: { user_id: 'user_1', plan_type: 'pro' },
+          items: { data: [{ id: 'si_test_001', price: { id: String(process.env.STRIPE_PRICE_PRO || 'price_pro_test_123') } }] }
+        };
+      },
+      resume: async () => {
+        throw new Error('resume should not be called for active subscription');
+      }
+    }
+  };
+
+  const app = createApp({
+    deps: {
+      isStripeConfigured: () => true,
+      getStripeClient: () => stripeClient,
+      getUserById: async () => ({ id: 'user_1', email: 'user@example.com', name: 'Test User', stripeCustomerId: 'cus_test_001' }),
+      getOrCreateSubscription: async () => ({
+        id: 'sub_local_1',
+        user_id: 'user_1',
+        stripe_subscription_id: 'sub_test_001',
+        plan_id: 'pro',
+        status: 'active'
+      }),
+      upsertSubscriptionFromProvider: async () => {},
+      setUserPlan: async () => {},
+      appendImmutableAudit: async () => {}
+    }
+  });
+
+  await withServer(app, async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/billing/subscription/resume`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.ok, true);
+    assert.equal(body.subscription.cancelAtPeriodEnd, false);
+  });
+
+  assert.equal(calls.update.length, 1);
+  assert.equal(calls.update[0].cancel_at_period_end, false);
+});
+
+test('billing client-token endpoint is removed', async () => {
+  const app = createApp();
+
+  await withServer(app, async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/billing/client-token`);
+    assert.equal(response.status, 410);
+    const body = await response.json();
+    assert.equal(body.error, 'endpoint_removed');
+  });
+});
+
+test('billing public-config returns publishable key when configured', async () => {
+  const app = createApp();
+  const prev = process.env.STRIPE_PUBLISHABLE_KEY;
+  process.env.STRIPE_PUBLISHABLE_KEY = 'pk_test_1234567890abcdef';
+  try {
+    await withServer(app, async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/billing/public-config`);
+      assert.equal(response.status, 200);
+      const body = await response.json();
+      assert.equal(body.provider, 'stripe');
+      assert.equal(body.publishableKey, 'pk_test_1234567890abcdef');
+    });
+  } finally {
+    if (prev === undefined) delete process.env.STRIPE_PUBLISHABLE_KEY;
+    else process.env.STRIPE_PUBLISHABLE_KEY = prev;
+  }
+});
+
+test('billing router enforces session auth for checkout', async () => {
   const app = createApp({
     authSource: 'api_key',
     requireSessionAuth: (req, res, next) =>
       req.authSource === 'cookie' ? next() : res.status(403).json({ error: 'session_auth_required' }),
     deps: {
-      billingProvider: 'braintree',
-      isBraintreeConfigured: () => true,
-      getBraintreeGateway: () => ({
-        clientToken: { generate: async () => ({ clientToken: 'token_abc123' }) }
+      isStripeConfigured: () => true,
+      getStripeClient: () => ({
+        checkout: {
+          sessions: {
+            create: async () => ({ id: 'cs_test_001', url: 'https://checkout.stripe.com/c/pay/test_session_001' })
+          }
+        }
       }),
       getUserById: async () => ({ id: 'user_1', email: 'user@example.com', name: 'Test User' }),
-      ensureBraintreeCustomerForUser: async () => 'bt_cust_1'
+      ensureStripeCustomerForUser: async () => 'cus_test_001'
     }
   });
 
   await withServer(app, async (baseUrl) => {
-    const tokenRes = await fetch(`${baseUrl}/api/billing/client-token`);
-    assert.equal(tokenRes.status, 403);
-    const tokenBody = await tokenRes.json();
-    assert.equal(tokenBody.error, 'session_auth_required');
+    const response = await fetch(`${baseUrl}/api/billing/checkout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ planType: 'pro' })
+    });
+    assert.equal(response.status, 403);
+    const body = await response.json();
+    assert.equal(body.error, 'session_auth_required');
   });
 });

@@ -129,7 +129,7 @@ function normalizeDb(parsed) {
     outboundRedirects: pruneTimedCollection(parsed.outboundRedirects, {
       retentionDays: OUTBOUND_EVENTS_RETENTION_DAYS,
       maxItems: OUTBOUND_EVENTS_MAX_ITEMS,
-      dateKeys: ['at', 'createdAt']
+      dateKeys: ['issuedAt', 'expiresAt', 'at', 'createdAt']
     }),
     revokedTokens: parsed.revokedTokens ?? [],
     refreshSessions: parsed.refreshSessions ?? [],

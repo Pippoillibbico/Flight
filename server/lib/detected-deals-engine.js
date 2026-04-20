@@ -1,291 +1,28 @@
-import { createHash } from 'node:crypto';
 import { mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
-import { parseBoolean } from './env-flags.js';
 import { logger as rootLogger } from './logger.js';
+import { getDetectedDealsRuntimeConfig } from './detected-deals-config.js';
+import {
+  DETECTED_DEALS_POSTGRES_REFS_SQL,
+  DETECTED_DEALS_POSTGRES_SCHEMA_SQL,
+  DETECTED_DEALS_POSTGRES_USER_EVENTS_SQL,
+  DETECTED_DEALS_SQLITE_DEAL_SCORE_INDEX_SQL,
+  DETECTED_DEALS_SQLITE_DEAL_SCORE_MIGRATION_SQL,
+  DETECTED_DEALS_SQLITE_SCHEMA_SQL
+} from './detected-deals-schema.js';
+import {
+  clamp,
+  evaluateCandidate,
+  hasSqliteTable,
+  normalizeRouteId,
+  parseJsonObject,
+  round2,
+  toNumber
+} from './detected-deals-helpers.js';
 
 const SQLITE_DB_PATH = fileURLToPath(new URL('../../data/app.db', import.meta.url));
-const DEAL_SCORE_WEIGHTS = Object.freeze({
-  savings_percent: 0.4,
-  route_popularity: 0.2,
-  freshness: 0.15,
-  user_interest: 0.15,
-  low_stops: 0.1
-});
-
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
-}
-
-function toNumber(value, fallback = 0) {
-  const out = Number(value);
-  return Number.isFinite(out) ? out : fallback;
-}
-
-function round2(value) {
-  return Math.round(toNumber(value, 0) * 100) / 100;
-}
-
-function parseJsonObject(value, fallback = {}) {
-  if (value == null || value === '') return fallback;
-  if (typeof value === 'object') return value;
-  if (typeof value !== 'string') return fallback;
-  try {
-    const parsed = JSON.parse(value);
-    return parsed && typeof parsed === 'object' ? parsed : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function normalizeRouteId(value) {
-  if (value == null) return null;
-  if (typeof value === 'string' && value.trim() === '') return null;
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed <= 0) return null;
-  return parsed;
-}
-
-function confidenceMultiplier(level) {
-  const normalized = String(level || '').trim().toLowerCase();
-  if (normalized === 'high') return 1;
-  if (normalized === 'medium') return 0.95;
-  if (normalized === 'low') return 0.88;
-  return 0.78;
-}
-
-function opportunityLevelFromScore(score) {
-  const value = toNumber(score, 0);
-  if (value >= 86) return 'Rare opportunity';
-  if (value >= 75) return 'Exceptional price';
-  if (value >= 62) return 'Great deal';
-  return 'Ignore if too weak';
-}
-
-function dealTypeFromScore(score) {
-  const value = toNumber(score, 0);
-  if (value >= 86) return 'rare_opportunity';
-  if (value >= 75) return 'exceptional_price';
-  return 'great_deal';
-}
-
-function scoreStops(stops) {
-  const value = Math.max(0, Math.floor(toNumber(stops, 1)));
-  if (value === 0) return 100;
-  if (value === 1) return 75;
-  if (value === 2) return 50;
-  if (value === 3) return 25;
-  return 0;
-}
-
-function scoreDurationMinutes(durationMinutes) {
-  const value = toNumber(durationMinutes, NaN);
-  if (!Number.isFinite(value) || value <= 0) return 60;
-  if (value <= 180) return 100;
-  if (value <= 360) return 88;
-  if (value <= 540) return 76;
-  if (value <= 780) return 62;
-  if (value <= 1080) return 48;
-  return 34;
-}
-
-function toIso(value) {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return new Date().toISOString();
-  return parsed.toISOString();
-}
-
-function hasSqliteTable(sqliteDb, tableName) {
-  const row = sqliteDb.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name = ?`).get(String(tableName || '').trim());
-  return Boolean(row?.name);
-}
-
-function buildDealKey({ flightQuoteId, routeId, observedAt }) {
-  const hash = createHash('sha1')
-    .update(`${String(flightQuoteId)}|${String(routeId)}|${String(observedAt)}`)
-    .digest('hex')
-    .slice(0, 14);
-  return `fq_${String(flightQuoteId)}_${hash}`;
-}
-
-function evaluateCandidate(row, { nowTs, minDiscountPct, nearMinRatio, rapidDropRatio, rapidDropMinPct, minScore, publishScore, expiryHours }) {
-  const price = toNumber(row.total_price, 0);
-  const avgPrice = toNumber(row.avg_price, 0);
-  const minPrice = Math.max(0.01, toNumber(row.min_price, 0.01));
-  const avg7 = Math.max(0, toNumber(row.avg_price_7d, avgPrice));
-  const avg30 = Math.max(0, toNumber(row.avg_price_30d, avgPrice));
-  const quoteSource = String(row.quote_source || row.source || '').trim().toLowerCase();
-  const quoteMetadata = parseJsonObject(row.quote_metadata ?? row.metadata, {});
-  const bootstrapFinalScore = toNumber(quoteMetadata.finalScore, NaN);
-  const bootstrapBaselinePrice = toNumber(quoteMetadata.baselinePrice, NaN);
-  const bootstrapSavingsPct = toNumber(quoteMetadata.savingsPct, NaN);
-  const bootstrapSavingsAmount = toNumber(quoteMetadata.savingsAmount, NaN);
-  const bootstrapOpportunityLevel = String(quoteMetadata.opportunityLevel || '').trim();
-  const quotesCount = Math.max(0, toNumber(row.quotes_count, 0));
-  const sparseHistoricalStats = quotesCount <= 2 || Math.abs(avgPrice - price) < 0.01;
-  const bootstrapFallbackEligible =
-    quoteSource === 'opportunity_bootstrap' &&
-    quoteMetadata.bootstrap === true &&
-    sparseHistoricalStats &&
-    Number.isFinite(bootstrapFinalScore) &&
-    bootstrapFinalScore >= minScore;
-  const popularityRaw = Math.max(0, toNumber(row.route_popularity_30d, 0));
-  const userSignalsRaw = Math.max(0, toNumber(row.user_signals_30d, 0));
-  const observedAt = toIso(row.observed_at);
-  const observedTs = new Date(observedAt).getTime();
-  const ageHours = Math.max(0, (nowTs - observedTs) / (60 * 60 * 1000));
-
-  if (price <= 0 || avgPrice <= 0) {
-    return { valid: false, reason: 'invalid_price_or_baseline' };
-  }
-
-  const discountPct = ((avgPrice - price) / avgPrice) * 100;
-  const nearMinDistancePct = ((price - minPrice) / minPrice) * 100;
-  const rapidDropPct7d = avg7 > 0 ? ((avg7 - price) / avg7) * 100 : 0;
-  const rapidDropPct30d = avg30 > 0 ? ((avg30 - price) / avg30) * 100 : 0;
-  const prevPrice = toNumber(row.prev_price, 0);
-  const rapidDropPctPrev = prevPrice > 0 ? ((prevPrice - price) / prevPrice) * 100 : 0;
-
-  const isBelowHistoricalAvg = price < avgPrice && discountPct >= minDiscountPct;
-  const isNearHistoricalMin = price <= minPrice * nearMinRatio;
-  const isRapidDropBy7d = avg7 > 0 && price <= avg7 * rapidDropRatio && rapidDropPct7d >= rapidDropMinPct;
-  const isRapidDropBy30d = avg30 > 0 && price <= avg30 * rapidDropRatio && rapidDropPct30d >= rapidDropMinPct;
-  const isRapidDropByPrevious = prevPrice > 0 && rapidDropPctPrev >= rapidDropMinPct;
-  const isRapidDrop = isRapidDropBy7d || isRapidDropBy30d || isRapidDropByPrevious;
-  const gatesPassed = isBelowHistoricalAvg && isNearHistoricalMin && isRapidDrop;
-  const usedBootstrapFallback = !gatesPassed && bootstrapFallbackEligible;
-
-  if (!gatesPassed && !usedBootstrapFallback) {
-    if (!isBelowHistoricalAvg) return { valid: false, reason: 'not_below_historical_avg' };
-    if (!isNearHistoricalMin) return { valid: false, reason: 'not_near_historical_min' };
-    return { valid: false, reason: 'price_not_dropping_fast' };
-  }
-
-  const discountScore = clamp((discountPct / 30) * 100, 0, 100);
-  const popularityScore = clamp((Math.log1p(popularityRaw) / Math.log1p(400)) * 100, 0, 100);
-  const durationScore = scoreDurationMinutes(row.duration_minutes);
-  const stopsScore = scoreStops(row.stops);
-  const freshnessScore = clamp(100 - ageHours * 2, 0, 100);
-  const userSignalsScore = clamp((Math.log1p(userSignalsRaw) / Math.log1p(120)) * 100, 0, 100);
-  const effectiveSavingsPct = Number.isFinite(bootstrapSavingsPct)
-    ? bootstrapSavingsPct
-    : Number.isFinite(bootstrapBaselinePrice) && bootstrapBaselinePrice > 0
-      ? ((bootstrapBaselinePrice - price) / bootstrapBaselinePrice) * 100
-      : discountPct;
-  const savingsPercentScore = clamp(Math.max(0, effectiveSavingsPct), 0, 100);
-  const lowStopsBonus = stopsScore;
-  const dealScore = round2(
-    savingsPercentScore * DEAL_SCORE_WEIGHTS.savings_percent +
-      popularityScore * DEAL_SCORE_WEIGHTS.route_popularity +
-      freshnessScore * DEAL_SCORE_WEIGHTS.freshness +
-      userSignalsScore * DEAL_SCORE_WEIGHTS.user_interest +
-      lowStopsBonus * DEAL_SCORE_WEIGHTS.low_stops
-  );
-
-  const rawScore =
-    discountScore * 0.41 +
-    popularityScore * 0.15 +
-    durationScore * 0.08 +
-    stopsScore * 0.12 +
-    freshnessScore * 0.14 +
-    userSignalsScore * 0.1;
-
-  const nearMinStrength = clamp((nearMinRatio - price / minPrice) / Math.max(0.0001, nearMinRatio - 1), 0, 1);
-  const rapidDropStrength = clamp(Math.max(rapidDropPct7d, rapidDropPct30d, rapidDropPctPrev) / 25, 0, 1);
-  const confidence = confidenceMultiplier(row.confidence_level);
-  const boostedFinal = rawScore * confidence + nearMinStrength * 6 + rapidDropStrength * 8;
-  const computedFinalScore = clamp(round2(boostedFinal), 0, 100);
-  const finalScore = usedBootstrapFallback ? clamp(Math.max(computedFinalScore, bootstrapFinalScore), 0, 100) : computedFinalScore;
-
-  if (finalScore < minScore) return { valid: false, reason: 'score_too_low' };
-
-  const baselinePriceRaw = Number.isFinite(bootstrapBaselinePrice) && bootstrapBaselinePrice > 0 ? bootstrapBaselinePrice : avgPrice;
-  const baselinePrice = round2(Math.max(price, baselinePriceRaw));
-  const savingsAmountRaw = Number.isFinite(bootstrapSavingsAmount) ? bootstrapSavingsAmount : baselinePrice - price;
-  const savingsAmount = round2(Math.max(0, savingsAmountRaw));
-  const savingsPct = round2(Math.max(0, Number.isFinite(bootstrapSavingsPct) ? bootstrapSavingsPct : effectiveSavingsPct));
-  const status = finalScore >= publishScore ? 'published' : 'candidate';
-  const publishedAt = status === 'published' ? new Date(nowTs).toISOString() : null;
-  const expiresAt = new Date(observedTs + Math.max(1, Number(expiryHours || 120)) * 60 * 60 * 1000).toISOString();
-  const opportunityLevel = usedBootstrapFallback && bootstrapOpportunityLevel ? bootstrapOpportunityLevel : opportunityLevelFromScore(finalScore);
-  const rawRounded = round2(rawScore);
-  const routeId = Number(row.route_id);
-  const flightQuoteId = Number(row.flight_quote_id);
-
-  return {
-    valid: true,
-    reason: null,
-    finalScore,
-    deal: {
-      dealKey: buildDealKey({ flightQuoteId, routeId, observedAt }),
-      flightQuoteId,
-      routeId,
-      dealType: dealTypeFromScore(finalScore),
-      rawScore: rawRounded,
-      finalScore,
-      dealScore,
-      opportunityLevel,
-      price: round2(price),
-      baselinePrice,
-      savingsAmount,
-      savingsPct,
-      status,
-      rejectionReason: null,
-      scoreBreakdown: {
-        model: 'detected_deals_v1',
-        signals: {
-          discount_pct: round2(discountPct),
-          effective_savings_pct: round2(effectiveSavingsPct),
-          near_min_distance_pct: round2(nearMinDistancePct),
-          rapid_drop_pct_7d: round2(rapidDropPct7d),
-          rapid_drop_pct_30d: round2(rapidDropPct30d),
-          rapid_drop_pct_prev: round2(rapidDropPctPrev),
-          route_popularity_30d: round2(popularityRaw),
-          duration_minutes: toNumber(row.duration_minutes, 0),
-          user_signals_30d: round2(userSignalsRaw),
-          confidence_level: String(row.confidence_level || 'very_low')
-        },
-        components: {
-          discount: round2(discountScore),
-          popularity: round2(popularityScore),
-          duration: round2(durationScore),
-          stops: round2(stopsScore),
-          freshness: round2(freshnessScore),
-          user_signals: round2(userSignalsScore)
-        },
-        feed_ranking: {
-          model: 'deal_score_v1',
-          weights: DEAL_SCORE_WEIGHTS,
-          components: {
-            savings_percent: round2(savingsPercentScore),
-            route_popularity: round2(popularityScore),
-            freshness: round2(freshnessScore),
-            user_interest: round2(userSignalsScore),
-            low_stops_bonus: round2(lowStopsBonus)
-          },
-          deal_score: dealScore
-        },
-        gates: {
-          below_historical_avg: isBelowHistoricalAvg,
-          near_historical_min: isNearHistoricalMin,
-          rapid_drop: isRapidDrop,
-          bootstrap_fallback: usedBootstrapFallback
-        },
-        params: {
-          min_discount_pct: minDiscountPct,
-          near_min_ratio: nearMinRatio,
-          rapid_drop_ratio: rapidDropRatio,
-          rapid_drop_min_pct: rapidDropMinPct
-        }
-      },
-      publishedAt,
-      expiresAt,
-      sourceObservedAt: observedAt
-    }
-  };
-}
 
 export function createDetectedDealsEngine(options = {}) {
   const forcedMode = String(options.mode || '').trim().toLowerCase();
@@ -302,89 +39,12 @@ export function createDetectedDealsEngine(options = {}) {
   let pgHasTravelOpportunitiesTable = null;
   let sqliteHasTravelOpportunitiesTable = null;
 
-  function getConfig(runtimeOptions = {}) {
-    return {
-      lookbackHours: Math.max(
-        1,
-        Math.min(720, Number(runtimeOptions.lookbackHours ?? options.lookbackHours ?? process.env.DETECTED_DEALS_LOOKBACK_HOURS ?? 72))
-      ),
-      signalLookbackDays: Math.max(
-        1,
-        Math.min(180, Number(runtimeOptions.signalLookbackDays ?? options.signalLookbackDays ?? process.env.DETECTED_DEALS_SIGNAL_LOOKBACK_DAYS ?? 30))
-      ),
-      maxCandidates: Math.max(
-        50,
-        Math.min(5000, Number(runtimeOptions.maxCandidates ?? options.maxCandidates ?? process.env.DETECTED_DEALS_MAX_CANDIDATES ?? 1000))
-      ),
-      maxPublishedPerRun: Math.max(
-        10,
-        Math.min(1000, Number(runtimeOptions.maxPublishedPerRun ?? options.maxPublishedPerRun ?? process.env.DETECTED_DEALS_MAX_PUBLISHED_PER_RUN ?? 1000))
-      ),
-      expiryHours: Math.max(
-        12,
-        Math.min(720, Number(runtimeOptions.expiryHours ?? options.expiryHours ?? process.env.DETECTED_DEALS_EXPIRY_HOURS ?? 120))
-      ),
-      minDiscountPct: Math.max(
-        0.1,
-        Math.min(70, Number(runtimeOptions.minDiscountPct ?? options.minDiscountPct ?? process.env.DETECTED_DEALS_MIN_DISCOUNT_PCT ?? 5))
-      ),
-      nearMinRatio: Math.max(
-        1.0,
-        Math.min(2.0, Number(runtimeOptions.nearMinRatio ?? options.nearMinRatio ?? process.env.DETECTED_DEALS_NEAR_MIN_RATIO ?? 1.12))
-      ),
-      rapidDropRatio: Math.max(
-        0.5,
-        Math.min(0.99, Number(runtimeOptions.rapidDropRatio ?? options.rapidDropRatio ?? process.env.DETECTED_DEALS_RAPID_DROP_RATIO ?? 0.93))
-      ),
-      rapidDropMinPct: Math.max(
-        0.1,
-        Math.min(80, Number(runtimeOptions.rapidDropMinPct ?? options.rapidDropMinPct ?? process.env.DETECTED_DEALS_RAPID_DROP_MIN_PCT ?? 6))
-      ),
-      minScore: Math.max(0, Math.min(100, Number(runtimeOptions.minScore ?? options.minScore ?? process.env.DETECTED_DEALS_MIN_SCORE ?? 55))),
-      publishScore: Math.max(0, Math.min(100, Number(runtimeOptions.publishScore ?? options.publishScore ?? process.env.DETECTED_DEALS_PUBLISH_SCORE ?? 68))),
-      publishFallbackEnabled: parseBoolean(
-        runtimeOptions.publishFallbackEnabled ??
-          options.publishFallbackEnabled ??
-          process.env.DETECTED_DEALS_PUBLISH_FALLBACK_ENABLED,
-        true
-      ),
-      publishFallbackDelta: Math.max(
-        1,
-        Math.min(
-          25,
-          Number(runtimeOptions.publishFallbackDelta ?? options.publishFallbackDelta ?? process.env.DETECTED_DEALS_PUBLISH_FALLBACK_DELTA ?? 5)
-        )
-      ),
-      publishFallbackMaxPerRun: Math.max(
-        1,
-        Math.min(
-          200,
-          Number(
-            runtimeOptions.publishFallbackMaxPerRun ??
-              options.publishFallbackMaxPerRun ??
-              process.env.DETECTED_DEALS_PUBLISH_FALLBACK_MAX_PER_RUN ??
-              20
-          )
-        )
-      ),
-      retentionDays: Math.max(
-        7,
-        Math.min(365, Number(runtimeOptions.retentionDays ?? options.retentionDays ?? process.env.DETECTED_DEALS_RETENTION_DAYS ?? 45))
-      )
-    };
-  }
-
   async function ensurePostgresSchema() {
     if (!pgPool) {
       pgPool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
     }
 
-    const refs = await pgPool.query(`
-      SELECT
-        to_regclass('public.routes') AS routes_ref,
-        to_regclass('public.flight_quotes') AS flight_quotes_ref,
-        to_regclass('public.route_price_stats') AS route_price_stats_ref
-    `);
+    const refs = await pgPool.query(DETECTED_DEALS_POSTGRES_REFS_SQL);
     const row = refs.rows[0] || {};
     if (!row.routes_ref || !row.flight_quotes_ref || !row.route_price_stats_ref) {
       schemaReady = false;
@@ -392,65 +52,8 @@ export function createDetectedDealsEngine(options = {}) {
       return;
     }
 
-    await pgPool.query(`
-      CREATE TABLE IF NOT EXISTS user_events (
-        id BIGSERIAL PRIMARY KEY,
-        user_id TEXT NULL,
-        event_type TEXT NOT NULL,
-        event_ts TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        session_id TEXT NULL,
-        route_id BIGINT NULL,
-        deal_id BIGINT NULL,
-        alert_id BIGINT NULL,
-        price_seen NUMERIC(10,2) NULL,
-        channel TEXT NOT NULL DEFAULT 'app',
-        payload JSONB NOT NULL DEFAULT '{}'::jsonb,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_user_events_route_ts ON user_events(route_id, event_ts DESC);
-      CREATE INDEX IF NOT EXISTS idx_user_events_type_ts ON user_events(event_type, event_ts DESC);
-    `);
-
-    await pgPool.query(`
-      CREATE TABLE IF NOT EXISTS detected_deals (
-        id BIGSERIAL PRIMARY KEY,
-        deal_key TEXT NOT NULL,
-        flight_quote_id BIGINT NOT NULL REFERENCES flight_quotes(id) ON DELETE CASCADE,
-        route_id BIGINT NOT NULL REFERENCES routes(id) ON DELETE CASCADE,
-        deal_type TEXT NOT NULL DEFAULT 'great_deal',
-        raw_score NUMERIC(6,2) NOT NULL,
-        final_score NUMERIC(6,2) NOT NULL,
-        deal_score NUMERIC(6,2) NULL,
-        opportunity_level TEXT NOT NULL,
-        price NUMERIC(10,2) NOT NULL,
-        baseline_price NUMERIC(10,2) NULL,
-        savings_amount NUMERIC(10,2) NULL,
-        savings_pct NUMERIC(6,2) NULL,
-        status TEXT NOT NULL DEFAULT 'candidate',
-        rejection_reason TEXT NULL,
-        score_breakdown JSONB NOT NULL DEFAULT '{}'::jsonb,
-        ai_title TEXT NULL,
-        ai_description TEXT NULL,
-        published_at TIMESTAMPTZ NULL,
-        expires_at TIMESTAMPTZ NULL,
-        source_observed_at TIMESTAMPTZ NOT NULL,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        CONSTRAINT uq_detected_deals_key UNIQUE (deal_key)
-      );
-      CREATE INDEX IF NOT EXISTS idx_detected_deals_feed
-        ON detected_deals(status, final_score DESC, published_at DESC, source_observed_at DESC);
-      CREATE INDEX IF NOT EXISTS idx_detected_deals_route_status
-        ON detected_deals(route_id, status, published_at DESC);
-      CREATE INDEX IF NOT EXISTS idx_detected_deals_quote
-        ON detected_deals(flight_quote_id);
-      CREATE INDEX IF NOT EXISTS idx_detected_deals_expiration
-        ON detected_deals(status, expires_at, source_observed_at DESC);
-      ALTER TABLE detected_deals
-        ADD COLUMN IF NOT EXISTS deal_score NUMERIC(6,2) NULL;
-      CREATE INDEX IF NOT EXISTS idx_detected_deals_feed_deal_score
-        ON detected_deals(status, deal_score DESC NULLS LAST, source_observed_at DESC);
-    `);
+    await pgPool.query(DETECTED_DEALS_POSTGRES_USER_EVENTS_SQL);
+    await pgPool.query(DETECTED_DEALS_POSTGRES_SCHEMA_SQL);
   }
 
   async function ensureSqliteSchema() {
@@ -460,67 +63,12 @@ export function createDetectedDealsEngine(options = {}) {
       sqliteDb = new sqlite.DatabaseSync(SQLITE_DB_PATH);
     }
 
-    sqliteDb.exec(`
-      PRAGMA journal_mode = WAL;
-      CREATE TABLE IF NOT EXISTS user_events (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id TEXT NULL,
-        event_type TEXT NOT NULL,
-        event_ts TEXT NOT NULL DEFAULT (datetime('now')),
-        session_id TEXT NULL,
-        route_id INTEGER NULL,
-        deal_id INTEGER NULL,
-        alert_id INTEGER NULL,
-        price_seen REAL NULL,
-        channel TEXT NOT NULL DEFAULT 'app',
-        payload TEXT NOT NULL DEFAULT '{}',
-        created_at TEXT NOT NULL DEFAULT (datetime('now'))
-      );
-      CREATE INDEX IF NOT EXISTS idx_user_events_route_ts ON user_events(route_id, event_ts DESC);
-      CREATE INDEX IF NOT EXISTS idx_user_events_type_ts ON user_events(event_type, event_ts DESC);
-
-      CREATE TABLE IF NOT EXISTS detected_deals (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        deal_key TEXT NOT NULL UNIQUE,
-        flight_quote_id INTEGER NOT NULL,
-        route_id INTEGER NOT NULL,
-        deal_type TEXT NOT NULL DEFAULT 'great_deal',
-        raw_score REAL NOT NULL,
-        final_score REAL NOT NULL,
-        deal_score REAL NULL,
-        opportunity_level TEXT NOT NULL,
-        price REAL NOT NULL,
-        baseline_price REAL NULL,
-        savings_amount REAL NULL,
-        savings_pct REAL NULL,
-        status TEXT NOT NULL DEFAULT 'candidate',
-        rejection_reason TEXT NULL,
-        score_breakdown TEXT NOT NULL DEFAULT '{}',
-        ai_title TEXT NULL,
-        ai_description TEXT NULL,
-        published_at TEXT NULL,
-        expires_at TEXT NULL,
-        source_observed_at TEXT NOT NULL,
-        created_at TEXT NOT NULL DEFAULT (datetime('now')),
-        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-      );
-      CREATE INDEX IF NOT EXISTS idx_detected_deals_feed
-        ON detected_deals(status, final_score DESC, published_at DESC, source_observed_at DESC);
-      CREATE INDEX IF NOT EXISTS idx_detected_deals_route_status
-        ON detected_deals(route_id, status, published_at DESC);
-      CREATE INDEX IF NOT EXISTS idx_detected_deals_quote
-        ON detected_deals(flight_quote_id);
-      CREATE INDEX IF NOT EXISTS idx_detected_deals_expiration
-        ON detected_deals(status, expires_at, source_observed_at DESC);
-    `);
+    sqliteDb.exec(DETECTED_DEALS_SQLITE_SCHEMA_SQL);
     try {
-      sqliteDb.exec(`ALTER TABLE detected_deals ADD COLUMN deal_score REAL NULL`);
+      sqliteDb.exec(DETECTED_DEALS_SQLITE_DEAL_SCORE_MIGRATION_SQL);
     } catch {}
     try {
-      sqliteDb.exec(`
-        CREATE INDEX IF NOT EXISTS idx_detected_deals_feed_deal_score
-          ON detected_deals(status, deal_score DESC, source_observed_at DESC)
-      `);
+      sqliteDb.exec(DETECTED_DEALS_SQLITE_DEAL_SCORE_INDEX_SQL);
     } catch {}
   }
 
@@ -1153,7 +701,7 @@ export function createDetectedDealsEngine(options = {}) {
   async function detectDeals({ routeId = null, ...runtimeOptions } = {}) {
     await ensureInitialized();
     const normalizedRouteId = normalizeRouteId(routeId);
-    const config = getConfig(runtimeOptions);
+    const config = getDetectedDealsRuntimeConfig(runtimeOptions, options);
     const startedAt = Date.now();
 
     if (!schemaReady) {

@@ -1,40 +1,27 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { readDb, withDb } from './db.js';
+import {
+  COUNTER_NAMES,
+  PLANS,
+  buildDefaultApiKeyQuota,
+  countersWithIncrement,
+  getCounter,
+  hashKey,
+  mapPlanRowToModel,
+  mapRemaining,
+  monthKey,
+  monthResetIso,
+  normalizeCounterCost,
+  normalizePlanId,
+  nowIso,
+  planCounterLimit,
+  randomId,
+  sanitizeScopes
+} from './saas-db-helpers.js';
+import { checkAndExpireTrialForUser, grantPremiumTrialForUser, isInTrial, trialDaysRemaining } from './saas-trial.js';
 
-const COUNTER_NAMES = ['read', 'search', 'decision', 'alerts', 'notifications', 'export'];
-
-export const PLANS = {
-  free: {
-    id: 'free',
-    name: 'Free',
-    monthlyCredits: 0,
-    priceEur: 0,
-    aiEnabled: false,
-    apiKeysMax: 0,
-    features: { exports: false, apiKeys: false, aiIncluded: false },
-    quotas: { read: 400, search: 120, decision: 30, alerts: 40, notifications: 80, export: 0 }
-  },
-  pro: {
-    id: 'pro',
-    name: 'Pro',
-    monthlyCredits: 500,
-    priceEur: 12.99,
-    aiEnabled: true,
-    apiKeysMax: 10,
-    features: { exports: false, apiKeys: true, aiIncluded: true },
-    quotas: { read: 4000, search: 900, decision: 240, alerts: 400, notifications: 900, export: 0 }
-  },
-  creator: {
-    id: 'creator',
-    name: 'Creator',
-    monthlyCredits: 2000,
-    priceEur: 29.99,
-    aiEnabled: true,
-    apiKeysMax: 50,
-    features: { exports: true, apiKeys: true, aiIncluded: true },
-    quotas: { read: 16000, search: 3000, decision: 1000, alerts: 2200, notifications: 4000, export: 400 }
-  }
-};
+export { PLANS } from './saas-db-helpers.js';
+export { isInTrial, trialDaysRemaining } from './saas-trial.js';
 
 let _pgPool = null;
 export function setSaasPool(pool) {
@@ -48,96 +35,6 @@ function pg() {
   return _pgPool;
 }
 
-function randomId() {
-  return randomBytes(12).toString('hex');
-}
-
-function hashKey(rawKey) {
-  return createHash('sha256').update(rawKey).digest('hex');
-}
-
-function nowIso() {
-  return new Date().toISOString();
-}
-
-function monthKey(date = new Date()) {
-  const y = date.getUTCFullYear();
-  const m = String(date.getUTCMonth() + 1).padStart(2, '0');
-  return `${y}-${m}`;
-}
-
-function monthResetIso(periodKey) {
-  const [y, m] = String(periodKey || '').split('-').map((n) => Number(n));
-  if (!Number.isFinite(y) || !Number.isFinite(m)) return nowIso();
-  return new Date(Date.UTC(y, m, 1, 0, 0, 0, 0)).toISOString();
-}
-
-function normalizePlanId(planId) {
-  return PLANS[planId] ? planId : 'free';
-}
-
-function mapPlanRowToModel(planId, row = null) {
-  const plan = PLANS[normalizePlanId(planId)];
-  return {
-    id: row?.id || randomId(),
-    userId: row?.user_id ?? row?.userId,
-    planId: plan.id,
-    status: row?.status || 'active',
-    extraCredits: Number(row?.extra_credits ?? row?.extraCredits ?? 0),
-    currentPeriodStart: row?.current_period_start ?? row?.currentPeriodStart ?? nowIso(),
-    currentPeriodEnd:
-      row?.current_period_end ??
-      row?.currentPeriodEnd ??
-      new Date(Date.now() + 31 * 24 * 60 * 60 * 1000).toISOString(),
-    monthly_credits: Number(row?.monthly_credits ?? plan.monthlyCredits),
-    price_monthly_eur: Number(row?.price_monthly_eur ?? plan.priceEur),
-    features: row?.features || plan.features
-  };
-}
-
-function planCounterLimit(planId, counter) {
-  const key = String(counter || '').trim().toLowerCase();
-  const plan = PLANS[normalizePlanId(planId)];
-  return Number(plan.quotas?.[key] ?? 0);
-}
-
-function buildDefaultApiKeyQuota(planId) {
-  const plan = PLANS[normalizePlanId(planId)];
-  return {
-    read: Math.max(0, Math.floor((plan.quotas.read || 0) * 0.8)),
-    search: Math.max(0, Math.floor((plan.quotas.search || 0) * 0.8)),
-    decision: Math.max(0, Math.floor((plan.quotas.decision || 0) * 0.8)),
-    alerts: Math.max(0, Math.floor((plan.quotas.alerts || 0) * 0.8)),
-    notifications: Math.max(0, Math.floor((plan.quotas.notifications || 0) * 0.8)),
-    export: Math.max(0, Math.floor((plan.quotas.export || 0) * 0.8))
-  };
-}
-
-function sanitizeScopes(scopes) {
-  const allowed = new Set(['read', 'search', 'alerts', 'export']);
-  const clean = Array.isArray(scopes) ? scopes : [];
-  const unique = [...new Set(clean.map((s) => String(s || '').toLowerCase()))].filter((s) => allowed.has(s));
-  return unique.length > 0 ? unique : ['read'];
-}
-
-function normalizeCounterCost(cost) {
-  if (typeof cost === 'number') {
-    return { counter: 'search', amount: Math.max(1, Math.floor(cost)) };
-  }
-  const counter = String(cost?.counter || 'search').trim().toLowerCase();
-  const amount = Math.max(1, Math.floor(Number(cost?.amount ?? 1)));
-  return { counter, amount };
-}
-
-function countersWithIncrement(counters, counter, amount) {
-  const next = { ...(counters || {}) };
-  next[counter] = Number(next[counter] || 0) + amount;
-  return next;
-}
-
-function getCounter(counters, counter) {
-  return Number(counters?.[counter] || 0);
-}
 
 async function loadApiKeyById(userId, keyId) {
   if (pg()) {
@@ -454,6 +351,49 @@ export async function checkAndIncrementQuota(userId, cost, { endpoint = 'unknown
   return result;
 }
 
+/**
+ * Read-only quota status — returns current usage for all counters without
+ * incrementing any counter.  Safe to call from GET endpoints.
+ */
+export async function getQuotaStatus(userId) {
+  const periodKey = monthKey();
+  const sub = await getOrCreateSubscription(userId);
+  const plan = PLANS[normalizePlanId(sub.planId)];
+
+  let counters = {};
+  if (pg()) {
+    const res = await pg().query(
+      `SELECT counters FROM usage_counters
+       WHERE actor_type = 'user' AND actor_id = $1 AND period_key = $2
+       LIMIT 1`,
+      [userId, periodKey]
+    );
+    counters = res.rows[0]?.counters || {};
+  } else {
+    const row = await getCounterRowJson('user', userId, userId, periodKey);
+    counters = row?.counters || {};
+  }
+
+  const limits = plan.quotas || {};
+  const status = {};
+  for (const counter of COUNTER_NAMES) {
+    const limit = Number(limits[counter] ?? 0);
+    const used  = Number(counters[counter]  ?? 0);
+    status[counter] = {
+      used,
+      limit,
+      remaining: Math.max(0, limit - used),
+      resetAt: monthResetIso(periodKey)
+    };
+  }
+
+  return {
+    planId: sub.planId,
+    periodKey,
+    counters: status
+  };
+}
+
 export async function issueApiKey(userId, { name = 'Default key', scopes = ['read'], quotaLimits = null, maxKeys = null } = {}) {
   const sub = await getOrCreateSubscription(userId);
   const plan = PLANS[normalizePlanId(sub.planId)];
@@ -758,16 +698,6 @@ async function collectCountersForActor({ actorType, actorId, userId, periodKey }
   return row?.counters || {};
 }
 
-function mapRemaining(limits, counters) {
-  const remaining = {};
-  for (const name of COUNTER_NAMES) {
-    const limit = Number(limits?.[name] ?? 0);
-    const used = Number(counters?.[name] ?? 0);
-    remaining[name] = Math.max(0, limit - used);
-  }
-  return remaining;
-}
-
 export async function getUsageSnapshot(userId, { apiKeyId = null } = {}) {
   const sub = await getOrCreateSubscription(userId);
   const plan = PLANS[normalizePlanId(sub.planId)];
@@ -850,3 +780,81 @@ export async function getPricingConfig() {
     }
   };
 }
+
+// ── Premium trial helpers ─────────────────────────────────────────────────────
+
+/**
+ * Grant a time-limited Pro trial to a newly registered user.
+ * Updates the user row in-place (SQLite / in-memory DB path).
+ * Returns { trialEndsAt, planType } or null when trial is disabled.
+ */
+export async function grantPremiumTrial(userId) {
+  return grantPremiumTrialForUser({
+    userId,
+    pool: pg(),
+    withDb
+  });
+}
+
+export async function getDailySearchUsageSnapshot({ sinceIso = null } = {}) {
+  const since = String(sinceIso || new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
+  if (pg()) {
+    const res = await pg().query(
+      `SELECT
+         COUNT(*)::int AS total_events,
+         COUNT(DISTINCT user_id)::int AS unique_users,
+         COUNT(DISTINCT (metadata->>'session_id_hash'))::int AS unique_sessions,
+         COALESCE(SUM(credits_used), 0)::int AS total_credits
+       FROM usage_events
+       WHERE counter = 'search'
+         AND created_at >= $1::timestamptz`,
+      [since]
+    );
+    return {
+      sinceIso: since,
+      totalSearchEvents: Number(res.rows[0]?.total_events || 0),
+      uniqueUsers: Number(res.rows[0]?.unique_users || 0),
+      uniqueSessions: Number(res.rows[0]?.unique_sessions || 0),
+      totalSearchCredits: Number(res.rows[0]?.total_credits || 0)
+    };
+  }
+
+  const db = await readDb();
+  const events = Array.isArray(db?.usageEvents) ? db.usageEvents : [];
+  const sinceMs = new Date(since).getTime();
+  const rows = events.filter((item) => {
+    if (String(item?.counter || '') !== 'search') return false;
+    const atMs = new Date(String(item?.createdAt || 0)).getTime();
+    return Number.isFinite(atMs) && atMs >= sinceMs;
+  });
+  const users = new Set();
+  const sessions = new Set();
+  let credits = 0;
+  for (const row of rows) {
+    if (row?.userId) users.add(String(row.userId));
+    const sessionHash = row?.metadata?.session_id_hash;
+    if (sessionHash) sessions.add(String(sessionHash));
+    credits += Number(row?.creditsUsed || 0);
+  }
+  return {
+    sinceIso: since,
+    totalSearchEvents: rows.length,
+    uniqueUsers: users.size,
+    uniqueSessions: sessions.size,
+    totalSearchCredits: credits
+  };
+}
+
+/**
+ * Check if a user's trial has expired and downgrade them to free if so.
+ * Should be called at login time (non-blocking — failure is ignored).
+ * Returns true if a downgrade was applied.
+ */
+export async function checkAndExpireTrial(userId) {
+  return checkAndExpireTrialForUser({
+    userId,
+    pool: pg(),
+    withDb
+  });
+}
+

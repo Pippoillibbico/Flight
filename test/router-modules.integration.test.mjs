@@ -39,7 +39,7 @@ test('system router exposes /health', async () => {
         totals: { priceObservations: 1, routeBaselines: 1, routeCoverageStats: 1, activeSubscriptions: 1 },
         coverage: { high: 1, medium: 0, low: 0, veryLow: 0 }
       }),
-      providerRegistry: { listProviders: () => [{ name: 'duffel', configured: false }, { name: 'amadeus', configured: false }] }
+      providerRegistry: { listProviders: () => [{ name: 'duffel', configured: false }] }
     })
   );
 
@@ -73,7 +73,7 @@ test('system router exposes /api/system/data-status', async () => {
         totals: { priceObservations: 2, routeBaselines: 1, routeCoverageStats: 1, activeSubscriptions: 1 },
         coverage: { high: 1, medium: 0, low: 0, veryLow: 0 }
       }),
-      providerRegistry: { listProviders: () => [{ name: 'duffel', configured: true }, { name: 'amadeus', configured: false }] }
+      providerRegistry: { listProviders: () => [{ name: 'duffel', configured: true }] }
     })
   );
 
@@ -109,7 +109,7 @@ test('system router protects sensitive status endpoints with admin guard', async
         totals: { priceObservations: 2, routeBaselines: 1, routeCoverageStats: 1, activeSubscriptions: 1 },
         coverage: { high: 1, medium: 0, low: 0, veryLow: 0 }
       }),
-      providerRegistry: { listProviders: () => [{ name: 'duffel', configured: true }, { name: 'amadeus', configured: false }] },
+      providerRegistry: { listProviders: () => [{ name: 'duffel', configured: true }] },
       authGuard: (req, _res, next) => {
         req.user = { sub: 'u1', email: 'user@example.com' };
         next();
@@ -150,6 +150,8 @@ test('system router exposes /api/health/observability', async () => {
       }),
       getOpportunityPipelineStats: async () => ({ apiQuality: { filteredOutSinceBoot: 3 } }),
       getDiscoveryFeedRuntimeMetrics: () => ({ freshBuildsTotal: 11, cacheHitsTotal: 5, skippedTotal: 1 }),
+      getAiCostGuardMetrics: () => ({ checks: 7, blocked: 2, allowed: 5 }),
+      getProviderCostGuardMetrics: () => ({ checks: 9, blocked: 3, allowed: 6 }),
       providerRegistry: {
         runtimeStats: () => [{ name: 'duffel', totalSearches: 5, failures: 1, rejectedOffers: 2 }]
       }
@@ -166,6 +168,8 @@ test('system router exposes /api/health/observability', async () => {
     assert.equal(body.pipelineQuality.discoveryFeed.freshBuildsTotal, 11);
     assert.equal(body.counters.providerSearches, 5);
     assert.equal(body.counters.discoveryFeedCacheHits, 5);
+    assert.equal(body.aiCostGuard.blocked, 2);
+    assert.equal(body.providerCostGuard.blocked, 3);
   });
 });
 

@@ -18,6 +18,7 @@ function parseListSafe(raw) {
 class InMemoryCache {
   constructor() {
     this.store = new Map();
+    this.zsets = new Map(); // sorted sets stored separately: key → Array<{score,member}>
   }
 
   _getEntry(key) {
@@ -50,6 +51,15 @@ class InMemoryCache {
   async incr(key) {
     const hit = this._getEntry(key);
     const next = (hit ? Number(hit.value || 0) : 0) + 1;
+    this.store.set(key, { value: String(next), expiresAt: hit?.expiresAt || null });
+    return next;
+  }
+
+  async incrby(key, amount) {
+    const hit = this._getEntry(key);
+    const delta = Number(amount);
+    const safeDelta = Number.isFinite(delta) ? Math.trunc(delta) : 0;
+    const next = (hit ? Number(hit.value || 0) : 0) + safeDelta;
     this.store.set(key, { value: String(next), expiresAt: hit?.expiresAt || null });
     return next;
   }
@@ -131,6 +141,55 @@ class InMemoryCache {
   async ping() {
     return 'PONG';
   }
+
+  // ── Sorted set operations ────────────────────────────────────────
+  _zget(key) {
+    return this.zsets.get(key) || [];
+  }
+
+  async zadd(key, score, member) {
+    const arr = this._zget(key);
+    const idx = arr.findIndex((e) => e.member === member);
+    if (idx !== -1) {
+      arr[idx].score = Number(score);
+    } else {
+      arr.push({ score: Number(score), member: String(member) });
+    }
+    arr.sort((a, b) => a.score - b.score);
+    this.zsets.set(key, arr);
+    return idx === -1 ? 1 : 0;
+  }
+
+  async zrevrangebyscore(key, max, min, ...args) {
+    const arr = this._zget(key);
+    const maxScore = max === '+inf' ? Infinity : Number(max);
+    const minScore = min === '-inf' ? -Infinity : Number(min);
+    let filtered = arr.filter((e) => e.score >= minScore && e.score <= maxScore).reverse();
+    let offset = 0;
+    let count = filtered.length;
+    for (let i = 0; i < args.length; i++) {
+      if (String(args[i]).toUpperCase() === 'LIMIT' && args[i + 1] != null && args[i + 2] != null) {
+        offset = Number(args[i + 1]);
+        count = Number(args[i + 2]);
+        break;
+      }
+    }
+    return filtered.slice(offset, offset + count).map((e) => e.member);
+  }
+
+  async zremrangebyscore(key, min, max) {
+    const arr = this._zget(key);
+    const minScore = min === '-inf' ? -Infinity : Number(min);
+    const maxScore = max === '+inf' ? Infinity : Number(max);
+    const before = arr.length;
+    const kept = arr.filter((e) => e.score < minScore || e.score > maxScore);
+    this.zsets.set(key, kept);
+    return before - kept.length;
+  }
+
+  async zcard(key) {
+    return this._zget(key).length;
+  }
 }
 
 class HybridCache {
@@ -179,6 +238,10 @@ class HybridCache {
     return this._withFallback('incr', () => this.redisClient.incr(key), () => this.memory.incr(key));
   }
 
+  async incrby(key, amount) {
+    return this._withFallback('incrby', () => this.redisClient.incrby(key, amount), () => this.memory.incrby(key, amount));
+  }
+
   async expire(key, ttlSec) {
     return this._withFallback('expire', () => this.redisClient.expire(key, ttlSec), () => this.memory.expire(key, ttlSec));
   }
@@ -211,6 +274,39 @@ class HybridCache {
     return this._withFallback('ping', () => this.redisClient.ping(), () => this.memory.ping());
   }
 
+  // ── Sorted set operations ────────────────────────────────────────
+  async zadd(key, score, member) {
+    return this._withFallback(
+      'zadd',
+      () => this.redisClient.zadd(key, score, member),
+      () => this.memory.zadd(key, score, member)
+    );
+  }
+
+  async zrevrangebyscore(key, max, min, ...args) {
+    return this._withFallback(
+      'zrevrangebyscore',
+      () => this.redisClient.zrevrangebyscore(key, max, min, ...args),
+      () => this.memory.zrevrangebyscore(key, max, min, ...args)
+    );
+  }
+
+  async zremrangebyscore(key, min, max) {
+    return this._withFallback(
+      'zremrangebyscore',
+      () => this.redisClient.zremrangebyscore(key, min, max),
+      () => this.memory.zremrangebyscore(key, min, max)
+    );
+  }
+
+  async zcard(key) {
+    return this._withFallback(
+      'zcard',
+      () => this.redisClient.zcard(key),
+      () => this.memory.zcard(key)
+    );
+  }
+
   async quit() {
     if (!this.redisClient || typeof this.redisClient.quit !== 'function') return;
     await this.redisClient.quit();
@@ -239,6 +335,19 @@ export function getCacheClient() {
   }
   singleton = new InMemoryCache();
   return singleton;
+}
+
+export function getCacheRuntimeState() {
+  const client = getCacheClient();
+  const hasRedisClient = Boolean(client && typeof client === 'object' && 'redisClient' in client && client.redisClient);
+  const redisDegraded = Boolean(client && typeof client === 'object' && 'redisDegraded' in client && client.redisDegraded);
+  const redisStatus = hasRedisClient ? String(client.redisClient?.status || '') : '';
+  const redisConnected = hasRedisClient && !redisDegraded && (redisStatus === 'ready' || redisStatus === 'connect');
+  return {
+    redisConnected,
+    source: redisConnected ? 'redis' : 'in-memory',
+    redisStatus: hasRedisClient ? redisStatus : 'not_configured'
+  };
 }
 
 export async function closeCacheClient() {

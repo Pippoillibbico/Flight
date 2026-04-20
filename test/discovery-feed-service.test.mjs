@@ -916,15 +916,13 @@ async function createMinimalDb() {
   return db;
 }
 
-function withProviderEnv({ scan = '', duffel = '', amadeus = '' }, fn) {
-  const prev = { scan: process.env.FLIGHT_SCAN_ENABLED, duffel: process.env.ENABLE_PROVIDER_DUFFEL, amadeus: process.env.ENABLE_PROVIDER_AMADEUS };
+function withProviderEnv({ scan = '', duffel = '' }, fn) {
+  const prev = { scan: process.env.FLIGHT_SCAN_ENABLED, duffel: process.env.ENABLE_PROVIDER_DUFFEL };
   if (scan) process.env.FLIGHT_SCAN_ENABLED = scan; else delete process.env.FLIGHT_SCAN_ENABLED;
   if (duffel) process.env.ENABLE_PROVIDER_DUFFEL = duffel; else delete process.env.ENABLE_PROVIDER_DUFFEL;
-  if (amadeus) process.env.ENABLE_PROVIDER_AMADEUS = amadeus; else delete process.env.ENABLE_PROVIDER_AMADEUS;
   return Promise.resolve().then(fn).finally(() => {
     if (prev.scan === undefined) delete process.env.FLIGHT_SCAN_ENABLED; else process.env.FLIGHT_SCAN_ENABLED = prev.scan;
     if (prev.duffel === undefined) delete process.env.ENABLE_PROVIDER_DUFFEL; else process.env.ENABLE_PROVIDER_DUFFEL = prev.duffel;
-    if (prev.amadeus === undefined) delete process.env.ENABLE_PROVIDER_AMADEUS; else process.env.ENABLE_PROVIDER_AMADEUS = prev.amadeus;
   });
 }
 
@@ -936,7 +934,7 @@ test('discovery feed meta.data_source is "internal" when no live providers confi
     logger: { info: () => {}, warn: () => {}, error: () => {} }
   });
 
-  await withProviderEnv({ scan: '', duffel: '', amadeus: '' }, async () => {
+  await withProviderEnv({ scan: '', duffel: '' }, async () => {
     const payload = await service.buildDiscoveryFeed({ origin: 'FCO', limit: 5 });
     assert.equal(payload.skipped, false);
     assert.equal(payload.meta.data_source, 'internal',
@@ -952,27 +950,11 @@ test('discovery feed meta.data_source is "live" when scan enabled with Duffel pr
     logger: { info: () => {}, warn: () => {}, error: () => {} }
   });
 
-  await withProviderEnv({ scan: 'true', duffel: 'true', amadeus: '' }, async () => {
+  await withProviderEnv({ scan: 'true', duffel: 'true' }, async () => {
     const payload = await service.buildDiscoveryFeed({ origin: 'FCO', limit: 5 });
     assert.equal(payload.skipped, false);
     assert.equal(payload.meta.data_source, 'live',
       'data_source must be "live" when FLIGHT_SCAN_ENABLED=true and ENABLE_PROVIDER_DUFFEL=true');
-  });
-});
-
-test('discovery feed meta.data_source is "live" when scan enabled with Amadeus provider', async () => {
-  const db = await createMinimalDb();
-  const service = createDiscoveryFeedService({
-    mode: 'sqlite',
-    sqliteDb: db,
-    logger: { info: () => {}, warn: () => {}, error: () => {} }
-  });
-
-  await withProviderEnv({ scan: 'true', duffel: '', amadeus: 'true' }, async () => {
-    const payload = await service.buildDiscoveryFeed({ origin: 'FCO', limit: 5 });
-    assert.equal(payload.skipped, false);
-    assert.equal(payload.meta.data_source, 'live',
-      'data_source must be "live" when FLIGHT_SCAN_ENABLED=true and ENABLE_PROVIDER_AMADEUS=true');
   });
 });
 
@@ -984,7 +966,7 @@ test('discovery feed meta.data_source is "internal" when scan enabled but no pro
     logger: { info: () => {}, warn: () => {}, error: () => {} }
   });
 
-  await withProviderEnv({ scan: 'true', duffel: '', amadeus: '' }, async () => {
+  await withProviderEnv({ scan: 'true', duffel: '' }, async () => {
     const payload = await service.buildDiscoveryFeed({ origin: 'FCO', limit: 5 });
     assert.equal(payload.skipped, false);
     assert.equal(payload.meta.data_source, 'internal',

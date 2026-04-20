@@ -67,16 +67,11 @@ function isLikelyUrl(rawValue) {
   }
 }
 
-function isValidBillingProvider(rawValue) {
+function isValidBillingProvider(rawValue, env) {
   const value = String(rawValue || '').trim().toLowerCase();
-  return !value || value === 'stripe' || value === 'braintree';
-}
-
-function resolveBillingProvider(env) {
-  const value = String(env?.BILLING_PROVIDER || '').trim().toLowerCase();
-  if (value === 'stripe' || value === 'braintree') return value;
   const isProduction = String(env?.NODE_ENV || '').trim().toLowerCase() === 'production';
-  return isProduction ? 'braintree' : 'stripe';
+  if (!isProduction) return !value || value === 'stripe';
+  return value === 'stripe';
 }
 
 function evaluateCheck({ key, label, severity, validator, detailOnFail, detailOnPass }, env) {
@@ -96,9 +91,23 @@ const CHECKS = [
     key: 'BILLING_PROVIDER',
     label: 'Billing provider selection',
     severity: 'blocking',
-    validator: (value) => isValidBillingProvider(value),
-    detailOnFail: 'use BILLING_PROVIDER=stripe or BILLING_PROVIDER=braintree',
+    validator: (value, env) => isValidBillingProvider(value, env),
+    detailOnFail: 'production requires BILLING_PROVIDER=stripe',
     detailOnPass: 'configured'
+  },
+  {
+    key: 'STRIPE_SECRET_KEY',
+    label: 'Stripe secret key',
+    severity: 'blocking',
+    validator: (value, env) => {
+      const isProduction = String(env?.NODE_ENV || '').trim().toLowerCase() === 'production';
+      const provider = String(env?.BILLING_PROVIDER || '').trim().toLowerCase();
+      const billingActive = isProduction && provider === 'stripe';
+      if (!billingActive) return true;
+      return hasMinLength(value, 16) && !valueLooksPlaceholder(value);
+    },
+    detailOnFail: 'required in production when BILLING_PROVIDER=stripe',
+    detailOnPass: 'configured or non-production'
   },
   {
     key: 'JWT_SECRET',
@@ -194,13 +203,144 @@ const CHECKS = [
     severity: 'blocking',
     validator: (value, env) => {
       const hasStripeKey = hasMinLength(env.STRIPE_SECRET_KEY, 16);
-      if (!hasStripeKey) return true; // Stripe not configured → always pass
+      if (!hasStripeKey) return true; // Stripe not configured -> always pass
       const isProduction = String(env.NODE_ENV || '').trim().toLowerCase() === 'production';
-      if (!isProduction) return true; // dev/staging → pass (shows only as recommended gap)
+      if (!isProduction) return true; // dev/staging -> pass (shows only as recommended gap)
       return hasMinLength(value, 12) && !valueLooksPlaceholder(value);
     },
     detailOnFail: 'required in production when STRIPE_SECRET_KEY is configured',
     detailOnPass: 'configured or Stripe/production not active'
+  },
+  {
+    key: 'STRIPE_PUBLISHABLE_KEY',
+    label: 'Stripe publishable key',
+    severity: 'blocking',
+    validator: (value, env) => {
+      const hasStripeKey = hasMinLength(env.STRIPE_SECRET_KEY, 16);
+      if (!hasStripeKey) return true;
+      const isProduction = String(env.NODE_ENV || '').trim().toLowerCase() === 'production';
+      if (!isProduction) return true;
+      return hasMinLength(value, 16) && !valueLooksPlaceholder(value);
+    },
+    detailOnFail: 'required in production when STRIPE_SECRET_KEY is configured (needed for client-side Stripe flows)',
+    detailOnPass: 'configured or Stripe not active'
+  },
+  {
+    key: 'STRIPE_PRICE_PRO',
+    label: 'Stripe PRO price id',
+    severity: 'blocking',
+    validator: (value, env) => {
+      const hasStripeKey = hasMinLength(env.STRIPE_SECRET_KEY, 16);
+      if (!hasStripeKey) return true;
+      const isProduction = String(env.NODE_ENV || '').trim().toLowerCase() === 'production';
+      if (!isProduction) return true;
+      return hasMinLength(value, 8) && !valueLooksPlaceholder(value);
+    },
+    detailOnFail: 'required in production when Stripe is active (checkout cannot sell PRO without a configured price)',
+    detailOnPass: 'configured or Stripe not active'
+  },
+  {
+    key: 'STRIPE_PRICE_CREATOR',
+    label: 'Stripe CREATOR/ELITE price id',
+    severity: 'blocking',
+    validator: (value, env) => {
+      const hasStripeKey = hasMinLength(env.STRIPE_SECRET_KEY, 16);
+      if (!hasStripeKey) return true;
+      const isProduction = String(env.NODE_ENV || '').trim().toLowerCase() === 'production';
+      if (!isProduction) return true;
+      return hasMinLength(value, 8) && !valueLooksPlaceholder(value);
+    },
+    detailOnFail: 'required in production when Stripe is active (checkout cannot sell ELITE without a configured price)',
+    detailOnPass: 'configured or Stripe not active'
+  },
+  {
+    key: 'STRIPE_ALLOW_INLINE_PRICE_DATA',
+    label: 'Stripe inline price-data fallback disabled in production',
+    severity: 'blocking',
+    validator: (value, env) => {
+      const hasStripeKey = hasMinLength(env.STRIPE_SECRET_KEY, 16);
+      if (!hasStripeKey) return true;
+      const isProduction = String(env.NODE_ENV || '').trim().toLowerCase() === 'production';
+      if (!isProduction) return true;
+      return String(value || '').trim().toLowerCase() !== 'true';
+    },
+    detailOnFail: 'set STRIPE_ALLOW_INLINE_PRICE_DATA=false in production',
+    detailOnPass: 'configured or Stripe/production not active'
+  },
+  {
+    key: 'AI_ALLOW_FREE_USERS',
+    label: 'AI free-user bypass disabled in production',
+    severity: 'blocking',
+    validator: (value, env) => {
+      const isProduction = String(env?.NODE_ENV || '').trim().toLowerCase() === 'production';
+      if (!isProduction) return true;
+      return !parseFlag(value, false);
+    },
+    detailOnFail: 'set AI_ALLOW_FREE_USERS=false in production',
+    detailOnPass: 'configured'
+  },
+  {
+    key: 'AI_BUDGET_FAIL_OPEN',
+    label: 'AI budget guard fail-open disabled in production',
+    severity: 'blocking',
+    validator: (value, env) => {
+      const isProduction = String(env?.NODE_ENV || '').trim().toLowerCase() === 'production';
+      if (!isProduction) return true;
+      return !parseFlag(value, false);
+    },
+    detailOnFail: 'set AI_BUDGET_FAIL_OPEN=false in production',
+    detailOnPass: 'configured'
+  },
+  {
+    key: 'AI_ALLOWED_PLAN_TYPES',
+    label: 'AI allowed plans exclude free in production',
+    severity: 'blocking',
+    validator: (value, env) => {
+      const isProduction = String(env?.NODE_ENV || '').trim().toLowerCase() === 'production';
+      if (!isProduction) return true;
+      const plans = parseList(value || 'elite,creator')
+        .map((entry) => String(entry || '').trim().toLowerCase())
+        .filter(Boolean);
+      return !plans.includes('free');
+    },
+    detailOnFail: 'AI_ALLOWED_PLAN_TYPES must not include free in production',
+    detailOnPass: 'configured'
+  },
+  {
+    key: 'SEARCH_PROVIDER_BUDGET_FAIL_OPEN',
+    label: 'Provider budget guard fail-open disabled in production',
+    severity: 'blocking',
+    validator: (value, env) => {
+      const isProduction = String(env?.NODE_ENV || '').trim().toLowerCase() === 'production';
+      if (!isProduction) return true;
+      return !parseFlag(value, false);
+    },
+    detailOnFail: 'set SEARCH_PROVIDER_BUDGET_FAIL_OPEN=false in production',
+    detailOnPass: 'configured'
+  },
+  {
+    key: 'PRICING_ENABLED',
+    label: 'Pricing engine enabled in production',
+    severity: 'blocking',
+    validator: (value, env) => {
+      const isProduction = String(env?.NODE_ENV || '').trim().toLowerCase() === 'production';
+      if (!isProduction) return true;
+      return parseFlag(value, true);
+    },
+    detailOnFail: 'set PRICING_ENABLED=true in production to avoid unpriced provider-cost exposure',
+    detailOnPass: 'configured'
+  },
+  {
+    key: 'MARGIN_GUARD_ENABLED',
+    label: 'Margin guard enabled in production',
+    severity: 'blocking',
+    validator: (value, env) => {
+      const isProduction = String(env?.NODE_ENV || '').trim().toLowerCase() === 'production';
+      if (!isProduction) return true;
+      return parseFlag(value, true);
+    },
+    detailOnFail: 'set MARGIN_GUARD_ENABLED=true in production to prevent below-margin offers',
+    detailOnPass: 'configured'
   },
   {
     key: 'SMTP_HOST',
@@ -245,9 +385,7 @@ const CHECKS = [
 export function getRuntimeConfigAudit(env = process.env) {
   const checks = CHECKS.map((check) => evaluateCheck(check, env));
   const isProduction = String(env.NODE_ENV || '').trim().toLowerCase() === 'production';
-  const billingProvider = resolveBillingProvider(env);
   const duffelEnabled = parseFlag(env.ENABLE_PROVIDER_DUFFEL, false);
-  const amadeusEnabled = parseFlag(env.ENABLE_PROVIDER_AMADEUS, false);
   const scanEnabled = parseFlag(env.FLIGHT_SCAN_ENABLED, false);
   const providerCollectionEnabled = parseFlag(env.PROVIDER_COLLECTION_ENABLED, false);
   const dealsContentEnabled = parseFlag(env.DEALS_CONTENT_ENABLED, true);
@@ -299,25 +437,6 @@ export function getRuntimeConfigAudit(env = process.env) {
   checks.push(
     evaluateCheck(
       {
-        key: 'AMADEUS_PROVIDER_CREDENTIALS',
-        label: 'Amadeus provider credentials',
-        severity: amadeusEnabled ? 'blocking' : 'recommended',
-        validator: (_value, envContext) => {
-          if (!parseFlag(envContext.ENABLE_PROVIDER_AMADEUS, false)) return true;
-          const clientIdOk = hasMinLength(envContext.AMADEUS_CLIENT_ID, 6) && !valueLooksPlaceholder(envContext.AMADEUS_CLIENT_ID);
-          const clientSecretOk = hasMinLength(envContext.AMADEUS_CLIENT_SECRET, 8) && !valueLooksPlaceholder(envContext.AMADEUS_CLIENT_SECRET);
-          return clientIdOk && clientSecretOk;
-        },
-        detailOnFail: 'ENABLE_PROVIDER_AMADEUS=true requires AMADEUS_CLIENT_ID and AMADEUS_CLIENT_SECRET',
-        detailOnPass: amadeusEnabled ? 'configured' : 'provider disabled'
-      },
-      env
-    )
-  );
-
-  checks.push(
-    evaluateCheck(
-      {
         key: 'AT_LEAST_ONE_PROVIDER_CONFIGURED',
         label: 'At least one provider configured when scan/collection enabled',
         severity: scanEnabled || providerCollectionEnabled ? 'blocking' : 'recommended',
@@ -330,17 +449,49 @@ export function getRuntimeConfigAudit(env = process.env) {
             parseFlag(envContext.ENABLE_PROVIDER_DUFFEL, false) &&
             hasMinLength(envContext.DUFFEL_API_KEY, 8) &&
             !valueLooksPlaceholder(envContext.DUFFEL_API_KEY);
-          const amadeusReady =
-            parseFlag(envContext.ENABLE_PROVIDER_AMADEUS, false) &&
-            hasMinLength(envContext.AMADEUS_CLIENT_ID, 6) &&
-            !valueLooksPlaceholder(envContext.AMADEUS_CLIENT_ID) &&
-            hasMinLength(envContext.AMADEUS_CLIENT_SECRET, 8) &&
-            !valueLooksPlaceholder(envContext.AMADEUS_CLIENT_SECRET);
-
-          return duffelReady || amadeusReady;
+          return duffelReady;
         },
         detailOnFail: 'scanner/provider collection enabled but no provider is fully configured',
         detailOnPass: scanEnabled || providerCollectionEnabled ? 'configured' : 'scanner/provider collection disabled'
+      },
+      env
+    )
+  );
+
+  checks.push(
+    evaluateCheck(
+      {
+        key: 'SOFT_LAUNCH_PROVIDER_PROFILE',
+        label: 'Soft-launch provider profile (Duffel only)',
+        severity: isProduction ? 'blocking' : 'recommended',
+        validator: (_value, envContext) => {
+          const duffel = parseFlag(envContext.ENABLE_PROVIDER_DUFFEL, false);
+          const kiwi = parseFlag(envContext.ENABLE_PROVIDER_KIWI, false);
+          const skyscanner = parseFlag(envContext.ENABLE_PROVIDER_SKYSCANNER, false);
+          return duffel && !kiwi && !skyscanner;
+        },
+        detailOnFail:
+          'soft-launch requires ENABLE_PROVIDER_DUFFEL=true, ENABLE_PROVIDER_KIWI=false, ENABLE_PROVIDER_SKYSCANNER=false',
+        detailOnPass: 'provider profile matches soft-launch constraints'
+      },
+      env
+    )
+  );
+
+  checks.push(
+    evaluateCheck(
+      {
+        key: 'SOFT_LAUNCH_AFFILIATE_PROFILE',
+        label: 'Soft-launch affiliate profile (Travelpayouts active)',
+        severity: isProduction ? 'blocking' : 'recommended',
+        validator: (_value, envContext) => {
+          const enabled = parseFlag(envContext.ENABLE_TRAVELPAYOUTS_AFFILIATE, true);
+          const marker = String(envContext.AFFILIATE_TRAVELPAYOUTS_MARKER || '').trim();
+          return enabled && hasMinLength(marker, 4) && !valueLooksPlaceholder(marker);
+        },
+        detailOnFail:
+          'soft-launch requires ENABLE_TRAVELPAYOUTS_AFFILIATE=true and AFFILIATE_TRAVELPAYOUTS_MARKER configured',
+        detailOnPass: 'travelpayouts affiliate layer configured'
       },
       env
     )
@@ -388,102 +539,6 @@ export function getRuntimeConfigAudit(env = process.env) {
     )
   );
 
-  if (isProduction) {
-    checks.push(
-      evaluateCheck(
-        {
-          key: 'BILLING_PROVIDER_PRODUCTION_LOCK',
-          label: 'Billing provider production lock',
-          severity: 'blocking',
-          validator: (_value, envContext) => resolveBillingProvider(envContext) === 'braintree',
-          detailOnFail: 'production requires BILLING_PROVIDER=braintree for supported checkout flow',
-          detailOnPass: 'configured'
-        },
-        env
-      )
-    );
-  }
-
-  if (billingProvider === 'braintree') {
-    checks.push(
-      evaluateCheck(
-        {
-          key: 'BT_MERCHANT_ID',
-          label: 'Braintree merchant ID',
-          severity: 'blocking',
-          validator: (value) => hasMinLength(value, 6) && !valueLooksPlaceholder(value),
-          detailOnFail: 'missing or placeholder value',
-          detailOnPass: 'configured'
-        },
-        env
-      )
-    );
-    checks.push(
-      evaluateCheck(
-        {
-          key: 'BT_PUBLIC_KEY',
-          label: 'Braintree public key',
-          severity: 'blocking',
-          validator: (value) => hasMinLength(value, 6) && !valueLooksPlaceholder(value),
-          detailOnFail: 'missing or placeholder value',
-          detailOnPass: 'configured'
-        },
-        env
-      )
-    );
-    checks.push(
-      evaluateCheck(
-        {
-          key: 'BT_PRIVATE_KEY',
-          label: 'Braintree private key',
-          severity: 'blocking',
-          validator: (value) => hasMinLength(value, 12) && !valueLooksPlaceholder(value),
-          detailOnFail: 'missing or placeholder value',
-          detailOnPass: 'configured'
-        },
-        env
-      )
-    );
-    checks.push(
-      evaluateCheck(
-        {
-          key: 'BT_ENVIRONMENT',
-          label: 'Braintree environment',
-          severity: 'blocking',
-          validator: (value) => ['sandbox', 'production'].includes(String(value || '').trim().toLowerCase()),
-          detailOnFail: 'must be sandbox or production',
-          detailOnPass: 'configured'
-        },
-        env
-      )
-    );
-    checks.push(
-      evaluateCheck(
-        {
-          key: 'BT_PLAN_PRO_ID',
-          label: 'Braintree PRO subscription plan ID',
-          severity: isProduction ? 'blocking' : 'recommended',
-          validator: (value) => hasMinLength(value, 4) && !valueLooksPlaceholder(value),
-          detailOnFail: 'required for Braintree PRO subscription checkout — create the plan in the Braintree Control Panel and set BT_PLAN_PRO_ID',
-          detailOnPass: 'configured'
-        },
-        env
-      )
-    );
-    checks.push(
-      evaluateCheck(
-        {
-          key: 'BT_PLAN_CREATOR_ID',
-          label: 'Braintree ELITE subscription plan ID',
-          severity: isProduction ? 'blocking' : 'recommended',
-          validator: (value) => hasMinLength(value, 4) && !valueLooksPlaceholder(value),
-          detailOnFail: 'required for Braintree ELITE subscription checkout — create the plan in the Braintree Control Panel and set BT_PLAN_CREATOR_ID',
-          detailOnPass: 'configured'
-        },
-        env
-      )
-    );
-  }
   const blocking = checks.filter((item) => item.severity === 'blocking');
   const recommended = checks.filter((item) => item.severity === 'recommended');
   const blockingFailed = blocking.filter((item) => !item.ok);
@@ -503,3 +558,4 @@ export function getRuntimeConfigAudit(env = process.env) {
     recommendedFailedKeys: recommendedFailed.map((item) => item.key)
   };
 }
+

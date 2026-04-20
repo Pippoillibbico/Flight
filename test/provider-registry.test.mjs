@@ -5,22 +5,15 @@ import { createProviderRegistry } from '../server/lib/providers/provider-registr
 test('provider registry skips missing credentials safely', async () => {
   const previous = {
     ENABLE_PROVIDER_DUFFEL: process.env.ENABLE_PROVIDER_DUFFEL,
-    ENABLE_PROVIDER_AMADEUS: process.env.ENABLE_PROVIDER_AMADEUS,
-    DUFFEL_API_KEY: process.env.DUFFEL_API_KEY,
-    AMADEUS_CLIENT_ID: process.env.AMADEUS_CLIENT_ID,
-    AMADEUS_CLIENT_SECRET: process.env.AMADEUS_CLIENT_SECRET
+    DUFFEL_API_KEY: process.env.DUFFEL_API_KEY
   };
 
   process.env.ENABLE_PROVIDER_DUFFEL = 'true';
-  process.env.ENABLE_PROVIDER_AMADEUS = 'true';
   process.env.DUFFEL_API_KEY = '';
-  process.env.AMADEUS_CLIENT_ID = '';
-  process.env.AMADEUS_CLIENT_SECRET = '';
 
   const registry = createProviderRegistry();
   const providers = registry.listProviders();
   assert.equal(providers.some((p) => p.name === 'duffel' && p.enabled && !p.configured), true);
-  assert.equal(providers.some((p) => p.name === 'amadeus' && p.enabled && !p.configured), true);
   const offers = await registry.searchOffers({
     originIata: 'FCO',
     destinationIata: 'LIS',
@@ -32,8 +25,42 @@ test('provider registry skips missing credentials safely', async () => {
   assert.deepEqual(offers, []);
 
   process.env.ENABLE_PROVIDER_DUFFEL = previous.ENABLE_PROVIDER_DUFFEL;
-  process.env.ENABLE_PROVIDER_AMADEUS = previous.ENABLE_PROVIDER_AMADEUS;
   process.env.DUFFEL_API_KEY = previous.DUFFEL_API_KEY;
-  process.env.AMADEUS_CLIENT_ID = previous.AMADEUS_CLIENT_ID;
-  process.env.AMADEUS_CLIENT_SECRET = previous.AMADEUS_CLIENT_SECRET;
+});
+
+test('provider registry reflects duffel-only soft-launch profile flags', () => {
+  const previous = {
+    ENABLE_PROVIDER_DUFFEL: process.env.ENABLE_PROVIDER_DUFFEL,
+    DUFFEL_API_KEY: process.env.DUFFEL_API_KEY,
+    ENABLE_PROVIDER_KIWI: process.env.ENABLE_PROVIDER_KIWI,
+    KIWI_TEQUILA_API_KEY: process.env.KIWI_TEQUILA_API_KEY,
+    ENABLE_PROVIDER_SKYSCANNER: process.env.ENABLE_PROVIDER_SKYSCANNER,
+    SKYSCANNER_API_KEY: process.env.SKYSCANNER_API_KEY
+  };
+
+  process.env.ENABLE_PROVIDER_DUFFEL = 'true';
+  process.env.DUFFEL_API_KEY = 'duffel_test_key_profile';
+  process.env.ENABLE_PROVIDER_KIWI = 'false';
+  process.env.KIWI_TEQUILA_API_KEY = '';
+  process.env.ENABLE_PROVIDER_SKYSCANNER = 'false';
+  process.env.SKYSCANNER_API_KEY = '';
+
+  const registry = createProviderRegistry();
+  const providers = registry.listProviders();
+
+  const duffel = providers.find((item) => item.name === 'duffel');
+  const kiwi = providers.find((item) => item.name === 'kiwi');
+  const skyscanner = providers.find((item) => item.name === 'skyscanner');
+
+  assert.equal(Boolean(duffel?.enabled), true);
+  assert.equal(Boolean(duffel?.configured), true);
+  assert.equal(Boolean(kiwi?.enabled), false);
+  assert.equal(Boolean(skyscanner?.enabled), false);
+
+  process.env.ENABLE_PROVIDER_DUFFEL = previous.ENABLE_PROVIDER_DUFFEL;
+  process.env.DUFFEL_API_KEY = previous.DUFFEL_API_KEY;
+  process.env.ENABLE_PROVIDER_KIWI = previous.ENABLE_PROVIDER_KIWI;
+  process.env.KIWI_TEQUILA_API_KEY = previous.KIWI_TEQUILA_API_KEY;
+  process.env.ENABLE_PROVIDER_SKYSCANNER = previous.ENABLE_PROVIDER_SKYSCANNER;
+  process.env.SKYSCANNER_API_KEY = previous.SKYSCANNER_API_KEY;
 });

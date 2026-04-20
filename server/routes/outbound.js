@@ -137,24 +137,19 @@ function parseOutboundResolvePayloadFromTrackingUrl(rawUrl, { outboundResolveSch
 function findMatchingOutboundRedirectEntry(
   db,
   {
-    userId,
-    resolvedUrl,
-    partner,
-    surface,
-    correlationId,
-    itineraryId
+    payload
   }
 ) {
   const redirects = Array.isArray(db?.outboundRedirects) ? db.outboundRedirects : [];
   for (let index = redirects.length - 1; index >= 0; index -= 1) {
     const entry = redirects[index];
     if (!entry) continue;
-    if (String(entry.url || '') !== String(resolvedUrl || '')) continue;
-    if (String(entry.partner || '') !== String(partner || '')) continue;
-    if (String(entry.surface || '') !== String(surface || '')) continue;
-    if (String(entry.userId || '') !== String(userId || '')) continue;
-    if (String(entry.correlationId || '') !== String(correlationId || '')) continue;
-    if (String(entry.itineraryId || '') !== String(itineraryId || '')) continue;
+    if (String(entry.partner || '') !== String(payload?.partner || '')) continue;
+    if (String(entry.surface || '') !== String(payload?.surface || '')) continue;
+    if (String(entry.origin || '') !== String(payload?.origin || '')) continue;
+    if (String(entry.destinationIata || '') !== String(payload?.destinationIata || '')) continue;
+    if (String(entry.correlationId || '') !== String(payload?.correlationId || '')) continue;
+    if (String(entry.itineraryId || '') !== String(payload?.itineraryId || '')) continue;
     return entry;
   }
   return null;
@@ -253,6 +248,10 @@ export function buildOutboundRouter({
         itineraryId: payload.itineraryId,
         origin: payload.origin,
         destinationIata: payload.destinationIata,
+        dateFrom: payload.dateFrom,
+        dateTo: payload.dateTo || null,
+        travellers: payload.travellers,
+        cabinClass: payload.cabinClass,
         destination: payload.destination || payload.destinationIata,
         stopCount: payload.stopCount,
         comfortScore: payload.comfortScore,
@@ -402,12 +401,7 @@ export function buildOutboundRouter({
     await withDb(async (db) => {
       db.outboundRedirects = (db.outboundRedirects || []).filter((entry) => new Date(entry.expiresAt).getTime() > Date.now());
       matchedRedirect = findMatchingOutboundRedirectEntry(db, {
-        userId: auth?.sub || null,
-        resolvedUrl,
-        partner: resolvePayload.partner,
-        surface: resolvePayload.surface,
-        correlationId: resolvePayload.correlationId || null,
-        itineraryId: resolvePayload.itineraryId || null
+        payload: resolvePayload
       });
       if (!matchedRedirect) return db;
 

@@ -12,10 +12,18 @@ test('error handler normalizes auth/forbidden/rate-limit codes', () => {
   assert.equal(getErrorCode({ code: 'auth_required' }, 401), 'unauthorized');
   assert.equal(getErrorCode({ code: 'request_forbidden' }, 403), 'forbidden');
   assert.equal(getErrorCode({ code: 'limit_exceeded' }, 429), 'rate_limited');
+  assert.equal(getErrorCode({ code: 'premium_required' }, 402), 'premium_required');
+  assert.equal(getErrorCode({}, 402), 'premium_required');
 });
 
 test('error handler provides bounded human message for payload_too_large', () => {
   const message = getHumanErrorMessage('payload_too_large', '');
+  assert.equal(typeof message, 'string');
+  assert.equal(message.length > 0, true);
+});
+
+test('error handler provides human message for premium_required', () => {
+  const message = getHumanErrorMessage('premium_required', '');
   assert.equal(typeof message, 'string');
   assert.equal(message.length > 0, true);
 });

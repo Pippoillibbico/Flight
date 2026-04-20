@@ -1,4 +1,21 @@
 import { Router } from 'express';
+import { z } from 'zod';
+import { computeFlightDisplayPrice } from '../lib/pricing-engine.js';
+
+const pricingSimulationSchema = z
+  .object({
+    providerCost: z.coerce.number().positive().max(50000),
+    currency: z.string().trim().min(3).max(3).optional().default('EUR'),
+    userTier: z.enum(['free', 'pro', 'creator', 'elite']).optional().default('free'),
+    deviceType: z.enum(['mobile', 'desktop']).optional().default('desktop'),
+    isReturningUser: z.coerce.boolean().optional().default(false),
+    isLastMinute: z.coerce.boolean().optional().default(false),
+    isPopularRoute: z.coerce.boolean().optional().default(false),
+    isSmartDeal: z.coerce.boolean().optional().default(false),
+    isPremiumDeal: z.coerce.boolean().optional().default(false),
+    departureDate: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable().default(null)
+  })
+  .strict();
 
 export function buildSystemRouter({
   BUILD_VERSION,
@@ -20,6 +37,10 @@ export function buildSystemRouter({
   providerRegistry,
   getScanProviderAdapterMetrics = () => ({}),
   getDiscoveryFeedRuntimeMetrics = () => ({}),
+  getLiveFlightCacheMetrics = () => ({}),
+  getAiCacheMetrics = () => ({}),
+  getAiCostGuardMetrics = () => ({}),
+  getProviderCostGuardMetrics = () => ({}),
   getRuntimeConfigAudit,
   evaluateStartupReadiness,
   authGuard = (_req, _res, next) => next(),
@@ -174,14 +195,11 @@ export function buildSystemRouter({
     const anthropicReady = ready(env.ANTHROPIC_API_KEY, 8);
     const aiReady = openaiReady || anthropicReady;
     const stripeReady = ready(env.STRIPE_SECRET_KEY, 16);
-    const braintreeReady = ready(env.BT_MERCHANT_ID) && ready(env.BT_PUBLIC_KEY) && ready(env.BT_PRIVATE_KEY);
-    const billingProvider = String(env.BILLING_PROVIDER || 'braintree').trim().toLowerCase();
-    const billingReady = billingProvider === 'stripe' ? stripeReady : braintreeReady;
+    const billingProvider = 'stripe';
+    const billingReady = stripeReady;
     const duffelEnabled = parseFlag(env.ENABLE_PROVIDER_DUFFEL);
-    const amadeusEnabled = parseFlag(env.ENABLE_PROVIDER_AMADEUS);
     const duffelReady = duffelEnabled && ready(env.DUFFEL_API_KEY, 8);
-    const amadeusReady = amadeusEnabled && ready(env.AMADEUS_CLIENT_ID) && ready(env.AMADEUS_CLIENT_SECRET);
-    const liveProvidersReady = duffelReady || amadeusReady;
+    const liveProvidersReady = duffelReady;
     const flightScanEnabled = parseFlag(env.FLIGHT_SCAN_ENABLED);
     const pushReady = ready(env.PUSH_WEBHOOK_URL, 10);
     const vapidReady = ready(env.VAPID_PUBLIC_KEY, 40) && ready(env.VAPID_PRIVATE_KEY, 30);
@@ -200,7 +218,7 @@ export function buildSystemRouter({
         cache_redis:          cap(cacheReady, 'REDIS_URL not configured — using in-memory cache'),
 
         // Flight data
-        live_flight_providers: cap(liveProvidersReady, 'No live provider configured (ENABLE_PROVIDER_DUFFEL or ENABLE_PROVIDER_AMADEUS with credentials)'),
+        live_flight_providers: cap(liveProvidersReady, 'No live provider configured (ENABLE_PROVIDER_DUFFEL with credentials)'),
         flight_scan:           cap(flightScanEnabled && liveProvidersReady, flightScanEnabled ? 'Flight scan enabled but no live provider configured' : 'FLIGHT_SCAN_ENABLED=false'),
         data_source:           liveProvidersReady ? 'live' : 'synthetic',
 
@@ -348,13 +366,11 @@ export function buildSystemRouter({
     const opportunityPipeline = (await getOpportunityPipelineStats?.()) || null;
     const providers = providerRegistry?.listProviders?.() || [];
     const duffel = providers.find((p) => p.name === 'duffel');
-    const amadeus = providers.find((p) => p.name === 'amadeus');
     return res.json({
       ...base,
       opportunityPipeline,
       providers: {
-        duffelConfigured: Boolean(duffel?.configured),
-        amadeusConfigured: Boolean(amadeus?.configured)
+        duffelConfigured: Boolean(duffel?.configured)
       }
     });
   });
@@ -381,6 +397,10 @@ export function buildSystemRouter({
     const scanStatus = (await getFlightScanStatus?.()) || null;
     const scanProviderAdapter = getScanProviderAdapterMetrics();
     const discoveryFeedRuntime = getDiscoveryFeedRuntimeMetrics?.() || {};
+    const liveFlightCache = getLiveFlightCacheMetrics?.() || {};
+    const aiCache = getAiCacheMetrics?.() || {};
+    const aiCostGuard = getAiCostGuardMetrics?.() || {};
+    const providerCostGuard = getProviderCostGuardMetrics?.() || {};
     const db = await readDb();
     const totalProviderSearches = providerRuntime.reduce((sum, item) => sum + Number(item.totalSearches || 0), 0);
     const totalProviderFailures = providerRuntime.reduce((sum, item) => sum + Number(item.failures || 0), 0);
@@ -391,6 +411,10 @@ export function buildSystemRouter({
       now: new Date().toISOString(),
       providerRuntime,
       scanProviderAdapter,
+      liveFlightCache,
+      aiCache,
+      aiCostGuard,
+      providerCostGuard,
       scan: {
         enabled: Boolean(FLIGHT_SCAN_ENABLED),
         queue: scanStatus?.queue || null,
@@ -412,6 +436,68 @@ export function buildSystemRouter({
       }
     });
   });
+
+  router.post(
+    '/api/admin/pricing/simulate',
+    authGuard,
+    requireSessionAuth,
+    adminGuard,
+    csrfGuard,
+    requireApiScope('read'),
+    quotaGuard({ counter: 'read', amount: 1 }),
+    async (req, res) => {
+      const parsed = pricingSimulationSchema.safeParse(req.body || {});
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: parsed.error.issues[0]?.message || 'Invalid pricing simulation payload.'
+        });
+      }
+
+      const payload = parsed.data;
+      const context = {
+        userTier: payload.userTier,
+        deviceType: payload.deviceType,
+        isReturningUser: payload.isReturningUser,
+        isLastMinute: payload.isLastMinute,
+        isPopularRoute: payload.isPopularRoute,
+        isSmartDeal: payload.isSmartDeal,
+        isPremiumDeal: payload.isPremiumDeal,
+        departureDate: payload.departureDate || null
+      };
+
+      const simulation = computeFlightDisplayPrice(payload.providerCost, payload.currency, context);
+
+      // Useful for pricing diagnostics: how much markup is applied over provider cost.
+      const absoluteMarkup = Number((simulation.displayPrice - simulation.providerCost).toFixed(2));
+      const markupPct = simulation.providerCost > 0 ? Number(((absoluteMarkup / simulation.providerCost) * 100).toFixed(2)) : 0;
+
+      return res.json({
+        ok: true,
+        input: {
+          providerCost: Number(payload.providerCost),
+          currency: String(payload.currency || 'EUR').toUpperCase(),
+          context
+        },
+        output: {
+          displayPrice: simulation.displayPrice,
+          providerCost: simulation.providerCost,
+          currency: simulation.currency,
+          marginApplied: simulation.marginApplied,
+          marginRate: simulation.marginRate,
+          pricingEnabled: simulation.pricingEnabled,
+          breakdown: simulation.breakdown,
+          diagnostics: {
+            absoluteMarkup,
+            markupPct
+          }
+        },
+        meta: {
+          endpoint: '/api/admin/pricing/simulate',
+          generatedAt: new Date().toISOString()
+        }
+      });
+    }
+  );
 
   router.get(
     '/api/system/flight-scan/status',

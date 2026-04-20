@@ -39,14 +39,10 @@ function resolveCapabilities(env = {}) {
   const anthropicReady = ready(env.ANTHROPIC_API_KEY, 8);
   const aiReady = openaiReady || anthropicReady;
   const stripeReady = ready(env.STRIPE_SECRET_KEY, 16);
-  const braintreeReady = ready(env.BT_MERCHANT_ID) && ready(env.BT_PUBLIC_KEY) && ready(env.BT_PRIVATE_KEY);
-  const billingProvider = String(env.BILLING_PROVIDER || 'braintree').trim().toLowerCase();
-  const billingReady = billingProvider === 'stripe' ? stripeReady : braintreeReady;
+  const billingReady = stripeReady;
   const duffelEnabled = parseFlag(env.ENABLE_PROVIDER_DUFFEL);
-  const amadeusEnabled = parseFlag(env.ENABLE_PROVIDER_AMADEUS);
   const duffelReady = duffelEnabled && ready(env.DUFFEL_API_KEY, 8);
-  const amadeusReady = amadeusEnabled && ready(env.AMADEUS_CLIENT_ID) && ready(env.AMADEUS_CLIENT_SECRET);
-  const liveProvidersReady = duffelReady || amadeusReady;
+  const liveProvidersReady = duffelReady;
   const flightScanEnabled = parseFlag(env.FLIGHT_SCAN_ENABLED);
   const pushReady = ready(env.PUSH_WEBHOOK_URL, 10);
   const searchHistoryEnabled = parseFlag(env.SEARCH_HISTORY_PERSIST_ENABLED);
@@ -120,12 +116,10 @@ test('capability matrix: Anthropic key → ai active', () => {
   assert.equal(caps.ai.active, true);
 });
 
-test('capability matrix: Braintree creds → billing active', () => {
+test('capability matrix: Stripe secret key → billing active', () => {
   const caps = resolveCapabilities({
-    BILLING_PROVIDER: 'braintree',
-    BT_MERCHANT_ID: 'merchant123',
-    BT_PUBLIC_KEY: 'pubkey123',
-    BT_PRIVATE_KEY: 'privkey123'
+    BILLING_PROVIDER: 'stripe',
+    STRIPE_SECRET_KEY: 'sk_live_1234567890abcdef'
   });
   assert.equal(caps.billing.active, true);
 });
@@ -149,8 +143,7 @@ test('capability matrix: Duffel enabled with key → live_providers active', () 
 test('capability matrix: flight scan enabled but no provider → scan inactive', () => {
   const caps = resolveCapabilities({
     FLIGHT_SCAN_ENABLED: 'true',
-    ENABLE_PROVIDER_DUFFEL: 'false',
-    ENABLE_PROVIDER_AMADEUS: 'false'
+    ENABLE_PROVIDER_DUFFEL: 'false'
   });
   assert.equal(caps.flight_scan.active, false);
   assert.equal(caps.data_source, 'internal');

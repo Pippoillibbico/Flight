@@ -15,7 +15,15 @@ import {
   queryOpportunitiesByPrompt
 } from '../lib/opportunity-store.js';
 import { runOpportunityPipelineOnce } from '../jobs/opportunity-pipeline-worker.js';
-import { canUseAITravel, canViewRareOpportunities, canViewUnlimitedOpportunities, resolveUserPlan } from '../lib/plan-access.js';
+import {
+  canUseAITravel,
+  canViewRareOpportunities,
+  canViewUnlimitedOpportunities,
+  canConfigureRadar,
+  getFollowsLimit,
+  getUpgradeContext,
+  resolveUserPlan
+} from '../lib/plan-access.js';
 import { getCacheClient } from '../lib/free-cache.js';
 import { followMetadataSchema } from '../lib/follow-metadata.js';
 
@@ -104,6 +112,16 @@ function sortedQueryFingerprint(input = {}) {
     .map(([key, value]) => [key, String(value)])
     .sort((a, b) => a[0].localeCompare(b[0]));
   return entries.map(([k, v]) => `${k}=${v}`).join('&');
+}
+
+async function loadUserFromStore(withDb, userId) {
+  if (!userId) return null;
+  let user = null;
+  await withDb(async (db) => {
+    user = (db.users || []).find((entry) => entry.id === userId) || null;
+    return null;
+  });
+  return user;
 }
 
 async function readCachedJson(cache, key) {
@@ -205,13 +223,7 @@ export function buildOpportunitiesRouter({
       });
 
       const auth = typeof optionalAuth === 'function' ? optionalAuth(req) : null;
-      let user = null;
-      if (auth?.sub) {
-        await withDb(async (db) => {
-          user = (db.users || []).find((entry) => entry.id === auth.sub) || null;
-          return null;
-        });
-      }
+      const user = await loadUserFromStore(withDb, auth?.sub);
 
       if (!user) {
         return res.json({ source: OPPORTUNITY_FEED_SOURCE, items: sourceItems });
@@ -246,7 +258,6 @@ export function buildOpportunitiesRouter({
     }
   };
 
-  router.get('/', handleFeed);
   router.get('/feed', handleFeed);
   router.get('/clusters', async (req, res, next) => {
     const parsed = clustersQuerySchema.safeParse(req.query);
@@ -375,6 +386,19 @@ export function buildOpportunitiesRouter({
     const parsed = radarPreferenceSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid payload.' });
     const userId = req.user?.sub || req.user?.id;
+    const storedUser = await loadUserFromStore(withDb, userId);
+    const planUser = storedUser || req.user || null;
+
+    // ── Plan gate: radar configuration requires Pro or Elite ──────────────────
+    if (!canConfigureRadar(planUser)) {
+      return res.status(402).json({
+        error: 'premium_required',
+        message: 'Radar is available on the Pro and Elite plans.',
+        upgrade_context: getUpgradeContext(planUser, 'radar'),
+        request_id: req.id || null
+      });
+    }
+
     let item = null;
 
     await withDb(async (db) => {
@@ -422,17 +446,6 @@ export function buildOpportunitiesRouter({
     return res.json({ items });
   });
 
-  router.get('/me/radar', authGuard, requireApiScope('read'), quotaGuard({ counter: 'read', amount: 1 }), async (req, res) => {
-    const userId = req.user?.sub || req.user?.id;
-    let item = null;
-    await withDb(async (db) => {
-      const all = Array.isArray(db.radarPreferences) ? db.radarPreferences : [];
-      item = all.find((entry) => entry.userId === userId) || null;
-      return null;
-    });
-    return res.json({ item: item || buildDefaultRadarPreference(userId) });
-  });
-
   router.post('/ai/query', authGuard, csrfGuard, requireApiScope('search'), quotaGuard({ counter: 'decision', amount: 1 }), async (req, res, next) => {
     const parsed = aiQuerySchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid payload.' });
@@ -444,7 +457,14 @@ export function buildOpportunitiesRouter({
         return null;
       });
       if (!user) return res.status(404).json({ error: 'User not found.' });
-      if (!canUseAITravel(user)) return res.status(402).json({ error: 'premium_required', message: 'AI Travel is available on the ELITE plan.' });
+      if (!canUseAITravel(user)) {
+        return res.status(402).json({
+          error: 'premium_required',
+          message: 'AI Travel is available on the ELITE plan.',
+          upgrade_context: getUpgradeContext(user, 'ai_travel'),
+          request_id: req.id || null
+        });
+      }
 
       const result = await queryOpportunitiesByPrompt({
         prompt: parsed.data.prompt,
@@ -522,6 +542,41 @@ export function buildOpportunitiesRouter({
     if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid payload.' });
     try {
       const userId = req.user?.sub || req.user?.id;
+
+      // ── Plan gate: check active follows limit ────────────────────────────────
+      const storedUser = await loadUserFromStore(withDb, userId);
+      const planUser = storedUser || req.user || null;
+      const requestedEntityType = String(parsed.data.entityType || '').trim().toLowerCase();
+      const requestedSlug = String(parsed.data.slug || '').trim().toLowerCase();
+      const requestedFollowType = String(parsed.data.followType || 'radar').trim().toLowerCase();
+      const followsLimit = getFollowsLimit(planUser);
+      if (followsLimit !== null) {
+        const existingFollows = await listUserFollows(userId);
+        // Only count against the limit when creating a NEW follow entry
+        const alreadyFollowing = existingFollows.some((f) => {
+          const existingEntityType = String(f?.entityType || f?.entity_type || f?.entity?.entity_type || '')
+            .trim()
+            .toLowerCase();
+          const existingSlug = String(f?.slug || f?.entity?.slug || '').trim().toLowerCase();
+          const existingFollowType = String(f?.followType || f?.follow_type || 'radar').trim().toLowerCase();
+          return (
+            existingEntityType === requestedEntityType &&
+            existingSlug === requestedSlug &&
+            existingFollowType === requestedFollowType
+          );
+        });
+        if (!alreadyFollowing && existingFollows.length >= followsLimit) {
+          return res.status(402).json({
+            error: 'premium_required',
+            message: `You have reached the ${followsLimit}-follow limit on your current plan. Upgrade to follow more destinations.`,
+            follows_limit: followsLimit,
+            follows_used:  existingFollows.length,
+            upgrade_context: getUpgradeContext(planUser, 'follows_limit'),
+            request_id: req.id || null
+          });
+        }
+      }
+
       const item = await createOrUpdateUserFollow({
         userId,
         entityType: parsed.data.entityType,

@@ -32,7 +32,9 @@ export function buildAuthLocalRouter({
   addDays,
   logger,
   speakeasy,
-  loginDummyPasswordHash
+  loginDummyPasswordHash,
+  grantPremiumTrial = async () => null,
+  checkAndExpireTrial = async () => false
 }) {
   const router = Router();
 
@@ -161,6 +163,14 @@ export function buildAuthLocalRouter({
       }).catch(() => {});
     }
 
+    // Grant a time-limited premium trial to the new user (non-blocking).
+    const trialResult = await grantPremiumTrial(createdUser.id).catch(() => null);
+    if (trialResult) {
+      createdUser.planType = trialResult.planType;
+      createdUser.isPremium = true;
+      createdUser.trialEndsAt = trialResult.trialEndsAt;
+    }
+
     await upsertUserLead({
       userId: createdUser.id,
       email: createdUser.email,
@@ -239,7 +249,9 @@ export function buildAuthLocalRouter({
           planType: resolveUserPlan(createdUser).planType,
           planStatus: resolveUserPlan(createdUser).planStatus,
           onboardingDone: Boolean(createdUser.onboardingDone),
-          emailVerified: Boolean(createdUser.emailVerified)
+          emailVerified: Boolean(createdUser.emailVerified),
+          isInTrial: Boolean(createdUser.trialEndsAt && new Date(createdUser.trialEndsAt) > new Date()),
+          trialEndsAt: createdUser.trialEndsAt ?? null
         }
       })
     );
@@ -347,6 +359,14 @@ export function buildAuthLocalRouter({
       });
     }
 
+    // Expire trial if it has ended (non-blocking — failure silently ignored).
+    const trialExpired = await checkAndExpireTrial(user.id).catch(() => false);
+    if (trialExpired) {
+      user.planType = 'free';
+      user.isPremium = false;
+      user.trialEndsAt = null;
+    }
+
     const csrfToken = nanoid(24);
     const family = nanoid(16);
     user.authChannel = 'email_password';
@@ -370,7 +390,9 @@ export function buildAuthLocalRouter({
           isPremium: Boolean(user.isPremium),
           planType: resolveUserPlan(user).planType,
           planStatus: resolveUserPlan(user).planStatus,
-          onboardingDone: Boolean(user.onboardingDone)
+          onboardingDone: Boolean(user.onboardingDone),
+          isInTrial: Boolean(user.trialEndsAt && new Date(user.trialEndsAt) > new Date()),
+          trialEndsAt: user.trialEndsAt ?? null
         }
       })
     );
@@ -429,6 +451,13 @@ export function buildAuthLocalRouter({
       });
     }
 
+    const trialExpiredMfa = await checkAndExpireTrial(user.id).catch(() => false);
+    if (trialExpiredMfa) {
+      user.planType = 'free';
+      user.isPremium = false;
+      user.trialEndsAt = null;
+    }
+
     const csrfToken = nanoid(24);
     const family = nanoid(16);
     user.authChannel = 'email_mfa';
@@ -446,7 +475,9 @@ export function buildAuthLocalRouter({
           isPremium: Boolean(user.isPremium),
           planType: resolveUserPlan(user).planType,
           planStatus: resolveUserPlan(user).planStatus,
-          onboardingDone: Boolean(user.onboardingDone)
+          onboardingDone: Boolean(user.onboardingDone),
+          isInTrial: Boolean(user.trialEndsAt && new Date(user.trialEndsAt) > new Date()),
+          trialEndsAt: user.trialEndsAt ?? null
         }
       })
     );

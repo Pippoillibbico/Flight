@@ -1,5 +1,6 @@
 import { DuffelProvider } from './duffel-provider.js';
-import { AmadeusProvider } from './amadeus-provider.js';
+import { KiwiProvider } from './kiwi-provider.js';
+import { SkyscannerProvider } from './skyscanner-provider.js';
 import { parseFlag } from '../env-flags.js';
 import { logger } from '../logger.js';
 
@@ -84,19 +85,26 @@ function buildProviderError(code, detail = {}) {
 }
 
 export function createProviderRegistry(options = {}) {
-  const circuitFailureThreshold = Math.max(1, parseIntSafe(process.env.PROVIDER_CIRCUIT_FAILURE_THRESHOLD, 3));
-  const circuitOpenMs = Math.max(1000, parseIntSafe(process.env.PROVIDER_CIRCUIT_OPEN_MS, 30000));
-  const providerSearchTimeoutMs = Math.max(
-    200,
-    parseIntSafe(process.env.PROVIDER_SEARCH_TIMEOUT_MS, parseIntSafe(process.env.PROVIDER_REQUEST_TIMEOUT_MS, 12000))
-  );
   const isProd = String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
+  const circuitFailureThreshold = Math.max(1, parseIntSafe(process.env.PROVIDER_CIRCUIT_FAILURE_THRESHOLD, isProd ? 2 : 3));
+  const circuitOpenMs = Math.max(1000, parseIntSafe(process.env.PROVIDER_CIRCUIT_OPEN_MS, 30000));
+  const providerSearchTimeoutMaxMs = Math.max(3000, parseIntSafe(process.env.PROVIDER_SEARCH_TIMEOUT_MAX_MS, 20000));
+  const providerSearchTimeoutMs = Math.max(200, Math.min(
+    providerSearchTimeoutMaxMs,
+    parseIntSafe(process.env.PROVIDER_SEARCH_TIMEOUT_MS, parseIntSafe(process.env.PROVIDER_REQUEST_TIMEOUT_MS, 12000))
+  ));
   const allowStubProviders = parseFlag(process.env.ALLOW_STUB_PROVIDERS, false);
   const circuitSkipLogIntervalMs = Math.max(1_000, parseIntSafe(process.env.PROVIDER_CIRCUIT_SKIP_LOG_INTERVAL_MS, 60_000));
   const providerConfigWarnIntervalMs = Math.max(
     30_000,
     parseIntSafe(process.env.PROVIDER_CONFIG_WARNING_INTERVAL_MS, 10 * 60_000)
   );
+  const softLaunchExpectedProfile = {
+    duffel: parseFlag(process.env.ENABLE_PROVIDER_DUFFEL, false),
+    kiwi: parseFlag(process.env.ENABLE_PROVIDER_KIWI, false),
+    skyscanner: parseFlag(process.env.ENABLE_PROVIDER_SKYSCANNER, false),
+    travelpayoutsAffiliate: parseFlag(process.env.ENABLE_TRAVELPAYOUTS_AFFILIATE, true)
+  };
 
   const providers = Array.isArray(options?.providers) && options.providers.length > 0
     ? options.providers
@@ -105,12 +113,22 @@ export function createProviderRegistry(options = {}) {
           enabled: parseFlag(process.env.ENABLE_PROVIDER_DUFFEL, false),
           apiKey: process.env.DUFFEL_API_KEY
         }),
-        new AmadeusProvider({
-          enabled: parseFlag(process.env.ENABLE_PROVIDER_AMADEUS, false),
-          clientId: process.env.AMADEUS_CLIENT_ID,
-          clientSecret: process.env.AMADEUS_CLIENT_SECRET
+        new KiwiProvider({
+          enabled: parseFlag(process.env.ENABLE_PROVIDER_KIWI, false),
+          apiKey: process.env.KIWI_TEQUILA_API_KEY
+        }),
+        new SkyscannerProvider({
+          enabled: parseFlag(process.env.ENABLE_PROVIDER_SKYSCANNER, false),
+          apiKey: process.env.SKYSCANNER_API_KEY
         })
       ];
+
+  logger.info(
+    {
+      providerFlags: softLaunchExpectedProfile
+    },
+    'provider_registry_profile'
+  );
 
   const runtimeByProvider = new Map(
     providers.map((provider) => [

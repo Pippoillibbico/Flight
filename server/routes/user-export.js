@@ -9,8 +9,9 @@
  */
 import { Router } from 'express';
 import { format } from 'date-fns';
+import { canExportData, getUpgradeContext } from '../lib/plan-access.js';
 
-export function buildUserExportRouter({ authGuard, requireSessionAuth, quotaGuard, withDb, readDb }) {
+export function buildUserExportRouter({ authGuard, requireSessionAuth, quotaGuard, withDb, readDb, fetchCurrentUser }) {
   const router = Router();
 
   /**
@@ -113,11 +114,27 @@ export function buildUserExportRouter({ authGuard, requireSessionAuth, quotaGuar
     return sections.join('\n');
   }
 
-  // JSON export — no API key required, session auth + export quota
+  async function requireExportAccess(req, res, next) {
+    if (typeof fetchCurrentUser !== 'function') return next();
+    const user = await fetchCurrentUser(req.user?.sub || req.user?.id);
+    if (!user) return res.status(401).json({ error: 'user_not_found', request_id: req.id || null });
+    if (!canExportData(user)) {
+      return res.status(402).json({
+        error: 'premium_required',
+        message: 'Data export is available on the Elite plan.',
+        upgrade_context: getUpgradeContext(user, 'export'),
+        request_id: req.id || null
+      });
+    }
+    return next();
+  }
+
+  // JSON export — no API key required, session auth + plan gate + export quota
   router.get(
     '/user/data-export',
     authGuard,
     requireSessionAuth,
+    requireExportAccess,
     quotaGuard({ counter: 'export', amount: 1 }),
     async (req, res) => {
       const snapshot = await buildUserExportSnapshot(req.user.sub);
@@ -130,6 +147,7 @@ export function buildUserExportRouter({ authGuard, requireSessionAuth, quotaGuar
     '/user/data-export.csv',
     authGuard,
     requireSessionAuth,
+    requireExportAccess,
     quotaGuard({ counter: 'export', amount: 1 }),
     async (req, res) => {
       const snapshot = await buildUserExportSnapshot(req.user.sub);

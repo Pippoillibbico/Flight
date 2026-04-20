@@ -1,154 +1,157 @@
 /**
- * Affiliate booking link builder.
+ * Outbound booking link builder.
  *
- * Supports multiple partner programs. Each partner generates a deep-link URL
- * that contains:
- *  - Flight parameters (origin, destination, dates, passengers)
- *  - Affiliate tracking ID (configured via environment variables)
- *  - UTM parameters for click attribution
+ * Supports: tde_booking (internal), travelpayouts, kiwi, skyscanner.
+ * Add provider credentials via env vars; providers without credentials fall back
+ * to tde_booking so outbound links always work.
  *
- * Partners and their typical commission rates (estimate, varies by route):
- *  - Kiwi.com (Tequila):     ~2–4% of booking value
- *  - Skyscanner:              ~2–3% (varies by market)
- *  - Travelpayouts/Aviasales: ~1.5–2.5%
- *  - Booking.com:             ~4–5% on hotels, ~1–2% on flights
- *
- * Environment variables expected (add to .env):
- *   AFFILIATE_DEFAULT_PARTNER   = kiwi | skyscanner | travelpayouts | booking (default: kiwi)
- *   AFFILIATE_KIWI_ID           = your Kiwi.com affiliate ID (from tequila.kiwi.com)
- *   AFFILIATE_SKYSCANNER_ID     = your Skyscanner partner ID
- *   AFFILIATE_TRAVELPAYOUTS_ID  = your Travelpayouts marker ID
- *   AFFILIATE_BOOKING_AID       = your Booking.com affiliate ID
- *   AFFILIATE_SITE_NAME         = your site name for UTM (default: flightsuite)
+ * Recommended activation order:
+ *   1. travelpayouts — join https://travelpayouts.com/, set AFFILIATE_TRAVELPAYOUTS_MARKER
+ *   2. kiwi          — requires Kiwi affiliate account (separate from Tequila search API)
+ *   3. skyscanner    — requires Skyscanner Partners agreement
  */
 
-const SUPPORTED_PARTNERS = ['kiwi', 'skyscanner', 'travelpayouts', 'booking'];
+import { parseFlag } from './env-flags.js';
 
-const DEFAULT_PARTNER = String(process.env.AFFILIATE_DEFAULT_PARTNER || 'kiwi')
-  .trim()
-  .toLowerCase();
+const SUPPORTED_PARTNERS = ['tde_booking', 'travelpayouts', 'kiwi', 'skyscanner'];
 
-const AFFILIATE_IDS = {
-  kiwi: String(process.env.AFFILIATE_KIWI_ID || '').trim(),
-  skyscanner: String(process.env.AFFILIATE_SKYSCANNER_ID || '').trim(),
-  travelpayouts: String(process.env.AFFILIATE_TRAVELPAYOUTS_ID || '').trim(),
-  booking: String(process.env.AFFILIATE_BOOKING_AID || '').trim()
-};
+const DEFAULT_PARTNER = SUPPORTED_PARTNERS.includes(String(process.env.AFFILIATE_DEFAULT_PARTNER || '').trim().toLowerCase())
+  ? String(process.env.AFFILIATE_DEFAULT_PARTNER || '').trim().toLowerCase()
+  : 'tde_booking';
 
+const BOOKING_BASE_URL = String(process.env.BOOKING_BASE_URL || 'https://booking.travel-decision-engine.com/search').trim();
 const SITE_NAME = String(process.env.AFFILIATE_SITE_NAME || 'flightsuite').trim();
+const TRAVELPAYOUTS_MARKER = String(process.env.AFFILIATE_TRAVELPAYOUTS_MARKER || '').trim();
+const TRAVELPAYOUTS_AFFILIATE_ENABLED = parseFlag(process.env.ENABLE_TRAVELPAYOUTS_AFFILIATE, true);
+const KIWI_AFFILIATE_ID = String(process.env.AFFILIATE_KIWI_ID || '').trim();
+const SKYSCANNER_AFFILIATE_ID = String(process.env.AFFILIATE_SKYSCANNER_ID || '').trim();
 
-/**
- * Format a date as YYYYMMDD (Skyscanner / Kiwi format).
- * @param {string} isoDate - ISO 8601 date string (YYYY-MM-DD)
- */
-function toCompactDate(isoDate) {
-  if (!isoDate) return '';
-  return String(isoDate).replace(/-/g, '').slice(0, 8);
+function safeIata(value) {
+  return String(value || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z]/g, '')
+    .slice(0, 3);
+}
+
+function safeDate(value) {
+  const text = String(value || '').trim().slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : '';
+}
+
+function safeCabin(value) {
+  const cabin = String(value || 'economy').trim().toLowerCase();
+  if (cabin === 'premium' || cabin === 'business') return cabin;
+  return 'economy';
+}
+
+function safeTravellers(value) {
+  const parsed = Number.parseInt(String(value ?? '').trim(), 10);
+  if (!Number.isFinite(parsed)) return 1;
+  return Math.max(1, Math.min(9, parsed));
 }
 
 /**
- * Format a date as DD/MM/YYYY (Travelpayouts format).
- * @param {string} isoDate
- */
-function toDmyDate(isoDate) {
-  if (!isoDate) return '';
-  const [yyyy, mm, dd] = String(isoDate).split('-');
-  return `${dd}/${mm}/${yyyy}`;
-}
-
-/**
- * Map cabin class to Skyscanner cabin values.
- */
-function toSkyscannerCabin(cabinClass) {
-  const map = { economy: 'economy', premium: 'premiumeconomy', business: 'business' };
-  return map[String(cabinClass).toLowerCase()] || 'economy';
-}
-
-/**
- * Build a Kiwi.com deep link with affiliate tracking.
- * Affiliate program: https://tequila.kiwi.com/
+ * Travelpayouts deep link (via Aviasales).
  *
- * @param {object} params
- */
-function buildKiwiLink({ origin, destinationIata, dateFrom, dateTo, travellers, cabinClass }) {
-  const affilidParam = AFFILIATE_IDS.kiwi ? `&affilid=${AFFILIATE_IDS.kiwi}` : '';
-  const returnParam = dateTo ? `/${toCompactDate(dateTo)}` : '';
-  const cabin = String(cabinClass || 'economy').toLowerCase();
-  const url = new URL(
-    `https://www.kiwi.com/en/search/results/${encodeURIComponent(origin)}/${encodeURIComponent(destinationIata)}/${toCompactDate(dateFrom)}${returnParam}`
-  );
-  url.searchParams.set('adults', String(Number(travellers) || 1));
-  url.searchParams.set('cabinClass', cabin);
-  url.searchParams.set('currency', 'EUR');
-  if (AFFILIATE_IDS.kiwi) url.searchParams.set('affilid', AFFILIATE_IDS.kiwi);
-  url.searchParams.set('utm_source', SITE_NAME);
-  url.searchParams.set('utm_medium', 'affiliate');
-  url.searchParams.set('utm_campaign', 'flight_opportunity');
-  return url.toString();
-}
-
-/**
- * Build a Skyscanner deep link with affiliate tracking.
- * Affiliate program: https://www.partners.skyscanner.net/
+ * Format: https://www.aviasales.com/search/{FROM}{YYYYMMDD}{TO}{YYYYMMDDRET}{PAX}?marker=...
+ * One-way:   FROM + YYYYMMDD + TO + 1
+ * Round trip: FROM + YYYYMMDD_dep + TO + YYYYMMDD_ret + 1
  *
- * @param {object} params
- */
-function buildSkyscannerLink({ origin, destinationIata, dateFrom, dateTo, travellers, cabinClass }) {
-  const outbound = toCompactDate(dateFrom);
-  const inbound = dateTo ? toCompactDate(dateTo) : '';
-  const pathSegments = [origin.toLowerCase(), destinationIata.toLowerCase(), outbound];
-  if (inbound) pathSegments.push(inbound);
-  const url = new URL(`https://www.skyscanner.it/transport/flights/${pathSegments.join('/')}/`);
-  url.searchParams.set('adults', String(Number(travellers) || 1));
-  url.searchParams.set('cabinclass', toSkyscannerCabin(cabinClass));
-  url.searchParams.set('currency', 'EUR');
-  url.searchParams.set('market', 'IT');
-  url.searchParams.set('locale', 'it-IT');
-  if (AFFILIATE_IDS.skyscanner) url.searchParams.set('associateid', AFFILIATE_IDS.skyscanner);
-  url.searchParams.set('utm_source', SITE_NAME);
-  url.searchParams.set('utm_medium', 'affiliate');
-  url.searchParams.set('utm_campaign', 'flight_opportunity');
-  return url.toString();
-}
-
-/**
- * Build a Travelpayouts / Aviasales deep link.
- * Affiliate program: https://www.travelpayouts.com/
- *
- * @param {object} params
+ * No API key required — only a Travelpayouts marker (partner token).
+ * Commission: ~1.8% CPA (Travelpayouts variable rate, not guaranteed).
+ * Docs: https://support.travelpayouts.com/hc/en-us/articles/115001491512
  */
 function buildTravelpayoutsLink({ origin, destinationIata, dateFrom, dateTo, travellers }) {
-  const depart = toDmyDate(dateFrom);
-  const returnDate = dateTo ? toDmyDate(dateTo) : '';
-  const url = new URL('https://tp.media/click');
-  if (AFFILIATE_IDS.travelpayouts) url.searchParams.set('marker', AFFILIATE_IDS.travelpayouts);
-  url.searchParams.set('p', '4304'); // Aviasales white-label product ID
-  url.searchParams.set('from', origin.toUpperCase());
-  url.searchParams.set('to', destinationIata.toUpperCase());
-  url.searchParams.set('depart_date', depart);
-  if (returnDate) url.searchParams.set('return_date', returnDate);
-  url.searchParams.set('adults', String(Number(travellers) || 1));
-  url.searchParams.set('currency', 'eur');
+  const from = safeIata(origin);
+  const to   = safeIata(destinationIata);
+  const dep  = safeDate(dateFrom);
+  if (!from || !to || !dep || !TRAVELPAYOUTS_MARKER || !TRAVELPAYOUTS_AFFILIATE_ENABLED) return null;
+
+  // Aviasales date format: YYYYMMDD (no dashes)
+  const depCompact = dep.replace(/-/g, '');
+  const ret        = safeDate(dateTo);
+  const retCompact = ret ? ret.replace(/-/g, '') : '';
+  const pax        = String(safeTravellers(travellers));
+
+  const path = retCompact
+    ? `${from}${depCompact}${to}${retCompact}${pax}`
+    : `${from}${depCompact}${to}${pax}`;
+
+  const url = new URL(`https://www.aviasales.com/search/${path}`);
+  url.searchParams.set('marker', TRAVELPAYOUTS_MARKER);
   url.searchParams.set('utm_source', SITE_NAME);
   url.searchParams.set('utm_medium', 'affiliate');
+  url.searchParams.set('utm_campaign', 'deal_redirect');
   return url.toString();
 }
 
 /**
- * Build a Booking.com flights deep link.
- * Affiliate program: https://www.booking.com/affiliate-program/
- *
- * @param {object} params
+ * Kiwi.com deep link.
+ * Format: https://www.kiwi.com/en/search/results/{FROM}/{TO}/{DEP}/{RET}?affilid=...
  */
-function buildBookingComLink({ origin, destinationIata, dateFrom, dateTo, travellers }) {
-  const url = new URL(`https://www.booking.com/flights/${origin.toLowerCase()}/${destinationIata.toLowerCase()}.html`);
-  if (AFFILIATE_IDS.booking) url.searchParams.set('aid', AFFILIATE_IDS.booking);
-  url.searchParams.set('from_code', origin.toUpperCase());
-  url.searchParams.set('to_code', destinationIata.toUpperCase());
-  url.searchParams.set('depart_date', dateFrom);
-  if (dateTo) url.searchParams.set('ret_date', dateTo);
-  url.searchParams.set('adults', String(Number(travellers) || 1));
+function buildKiwiLink({ origin, destinationIata, dateFrom, dateTo, travellers, cabinClass }) {
+  const from = safeIata(origin);
+  const to = safeIata(destinationIata);
+  const dep = safeDate(dateFrom);
+  if (!from || !to || !dep) return null;
+
+  const ret = safeDate(dateTo);
+  const returnSegment = ret ? ret : 'no-return';
+  const cabin = safeCabin(cabinClass) === 'business' ? 'BUSINESS' : safeCabin(cabinClass) === 'premium' ? 'PREMIUM' : 'ECONOMY';
+  const pax = safeTravellers(travellers);
+
+  const url = new URL(`https://www.kiwi.com/en/search/results/${from}/${to}/${dep}/${returnSegment}`);
+  if (KIWI_AFFILIATE_ID) url.searchParams.set('affilid', KIWI_AFFILIATE_ID);
   url.searchParams.set('currency', 'EUR');
+  url.searchParams.set('adults', String(pax));
+  url.searchParams.set('cabinClass', cabin);
+  url.searchParams.set('utm_source', SITE_NAME);
+  url.searchParams.set('utm_medium', 'affiliate');
+  url.searchParams.set('utm_campaign', 'deal_redirect');
+  return url.toString();
+}
+
+/**
+ * Skyscanner deep link.
+ * Format: https://www.skyscanner.net/transport/flights/{FROM}/{TO}/{YYYYMMDD}/{YYYYMMDD}/?associateId=...
+ */
+function buildSkyscannerLink({ origin, destinationIata, dateFrom, dateTo, travellers }) {
+  const from = safeIata(origin);
+  const to = safeIata(destinationIata);
+  const dep = safeDate(dateFrom);
+  if (!from || !to || !dep) return null;
+
+  // Skyscanner uses YYYYMMDD format
+  const depSky = dep.replace(/-/g, '');
+  const ret = safeDate(dateTo);
+  const retSky = ret ? ret.replace(/-/g, '') : depSky;
+  const pax = safeTravellers(travellers);
+
+  const url = new URL(`https://www.skyscanner.net/transport/flights/${from.toLowerCase()}/${to.toLowerCase()}/${depSky}/${retSky}/`);
+  url.searchParams.set('adults', String(pax));
+  url.searchParams.set('currency', 'EUR');
+  url.searchParams.set('locale', 'en-EU');
+  if (SKYSCANNER_AFFILIATE_ID) url.searchParams.set('associateId', SKYSCANNER_AFFILIATE_ID);
+  url.searchParams.set('utm_source', SITE_NAME);
+  url.searchParams.set('utm_medium', 'affiliate');
+  url.searchParams.set('utm_campaign', 'deal_redirect');
+  return url.toString();
+}
+
+function buildTdeBookingLink({ origin, destinationIata, dateFrom, dateTo, travellers, cabinClass }) {
+  const url = new URL(BOOKING_BASE_URL);
+  const safeOrigin = safeIata(origin);
+  const safeDestination = safeIata(destinationIata);
+  const safeDateFrom = safeDate(dateFrom);
+  const safeDateTo = safeDate(dateTo);
+  if (safeOrigin) url.searchParams.set('origin', safeOrigin);
+  if (safeDestination) url.searchParams.set('destinationIata', safeDestination);
+  if (safeDateFrom) url.searchParams.set('dateFrom', safeDateFrom);
+  if (safeDateTo) url.searchParams.set('dateTo', safeDateTo);
+  url.searchParams.set('travellers', String(safeTravellers(travellers)));
+  url.searchParams.set('cabinClass', safeCabin(cabinClass));
+  url.searchParams.set('partner', 'tde_booking');
   url.searchParams.set('utm_source', SITE_NAME);
   url.searchParams.set('utm_medium', 'affiliate');
   url.searchParams.set('utm_campaign', 'flight_opportunity');
@@ -156,10 +159,10 @@ function buildBookingComLink({ origin, destinationIata, dateFrom, dateTo, travel
 }
 
 /**
- * Build an affiliate booking link for the given partner.
+ * Build an outbound booking URL.
  *
  * @param {object} params
- * @param {'kiwi'|'skyscanner'|'travelpayouts'|'booking'|string} [params.partner]
+ * @param {'tde_booking'|string} [params.partner]
  * @returns {{ url: string, partner: string }}
  */
 export function buildAffiliateLink({
@@ -171,50 +174,63 @@ export function buildAffiliateLink({
   cabinClass = 'economy',
   partner = null
 }) {
-  const selectedPartner = SUPPORTED_PARTNERS.includes(partner)
-    ? partner
-    : SUPPORTED_PARTNERS.includes(DEFAULT_PARTNER)
-    ? DEFAULT_PARTNER
-    : 'kiwi';
+  const selectedPartner = SUPPORTED_PARTNERS.includes(String(partner || '').trim().toLowerCase())
+    ? String(partner).trim().toLowerCase()
+    : DEFAULT_PARTNER;
 
-  let url;
-  switch (selectedPartner) {
-    case 'skyscanner':
-      url = buildSkyscannerLink({ origin, destinationIata, dateFrom, dateTo, travellers, cabinClass });
-      break;
-    case 'travelpayouts':
-      url = buildTravelpayoutsLink({ origin, destinationIata, dateFrom, dateTo, travellers });
-      break;
-    case 'booking':
-      url = buildBookingComLink({ origin, destinationIata, dateFrom, dateTo, travellers });
-      break;
-    default:
-      url = buildKiwiLink({ origin, destinationIata, dateFrom, dateTo, travellers, cabinClass });
+  let url = null;
+  let effectivePartner = selectedPartner;
+  if (selectedPartner === 'travelpayouts') {
+    url = buildTravelpayoutsLink({ origin, destinationIata, dateFrom, dateTo, travellers });
+  } else if (selectedPartner === 'kiwi') {
+    url = buildKiwiLink({ origin, destinationIata, dateFrom, dateTo, travellers, cabinClass });
+  } else if (selectedPartner === 'skyscanner') {
+    url = buildSkyscannerLink({ origin, destinationIata, dateFrom, dateTo, travellers });
   }
-
-  return { url, partner: selectedPartner };
+  // Fall back to tde_booking if provider build failed or not configured
+  if (!url) {
+    url = buildTdeBookingLink({ origin, destinationIata, dateFrom, dateTo, travellers, cabinClass });
+    effectivePartner = 'tde_booking';
+  }
+  return { url, partner: effectivePartner };
 }
 
 /**
- * Build links for ALL supported partners (useful for showing comparison CTAs).
+ * Compatibility helper for existing endpoints.
  *
  * @param {object} params
  * @returns {Array<{ partner: string, url: string, hasAffiliateId: boolean }>}
  */
 export function buildAllAffiliateLinks({ origin, destinationIata, dateFrom, dateTo, travellers, cabinClass }) {
-  return SUPPORTED_PARTNERS.map((partner) => {
-    const { url } = buildAffiliateLink({ origin, destinationIata, dateFrom, dateTo, travellers, cabinClass, partner });
-    return { partner, url, hasAffiliateId: Boolean(AFFILIATE_IDS[partner]) };
-  });
+  const results = [];
+  const partners = ['tde_booking'];
+  if (TRAVELPAYOUTS_MARKER && TRAVELPAYOUTS_AFFILIATE_ENABLED) partners.unshift('travelpayouts');
+  if (KIWI_AFFILIATE_ID) partners.push('kiwi');
+  if (SKYSCANNER_AFFILIATE_ID) partners.push('skyscanner');
+
+  for (const p of partners) {
+    const { url, partner } = buildAffiliateLink({ origin, destinationIata, dateFrom, dateTo, travellers, cabinClass, partner: p });
+    results.push({ partner, url, hasAffiliateId: p === 'kiwi' ? Boolean(KIWI_AFFILIATE_ID) : p === 'skyscanner' ? Boolean(SKYSCANNER_AFFILIATE_ID) : false });
+  }
+  return results;
 }
 
 /**
- * Returns the configured partner for health-check / admin visibility.
+ * Runtime visibility for admin diagnostics.
  */
 export function getAffiliateConfig() {
+  const configured = ['tde_booking'];
+  if (TRAVELPAYOUTS_MARKER && TRAVELPAYOUTS_AFFILIATE_ENABLED) configured.push('travelpayouts');
+  if (KIWI_AFFILIATE_ID) configured.push('kiwi');
+  if (SKYSCANNER_AFFILIATE_ID) configured.push('skyscanner');
   return {
     defaultPartner: DEFAULT_PARTNER,
-    configuredPartners: SUPPORTED_PARTNERS.filter((p) => Boolean(AFFILIATE_IDS[p])),
-    siteName: SITE_NAME
+    configuredPartners: configured,
+    siteName: SITE_NAME,
+    bookingBaseUrl: BOOKING_BASE_URL,
+    travelpayoutsEnabled: TRAVELPAYOUTS_AFFILIATE_ENABLED,
+    travelpayoutsConfigured: Boolean(TRAVELPAYOUTS_MARKER && TRAVELPAYOUTS_AFFILIATE_ENABLED),
+    kiwiConfigured: Boolean(KIWI_AFFILIATE_ID),
+    skyscannerConfigured: Boolean(SKYSCANNER_AFFILIATE_ID)
   };
 }

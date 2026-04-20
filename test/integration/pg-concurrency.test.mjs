@@ -24,6 +24,10 @@ const { Pool } = pg;
 
 const DATABASE_URL =
   process.env.DATABASE_URL || 'postgresql://flight:flight@localhost:5432/flight';
+const RUN_PG_INTEGRATION_TESTS = String(process.env.RUN_PG_INTEGRATION_TESTS || '')
+  .trim()
+  .toLowerCase() === 'true';
+const testPg = RUN_PG_INTEGRATION_TESTS ? test : test.skip;
 
 const pool = new Pool({ connectionString: DATABASE_URL, max: 10 });
 
@@ -206,7 +210,7 @@ async function cleanSubscriptions(userId) {
 
 // ── Test A: issueApiKey — concurrent requests cannot exceed maxKeys ─────────
 
-test('issueApiKey PG: 5 concurrent requests with maxKeys=2 → exactly 2 succeed', async () => {
+testPg('issueApiKey PG: 5 concurrent requests with maxKeys=2 → exactly 2 succeed', async () => {
   const userId = uniqueUserId();
   const MAX = 2;
 
@@ -238,7 +242,7 @@ test('issueApiKey PG: 5 concurrent requests with maxKeys=2 → exactly 2 succeed
 
 // ── Test B: createAlert — concurrent requests cannot exceed maxAlerts ───────
 
-test('createAlert PG: 5 concurrent requests with maxAlerts=3 → exactly 3 succeed', async () => {
+testPg('createAlert PG: 5 concurrent requests with maxAlerts=3 → exactly 3 succeed', async () => {
   const userId = uniqueUserId();
   const MAX = 3;
 
@@ -269,7 +273,7 @@ test('createAlert PG: 5 concurrent requests with maxAlerts=3 → exactly 3 succe
 
 // ── Test C: rotateApiKey — only one of two concurrent rotations wins ────────
 
-test('rotateApiKey PG: 2 concurrent rotations on same key → exactly 1 wins', async () => {
+testPg('rotateApiKey PG: 2 concurrent rotations on same key → exactly 1 wins', async () => {
   const userId = uniqueUserId();
   const keyId = await insertApiKey(userId, 'rotate-me');
 
@@ -305,7 +309,7 @@ test('rotateApiKey PG: 2 concurrent rotations on same key → exactly 1 wins', a
 
 // ── Test D: getOrCreateSubscription — no duplicate rows ────────────────────
 
-test('getOrCreateSubscription PG: 5 concurrent calls for new user → 1 row, all callers get same id', async () => {
+testPg('getOrCreateSubscription PG: 5 concurrent calls for new user → 1 row, all callers get same id', async () => {
   const userId = uniqueUserId();
 
   try {

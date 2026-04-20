@@ -1,23 +1,40 @@
 import { Router } from 'express';
 import { hashValueForLogs } from '../lib/log-redaction.js';
 import { parseFlag } from '../lib/env-flags.js';
+import { applyPricingToOffer, computeEconomics, guardOffer, sanitizeOfferForClient } from '../lib/pricing/index.js';
+import { logEconomicEvent } from '../lib/observability/index.js';
+import { getPlanRuntimeLimits } from '../lib/plan-access.js';
 
-function dayKeyText(date = new Date()) {
-  const y = date.getUTCFullYear();
-  const m = String(date.getUTCMonth() + 1).padStart(2, '0');
-  const d = String(date.getUTCDate()).padStart(2, '0');
-  return `${y}${m}${d}`;
+function round4(value) {
+  return Math.round(Number(value || 0) * 10000) / 10000;
 }
 
-async function incrBy(cache, key, amount) {
-  if (typeof cache.incrby === 'function') {
-    return Number(await cache.incrby(key, amount));
-  }
-  let out = 0;
-  for (let i = 0; i < amount; i += 1) {
-    out = Number(await cache.incr(key));
-  }
-  return out;
+function resolveDeviceTypeFromUserAgent(value) {
+  const ua = String(value || '').toLowerCase();
+  if (!ua) return 'desktop';
+  if (/mobile|android|iphone|ipad|ipod|windows phone|blackberry/.test(ua)) return 'mobile';
+  return 'desktop';
+}
+
+function isPopularRouteCandidate(flight) {
+  const numericSignals = [
+    Number(flight?.routePopularityScore),
+    Number(flight?.popularityScore),
+    Number(flight?.route_popularity_score),
+    Number(flight?.popularity)
+  ].filter(Number.isFinite);
+
+  if (numericSignals.length === 0) return false;
+  // Accept both [0..1] and [0..100] scales.
+  return numericSignals.some((value) => value >= 0.7 || value >= 70);
+}
+
+function isSmartDealCandidate(flight) {
+  const dealLabel = String(flight?.dealLabel || flight?.deal_type || '').trim().toLowerCase();
+  if (dealLabel === 'great_deal' || dealLabel === 'good_value' || dealLabel === 'hidden_deal') return true;
+  if (Boolean(flight?.isSmartDeal) || Boolean(flight?.smartDeal)) return true;
+  const dealPriority = Number(flight?.dealPriority);
+  return Number.isFinite(dealPriority) && dealPriority >= 3;
 }
 
 export function buildSearchRouter({
@@ -43,135 +60,17 @@ export function buildSearchRouter({
   quotaGuard,
   withDb,
   insertSearchEvent,
+  getOrCreateSubscription = null,
   nanoid,
   sendMachineError,
   captureUserPriceObservation = async () => {},
-  searchProviderOffers = async () => [],
-  cacheClient = null
+  liveFlightService = null
 }) {
   const router = Router();
-  const providerValidationLimit = Math.max(1, Math.min(10, Number(process.env.SEARCH_PROVIDER_VALIDATION_LIMIT || 5)));
-  const providerValidationEnabled = parseFlag(process.env.SEARCH_PROVIDER_VALIDATION_ENABLED, true);
-  const providerGlobalDailyBudget = Math.max(0, Number(process.env.SEARCH_PROVIDER_GLOBAL_DAILY_BUDGET || 0));
-  const providerUserDailyBudget = Math.max(0, Number(process.env.SEARCH_PROVIDER_USER_DAILY_BUDGET || 0));
-  const providerGlobalPerMinuteBudget = Math.max(0, Number(process.env.SEARCH_PROVIDER_GLOBAL_PER_MINUTE_BUDGET || 0));
-  const providerShieldGracefulDegrade = parseFlag(process.env.SEARCH_PROVIDER_COST_SHIELD_ENABLED, true);
   const persistSearchHistory = parseFlag(
     process.env.SEARCH_HISTORY_PERSIST_ENABLED,
     !String(process.env.DATABASE_URL || '').trim()
   );
-
-  async function claimProviderValidationBudget({ userId = '', plannedCalls = 0 }) {
-    const amount = Math.max(0, Number(plannedCalls) || 0);
-    if (!amount) return { allowed: true, degradedReason: null };
-    if (!cacheClient || typeof cacheClient.incr !== 'function') return { allowed: true, degradedReason: null };
-
-    const now = Date.now();
-    const minuteBucket = Math.floor(now / 60_000);
-    const dayBucket = dayKeyText(new Date(now));
-    const safeUserId = String(userId || '').trim() || 'anonymous';
-
-    const globalDayKey = `search:provider:budget:global:day:${dayBucket}`;
-    const userDayKey = `search:provider:budget:user:${safeUserId}:day:${dayBucket}`;
-    const globalMinuteKey = `search:provider:budget:global:minute:${minuteBucket}`;
-
-    const [globalUsedDay, userUsedDay, globalUsedMinute] = await Promise.all([
-      incrBy(cacheClient, globalDayKey, amount),
-      incrBy(cacheClient, userDayKey, amount),
-      incrBy(cacheClient, globalMinuteKey, amount)
-    ]);
-
-    if (typeof cacheClient.expire === 'function') {
-      await Promise.allSettled([
-        cacheClient.expire(globalDayKey, 24 * 60 * 60 + 120),
-        cacheClient.expire(userDayKey, 24 * 60 * 60 + 120),
-        cacheClient.expire(globalMinuteKey, 120)
-      ]);
-    }
-
-    if (providerGlobalDailyBudget > 0 && globalUsedDay > providerGlobalDailyBudget) {
-      return { allowed: false, degradedReason: 'provider_budget_global_daily_exceeded' };
-    }
-    if (providerUserDailyBudget > 0 && userUsedDay > providerUserDailyBudget) {
-      return { allowed: false, degradedReason: 'provider_budget_user_daily_exceeded' };
-    }
-    if (providerGlobalPerMinuteBudget > 0 && globalUsedMinute > providerGlobalPerMinuteBudget) {
-      return { allowed: false, degradedReason: 'provider_budget_global_minute_exceeded' };
-    }
-    return { allowed: true, degradedReason: null };
-  }
-
-  async function collectProviderValidatedOffers(searchInput, syntheticFlights, { userId = '' } = {}) {
-    const flights = Array.isArray(syntheticFlights) ? syntheticFlights : [];
-    if (!providerValidationEnabled) {
-      return { enabled: false, items: [], byDestinationMinPrice: {}, degradedReason: 'provider_validation_disabled' };
-    }
-    if (flights.length === 0) return { enabled: false, items: [], byDestinationMinPrice: {}, degradedReason: null };
-    const candidates = [];
-    const seen = new Set();
-    for (const flight of flights) {
-      const destinationIata = String(flight?.destinationIata || '').toUpperCase();
-      if (!/^[A-Z]{3}$/.test(destinationIata)) continue;
-      if (seen.has(destinationIata)) continue;
-      seen.add(destinationIata);
-      candidates.push(destinationIata);
-      if (candidates.length >= providerValidationLimit) break;
-    }
-    if (candidates.length === 0) return { enabled: false, items: [], byDestinationMinPrice: {}, degradedReason: null };
-
-    const budgetClaim = await claimProviderValidationBudget({ userId, plannedCalls: candidates.length });
-    if (!budgetClaim.allowed && providerShieldGracefulDegrade) {
-      return {
-        enabled: false,
-        items: [],
-        byDestinationMinPrice: {},
-        degradedReason: budgetClaim.degradedReason || 'provider_budget_exceeded'
-      };
-    }
-
-    const settled = await Promise.allSettled(
-      candidates.map((destinationIata) =>
-        searchProviderOffers({
-          originIata: String(searchInput.origin || '').toUpperCase(),
-          destinationIata,
-          departureDate: searchInput.dateFrom,
-          returnDate: searchInput.dateTo || null,
-          adults: Number(searchInput.travellers || 1),
-          cabinClass: String(searchInput.cabinClass || 'economy').toLowerCase()
-        })
-      )
-    );
-
-    const validItems = [];
-    for (const row of settled) {
-      if (row.status !== 'fulfilled' || !Array.isArray(row.value)) continue;
-      for (const offer of row.value) {
-        const destinationIata = String(offer?.destinationIata || '').toUpperCase();
-        const totalPrice = Number(offer?.totalPrice);
-        if (!/^[A-Z]{3}$/.test(destinationIata)) continue;
-        if (!Number.isFinite(totalPrice) || totalPrice <= 0) continue;
-        validItems.push({
-          originIata: String(offer?.originIata || searchInput.origin || '').toUpperCase(),
-          destinationIata,
-          totalPrice,
-          currency: String(offer?.currency || 'EUR').toUpperCase(),
-          provider: String(offer?.provider || 'provider').toLowerCase(),
-          tripType: String(offer?.tripType || (searchInput.dateTo ? 'round_trip' : 'one_way')).toLowerCase()
-        });
-      }
-    }
-    validItems.sort((a, b) => a.totalPrice - b.totalPrice);
-    const byDestinationMinPrice = {};
-    for (const item of validItems) {
-      if (!Object.hasOwn(byDestinationMinPrice, item.destinationIata)) byDestinationMinPrice[item.destinationIata] = item.totalPrice;
-    }
-    return {
-      enabled: true,
-      items: validItems.slice(0, 120),
-      byDestinationMinPrice,
-      degradedReason: null
-    };
-  }
 
   router.get('/config', (_req, res) => {
     const countriesByRegion = {};
@@ -252,6 +151,14 @@ export function buildSearchRouter({
     if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid payload.' });
 
     const searchPayload = parsed.data;
+    let resolvedPlanId = String(req.user?.planType || req.user?.plan || 'free').toLowerCase();
+    if (typeof getOrCreateSubscription === 'function') {
+      try {
+        const subscription = await getOrCreateSubscription(req.user?.sub || req.user?.id || '');
+        resolvedPlanId = String(subscription?.planId || resolvedPlanId).toLowerCase();
+      } catch {}
+    }
+    const isFreeUser = resolvedPlanId === 'free';
     const isMultiCityMode = searchPayload.mode === 'multi_city' && Array.isArray(searchPayload.segments) && searchPayload.segments.length >= 2;
     const firstSegment = isMultiCityMode ? searchPayload.segments[0] : null;
     const lastSegment = isMultiCityMode ? searchPayload.segments[searchPayload.segments.length - 1] : null;
@@ -266,40 +173,226 @@ export function buildSearchRouter({
       : searchPayload;
 
     const result = searchFlights(searchInput);
-    const providerValidated = await collectProviderValidatedOffers(searchInput, result.flights, { userId: req.user?.sub || req.user?.id || '' });
-    const enhancedFlights = (Array.isArray(result.flights) ? result.flights : []).map((flight) => {
-      const destinationIata = String(flight?.destinationIata || '').toUpperCase();
-      const validatedMinPrice = Number(providerValidated.byDestinationMinPrice[destinationIata]);
-      const providerValidatedPrice = Number.isFinite(validatedMinPrice) ? validatedMinPrice : null;
+    const syntheticFlights = Array.isArray(result.flights) ? result.flights : [];
+
+    // ── Real-first strategy ───────────────────────────────────────────────────
+    // 1. Collect unique destination IATAs from the synthetic candidate list.
+    // 2. Query the live provider (Duffel) in parallel for the top N destinations.
+    // 3. For each destination that has a live offer, overwrite price/currency and
+    //    set isBookable=true + inventorySource=provider name.
+    // 4. Destinations with no live offer remain as synthetic (isBookable=false).
+    //    The feed is never empty — synthetic guarantees a fallback.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    let offersByDest = {};
+    let searchMode = 'synthetic_local_model';
+    let liveMeta = null;
+
+    if (liveFlightService && syntheticFlights.length > 0) {
+      const uniqueDestsAll = [
+        ...new Set(
+          syntheticFlights
+            .map((f) => String(f?.destinationIata || '').toUpperCase())
+            .filter((d) => /^[A-Z]{3}$/.test(d))
+        )
+      ];
+      // Per-plan live-provider fan-out: limits and cacheOnly come from PLAN_RUNTIME_LIMITS.
+      // Free → 0 destinations (live call never fired); Pro → max 3; Creator → max 4.
+      // Env overrides take precedence for operator tuning without code changes.
+      const planLimits = getPlanRuntimeLimits(resolvedPlanId);
+      const planDestCap = Math.max(0, Math.min(
+        planLimits.liveDestinations,
+        Number(process.env.SEARCH_LIVE_DESTINATION_LIMIT_OVERRIDE || planLimits.liveDestinations)
+      ));
+      const uniqueDests = uniqueDestsAll.slice(0, planDestCap);
+
+      // Hard skip: if the destination list is empty (free plan or cap=0), skip
+      // the live call entirely so no provider or cache lookup is initiated.
+      if (uniqueDests.length === 0) {
+        searchMode = 'synthetic_local_model';
+      } else
+
+      // ── Provider budget shield ──────────────────────────────────────────────
+      // Check cost budgets before firing live API calls. If the daily or
+      // per-minute budget is exhausted, degrade gracefully to synthetic results
+      // instead of generating unbounded Duffel API spend.
+      try {
+        const liveResult = await liveFlightService.searchLiveFlights({
+          originIata: String(searchInput.origin || '').toUpperCase(),
+          destinations: uniqueDests,
+          departureDate: searchInput.dateFrom,
+          returnDate: searchInput.dateTo || null,
+          adults: Number(searchInput.travellers || 1),
+          cabinClass: String(searchInput.cabinClass || 'economy').toLowerCase(),
+          userId: req.user?.sub || '',
+          cacheOnly: planLimits.cacheOnly
+        });
+        offersByDest = liveResult.offersByDest;
+        liveMeta = liveResult.meta;
+        if (Object.keys(offersByDest).length > 0) searchMode = 'live_duffel';
+      } catch (_) {
+        // Graceful degrade: live provider failed, stay on synthetic
+        searchMode = 'synthetic_local_model';
+      }
+    }
+
+    // ── Pricing context for dynamic margin calculation ──────────────────────
+    // Resolves runtime context consumed by the pricing engine.
+    const userPricingTier = String(resolvedPlanId || 'free').toLowerCase();
+    const clientDeviceType = resolveDeviceTypeFromUserAgent(req.headers['user-agent']);
+    let isReturningUser = false;
+    try {
+      await withDb(async (db) => {
+        const searches = Array.isArray(db?.searches) ? db.searches : [];
+        isReturningUser = searches.some((entry) => String(entry?.userId || '') === String(req.user?.sub || ''));
+        return null;
+      });
+    } catch {
+      isReturningUser = false;
+    }
+
+    // Merge live offers into synthetic flight records
+    const enhancedFlights = syntheticFlights.map((flight) => {
+      const destIata = String(flight?.destinationIata || '').toUpperCase();
+      const liveOffer = offersByDest[destIata];
+
+      if (liveOffer) {
+        // ── Step 1: pricing engine — raw cost → monetised display price ────────
+        const pricedOffer = applyPricingToOffer(liveOffer, {
+          userTier: userPricingTier,
+          deviceType: clientDeviceType,
+          isReturningUser,
+          isPopularRoute: isPopularRouteCandidate(flight),
+          isSmartDeal: isSmartDealCandidate(flight),
+          isPremiumDeal: Boolean(flight?.isPremiumDeal),
+          departureDate: searchInput.dateFrom
+        });
+
+        // ── Step 2: margin guard — validate P&L, recalculate or exclude ────────
+        // The guard is the safety net: it catches misconfigurations, edge cases,
+        // or any path that bypassed the pricing engine (e.g. PRICING_ENABLED=false).
+        const guardResult = guardOffer(pricedOffer, {
+          userId: req.user?.sub,
+          searchId: result?.meta?.searchId || null,
+          originIata: String(searchInput.origin || '').toUpperCase(),
+          destinationIata: destIata
+        });
+
+        if (guardResult.action === 'exclude') {
+          // Offer failed the margin check and cannot be recalculated within
+          // acceptable bounds — demote to synthetic (non-bookable).
+          return {
+            ...flight,
+            tripType: searchInput.dateTo ? 'round_trip' : 'one_way',
+            isBookable: false,
+            inventorySource: 'excluded_below_margin',
+            providerValidated: false,
+            providerValidatedMinPrice: null,
+            _guardExcluded: true,
+            _guardReason: guardResult.reason
+          };
+        }
+
+        if (guardResult.action === 'non_monetizable') {
+          return {
+            ...flight,
+            price: Number(guardResult.offer?.totalPrice || flight.price || 0),
+            currency: String(guardResult.offer?.currency || flight.currency || 'EUR').toUpperCase(),
+            tripType: searchInput.dateTo ? 'round_trip' : 'one_way',
+            isBookable: false,
+            inventorySource: 'non_monetizable_margin_guard',
+            providerValidated: false,
+            providerValidatedMinPrice: null,
+            _providerCost: Number(guardResult.offer?._providerCost || 0) || null,
+            _guardExcluded: true,
+            _guardReason: guardResult.reason || 'non_monetizable'
+          };
+        }
+
+        // action === 'pass' or 'recalculate': use the (possibly adjusted) offer
+        const finalOffer = guardResult.offer;
+
+        return {
+          ...flight,
+          price: finalOffer.totalPrice,            // safe display price
+          currency: finalOffer.currency,
+          isBookable: true,
+          inventorySource: finalOffer.provider,
+          provider: finalOffer.provider,
+          tripType: searchInput.dateTo ? 'round_trip' : 'one_way',
+          providerValidated: true,
+          providerValidatedMinPrice: finalOffer.totalPrice,
+          liveOfferId: finalOffer.metadata?.offerId || null,
+          // Internal audit — stripped before response via sanitizeOfferForClient
+          _providerCost: finalOffer._providerCost,
+          _marginApplied: finalOffer._marginApplied,
+          _pricingEnabled: finalOffer._pricingEnabled,
+          _guardAction: guardResult.action,
+          _guardRecalculated: finalOffer._guardRecalculated ?? false
+        };
+      }
+
       return {
         ...flight,
         tripType: searchInput.dateTo ? 'round_trip' : 'one_way',
         isBookable: false,
         inventorySource: 'synthetic_local_model',
-        providerValidated: Number.isFinite(providerValidatedPrice),
-        providerValidatedMinPrice: providerValidatedPrice
+        providerValidated: false,
+        providerValidatedMinPrice: null
       };
     });
+
+    // Bookable (live) flights bubble to the top, then sort by price
+    enhancedFlights.sort((a, b) => {
+      if (a.isBookable !== b.isBookable) return a.isBookable ? -1 : 1;
+      return (a.price || 0) - (b.price || 0);
+    });
+
+    const liveCount = enhancedFlights.filter((f) => f.isBookable).length;
+    const syntheticCount = enhancedFlights.length - liveCount;
+    const providerValidatedItems = enhancedFlights
+      .filter((flight) => flight?.isBookable)
+      .map((flight) => ({
+        originIata: String(flight.origin || searchInput.origin || '').toUpperCase(),
+        destinationIata: String(flight.destinationIata || '').toUpperCase(),
+        totalPrice: Number(flight.price),
+        currency: String(flight.currency || 'EUR').toUpperCase(),
+        provider: String(flight.provider || 'duffel'),
+        tripType: String(flight.tripType || (searchInput.dateTo ? 'round_trip' : 'one_way')).toLowerCase()
+      }))
+      .filter((item) => /^[A-Z]{3}$/.test(item.destinationIata) && Number.isFinite(item.totalPrice) && item.totalPrice > 0);
+
     const enhancedResult = {
       ...result,
       flights: enhancedFlights,
       inventory: {
         synthetic: {
-          count: enhancedFlights.length,
-          source: 'local_model'
+          count: syntheticCount,
+          source: 'local_model',
+          isFallback: searchMode === 'live_duffel'
+        },
+        live: {
+          count: liveCount,
+          provider: searchMode === 'live_duffel' ? 'duffel' : null
         },
         providerValidated: {
-          enabled: providerValidated.enabled,
-          count: providerValidated.items.length,
-          items: providerValidated.items,
-          degradedReason: providerValidated.degradedReason || null
+          enabled: searchMode === 'live_duffel',
+          count: liveCount,
+          // Expose only monetised prices to clients (never raw provider totals).
+          items: providerValidatedItems,
+          degradedReason:
+            liveMeta?.degradedReason ||
+            (syntheticFlights.length > 0 && liveCount === 0 ? 'live_provider_degraded_using_synthetic' : null)
         }
       },
       meta: {
         ...(result.meta || {}),
-        searchMode: 'synthetic_local_model',
-        bookability: 'simulated_with_optional_provider_validation',
+        searchMode,
+        bookability: searchMode === 'live_duffel'
+          ? 'live_bookable_with_synthetic_fallback'
+          : 'simulated_with_optional_provider_validation',
         requestMode: isMultiCityMode ? 'multi_city' : 'single',
+        liveInventory: liveMeta,
         multiCitySegments: isMultiCityMode
           ? searchPayload.segments.map((segment) => ({
               origin: segment.origin,
@@ -323,14 +416,14 @@ export function buildSearchRouter({
         return db;
       }).catch(() => {});
     }
-    await insertSearchEvent({
+    insertSearchEvent({
       userId: req.user.sub,
       channel: String(req.user.authChannel || 'direct'),
       origin: searchInput.origin,
       region: searchInput.region,
       dateFrom: searchInput.dateFrom,
       dateTo: searchInput.dateTo || searchInput.dateFrom
-    });
+    }).catch(() => {});
     const concreteFlights = Array.isArray(enhancedResult.flights) ? enhancedResult.flights.slice(0, 20) : [];
     Promise.allSettled(
       concreteFlights.map((flight) =>
@@ -339,21 +432,96 @@ export function buildSearchRouter({
           destinationIata: String(flight.destinationIata || '').toUpperCase(),
           departureDate: searchInput.dateFrom,
           returnDate: searchInput.dateTo || null,
-          currency: 'EUR',
-          totalPrice: Number(flight.price),
+          // Use the actual currency from the flight offer, not a hardcoded 'EUR'
+          currency: String(flight.currency || 'EUR').toUpperCase(),
+          // Record the provider cost for analytics, not the marked-up display price
+          totalPrice: Number(flight._providerCost ?? flight.price),
           provider: String(flight.provider || 'user_search'),
           cabinClass: searchInput.cabinClass,
           tripType: searchInput.dateTo ? 'round_trip' : 'one_way',
           source: 'user_search',
           metadata: {
             channel: 'search',
-            searchId: result?.meta?.searchId || null
+            searchId: result?.meta?.searchId || null,
+            displayPrice: flight._pricingEnabled ? Number(flight.price) : null,
+            marginApplied: flight._marginApplied || null
           }
         })
       )
     ).catch(() => {});
 
-    return res.json(enhancedResult);
+    try {
+      const pricedFlights = enhancedFlights.filter((flight) => {
+        const providerCost = Number(flight?._providerCost);
+        const displayPrice = Number(flight?.price);
+        return Number.isFinite(providerCost) && providerCost > 0 && Number.isFinite(displayPrice) && displayPrice > 0;
+      });
+      const economicsByFlight = pricedFlights.map((flight) => computeEconomics(Number(flight._providerCost), Number(flight.price)));
+      const totals = economicsByFlight.reduce(
+        (acc, row) => ({
+          revenueEur: acc.revenueEur + Number(row.revenueEur || 0),
+          providerCostEur: acc.providerCostEur + Number(row.providerCost || 0),
+          stripeFeeEur: acc.stripeFeeEur + Number(row.stripeFeeEur || 0),
+          aiCostEur: acc.aiCostEur + Number(row.aiCostEur || 0),
+          grossMarginEur: acc.grossMarginEur + Number(row.grossMarginEur || 0),
+          netMarginEur: acc.netMarginEur + Number(row.netMarginEur || 0)
+        }),
+        {
+          revenueEur: 0,
+          providerCostEur: 0,
+          stripeFeeEur: 0,
+          aiCostEur: 0,
+          grossMarginEur: 0,
+          netMarginEur: 0
+        }
+      );
+      const excludedCount = enhancedFlights.filter((flight) => {
+        const source = String(flight?.inventorySource || '').toLowerCase();
+        if (Boolean(flight?._guardExcluded)) return true;
+        return source.includes('excluded') || source.includes('non_monetizable');
+      }).length;
+      const revenueEur = round4(totals.revenueEur);
+      const grossMarginRate = revenueEur > 0 ? round4(totals.grossMarginEur / revenueEur) : 0;
+      const netMarginRate = revenueEur > 0 ? round4(totals.netMarginEur / revenueEur) : 0;
+
+      logEconomicEvent('search_economics', {
+        user_id: req.user?.sub || null,
+        user_tier: userPricingTier,
+        origin: String(searchInput.origin || '').toUpperCase(),
+        destination: isMultiCityMode
+          ? String(lastSegment?.destination || '').toUpperCase()
+          : String(searchInput.destinationQuery || '').trim().toUpperCase() || null,
+        trip_type: searchInput.dateTo ? 'round_trip' : 'one_way',
+        revenue_eur: revenueEur,
+        provider_cost_eur: round4(totals.providerCostEur),
+        stripe_fee_eur: round4(totals.stripeFeeEur),
+        ai_cost_eur: round4(totals.aiCostEur),
+        gross_margin_eur: round4(totals.grossMarginEur),
+        net_margin_eur: round4(totals.netMarginEur),
+        gross_margin_rate: grossMarginRate,
+        net_margin_rate: netMarginRate,
+        offer_count: enhancedFlights.length,
+        bookable_count: liveCount,
+        excluded_count: excludedCount,
+        extra: {
+          search_mode: searchMode,
+          search_id: result?.meta?.searchId || null,
+          is_multi_city: isMultiCityMode,
+          free_user_heavy_cost_signal:
+            userPricingTier === 'free' &&
+            (round4(totals.aiCostEur) > 0.4 || round4(totals.providerCostEur) > 800)
+        }
+      });
+    } catch {}
+
+    // Strip internal pricing audit fields before sending to the client.
+    // The frontend must never see providerCost or marginApplied.
+    const safeResult = {
+      ...enhancedResult,
+      flights: (enhancedResult.flights || []).map(sanitizeOfferForClient)
+    };
+
+    return res.json(safeResult);
   });
 
   router.post('/decision/just-go', authGuard, csrfGuard, requireApiScope('search'), quotaGuard({ counter: 'decision', amount: 1 }), async (req, res) => {
@@ -362,7 +530,7 @@ export function buildSearchRouter({
 
     const payload = parsed.data;
     const aiAccess = await ensureAiPremiumAccess(req, payload.aiProvider || 'none');
-    if (!aiAccess.allowed) return sendMachineError(req, res, aiAccess.status, aiAccess.error);
+    if (!aiAccess.allowed) return sendMachineError(req, res, aiAccess.status, aiAccess.error, aiAccess.extra || {});
     const result = decideTrips({
       origin: payload.origin,
       region: payload.region || 'all',
@@ -382,6 +550,9 @@ export function buildSearchRouter({
 
     const ai = await enrichDecisionWithAi({
       aiProvider: payload.aiProvider || 'none',
+      userPlan: req.user?.planType || req.user?.plan || 'free',
+      userId: req.user?.sub || req.user?.id || '',
+      routeKey: 'decision.just_go',
       requestPayload: payload,
       decisionResult: result
     });
@@ -400,14 +571,14 @@ export function buildSearchRouter({
       }).catch(() => {});
     }
 
-    await insertSearchEvent({
+    insertSearchEvent({
       userId: req.user.sub,
       channel: String(req.user.authChannel || 'direct'),
       origin: payload.origin,
       region: payload.region || 'all',
       dateFrom: payload.dateFrom,
       dateTo: payload.dateTo
-    });
+    }).catch(() => {});
 
     return res.json({
       ...result,
@@ -421,11 +592,14 @@ export function buildSearchRouter({
 
     const payload = parsed.data;
     const aiAccess = await ensureAiPremiumAccess(req, payload.aiProvider || 'none');
-    if (!aiAccess.allowed) return sendMachineError(req, res, aiAccess.status, aiAccess.error);
+    if (!aiAccess.allowed) return sendMachineError(req, res, aiAccess.status, aiAccess.error, aiAccess.extra || {});
     const result = await parseIntentWithAi({
       prompt: payload.prompt,
       aiProvider: payload.aiProvider || 'none',
-      packageCount: payload.packageCount === 4 ? 4 : 3
+      packageCount: payload.packageCount === 4 ? 4 : 3,
+      userPlan: req.user?.planType || req.user?.plan || 'free',
+      userId: req.user?.sub || req.user?.id || '',
+      routeKey: 'decision.intake'
     });
 
     return res.json(result);

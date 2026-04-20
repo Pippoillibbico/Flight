@@ -102,6 +102,35 @@ async function ensureSqlite() {
       error_message TEXT,
       created_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS economics_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_type TEXT NOT NULL,
+      user_id_hash TEXT,
+      user_tier TEXT,
+      at TEXT NOT NULL,
+      origin TEXT,
+      destination TEXT,
+      trip_type TEXT,
+      revenue_eur REAL,
+      provider_cost_eur REAL,
+      stripe_fee_eur REAL,
+      ai_cost_eur REAL,
+      platform_overhead_eur REAL,
+      gross_margin_eur REAL,
+      net_margin_eur REAL,
+      gross_margin_rate REAL,
+      net_margin_rate REAL,
+      offer_count INTEGER,
+      bookable_count INTEGER,
+      excluded_count INTEGER,
+      guard_action TEXT,
+      guard_rules TEXT,
+      extra TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_economics_events_at ON economics_events(at DESC);
+    CREATE INDEX IF NOT EXISTS idx_economics_events_user_at ON economics_events(user_id_hash, at DESC);
+    CREATE INDEX IF NOT EXISTS idx_economics_events_type_at ON economics_events(event_type, at DESC);
+    CREATE INDEX IF NOT EXISTS idx_economics_events_tier_at ON economics_events(user_tier, at DESC);
   `);
   ensureSqliteColumn('user_leads', 'channel', "channel TEXT NOT NULL DEFAULT 'unknown'");
   ensureSqliteColumn('search_events', 'channel', "channel TEXT NOT NULL DEFAULT 'unknown'");
@@ -177,6 +206,129 @@ export async function insertEmailDeliveryLog({ userId, email, subject, status, p
        VALUES (?, ?, ?, ?, ?, ?, ?)`
     )
     .run(userId || null, email, subject, status, providerMessageId, errorMessage, new Date().toISOString());
+}
+
+function toNullableText(value) {
+  if (value === undefined || value === null) return null;
+  const out = String(value).trim();
+  return out.length ? out : null;
+}
+
+function toNullableNumber(value) {
+  const out = Number(value);
+  return Number.isFinite(out) ? out : null;
+}
+
+function toNullableInteger(value) {
+  const out = Number(value);
+  if (!Number.isFinite(out)) return null;
+  return Math.trunc(out);
+}
+
+export async function insertEconomicEvent(event = {}) {
+  const payload = {
+    eventType: toNullableText(event.eventType || event.event_type),
+    userIdHash: toNullableText(event.userIdHash || event.user_id_hash),
+    userTier: toNullableText(event.userTier || event.user_tier),
+    at: toNullableText(event.at) || new Date().toISOString(),
+    origin: toNullableText(event.origin),
+    destination: toNullableText(event.destination),
+    tripType: toNullableText(event.tripType || event.trip_type),
+    revenueEur: toNullableNumber(event.revenueEur ?? event.revenue_eur),
+    providerCostEur: toNullableNumber(event.providerCostEur ?? event.provider_cost_eur),
+    stripeFeeEur: toNullableNumber(event.stripeFeeEur ?? event.stripe_fee_eur),
+    aiCostEur: toNullableNumber(event.aiCostEur ?? event.ai_cost_eur),
+    platformOverheadEur: toNullableNumber(event.platformOverheadEur ?? event.platform_overhead_eur),
+    grossMarginEur: toNullableNumber(event.grossMarginEur ?? event.gross_margin_eur),
+    netMarginEur: toNullableNumber(event.netMarginEur ?? event.net_margin_eur),
+    grossMarginRate: toNullableNumber(event.grossMarginRate ?? event.gross_margin_rate),
+    netMarginRate: toNullableNumber(event.netMarginRate ?? event.net_margin_rate),
+    offerCount: toNullableInteger(event.offerCount ?? event.offer_count),
+    bookableCount: toNullableInteger(event.bookableCount ?? event.bookable_count),
+    excludedCount: toNullableInteger(event.excludedCount ?? event.excluded_count),
+    guardAction: toNullableText(event.guardAction ?? event.guard_action),
+    guardRules: toNullableText(event.guardRules ?? event.guard_rules),
+    extra: event.extra && typeof event.extra === 'object' ? event.extra : {}
+  };
+
+  if (!payload.eventType) return;
+
+  if (mode === 'postgres') {
+    if (!pgPool) await ensurePg();
+    await pgPool.query(
+      `INSERT INTO economics_events (
+        event_type, user_id_hash, user_tier, at, origin, destination, trip_type,
+        revenue_eur, provider_cost_eur, stripe_fee_eur, ai_cost_eur, platform_overhead_eur,
+        gross_margin_eur, net_margin_eur, gross_margin_rate, net_margin_rate,
+        offer_count, bookable_count, excluded_count, guard_action, guard_rules, extra
+      ) VALUES (
+        $1, $2, $3, COALESCE($4::timestamptz, NOW()), $5, $6, $7,
+        $8, $9, $10, $11, $12,
+        $13, $14, $15, $16,
+        $17, $18, $19, $20, $21, $22::jsonb
+      )`,
+      [
+        payload.eventType,
+        payload.userIdHash,
+        payload.userTier,
+        payload.at,
+        payload.origin,
+        payload.destination,
+        payload.tripType,
+        payload.revenueEur,
+        payload.providerCostEur,
+        payload.stripeFeeEur,
+        payload.aiCostEur,
+        payload.platformOverheadEur,
+        payload.grossMarginEur,
+        payload.netMarginEur,
+        payload.grossMarginRate,
+        payload.netMarginRate,
+        payload.offerCount,
+        payload.bookableCount,
+        payload.excludedCount,
+        payload.guardAction,
+        payload.guardRules,
+        JSON.stringify(payload.extra || {})
+      ]
+    );
+    return;
+  }
+
+  if (!sqliteDb) await ensureSqlite();
+  sqliteDb
+    .prepare(
+      `INSERT INTO economics_events (
+        event_type, user_id_hash, user_tier, at, origin, destination, trip_type,
+        revenue_eur, provider_cost_eur, stripe_fee_eur, ai_cost_eur, platform_overhead_eur,
+        gross_margin_eur, net_margin_eur, gross_margin_rate, net_margin_rate,
+        offer_count, bookable_count, excluded_count, guard_action, guard_rules, extra
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      payload.eventType,
+      payload.userIdHash,
+      payload.userTier,
+      payload.at,
+      payload.origin,
+      payload.destination,
+      payload.tripType,
+      payload.revenueEur,
+      payload.providerCostEur,
+      payload.stripeFeeEur,
+      payload.aiCostEur,
+      payload.platformOverheadEur,
+      payload.grossMarginEur,
+      payload.netMarginEur,
+      payload.grossMarginRate,
+      payload.netMarginRate,
+      payload.offerCount,
+      payload.bookableCount,
+      payload.excludedCount,
+      payload.guardAction,
+      payload.guardRules,
+      JSON.stringify(payload.extra || {})
+    );
 }
 
 export async function getBusinessMetrics() {
@@ -262,4 +414,79 @@ export async function getFunnelMetricsByChannel() {
     })
     .sort((a, b) => b.leads - a.leads || b.searches - a.searches);
   return { items };
+}
+
+export async function getDailyOperationalCostMetrics({ sinceIso = null } = {}) {
+  const since = String(sinceIso || new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
+  if (mode === 'postgres') {
+    if (!pgPool) await ensurePg();
+    const [searchRows, economicsRows] = await Promise.all([
+      pgPool.query(
+        `SELECT
+           COUNT(*)::int AS total_searches,
+           COUNT(DISTINCT user_id)::int AS unique_search_users
+         FROM search_events
+         WHERE created_at >= $1::timestamptz`,
+        [since]
+      ),
+      pgPool.query(
+        `SELECT
+           COALESCE(SUM(provider_cost_eur), 0)::numeric(14,4) AS provider_cost_eur,
+           COALESCE(SUM(ai_cost_eur), 0)::numeric(14,4) AS ai_cost_eur,
+           COALESCE(SUM(revenue_eur), 0)::numeric(14,4) AS revenue_eur,
+           COALESCE(SUM(net_margin_eur), 0)::numeric(14,4) AS net_margin_eur
+         FROM economics_events
+         WHERE at >= $1::timestamptz`,
+        [since]
+      )
+    ]);
+    return {
+      sinceIso: since,
+      searches: {
+        total: Number(searchRows.rows[0]?.total_searches || 0),
+        uniqueUsers: Number(searchRows.rows[0]?.unique_search_users || 0)
+      },
+      costs: {
+        providerCostEur: Number(economicsRows.rows[0]?.provider_cost_eur || 0),
+        aiCostEur: Number(economicsRows.rows[0]?.ai_cost_eur || 0),
+        revenueEur: Number(economicsRows.rows[0]?.revenue_eur || 0),
+        netMarginEur: Number(economicsRows.rows[0]?.net_margin_eur || 0)
+      }
+    };
+  }
+
+  if (!sqliteDb) await ensureSqlite();
+  const searchRow = sqliteDb
+    .prepare(
+      `SELECT
+         COUNT(*) AS total_searches,
+         COUNT(DISTINCT user_id) AS unique_search_users
+       FROM search_events
+       WHERE datetime(created_at) >= datetime(?)`
+    )
+    .get(since);
+  const economicsRow = sqliteDb
+    .prepare(
+      `SELECT
+         COALESCE(SUM(provider_cost_eur), 0) AS provider_cost_eur,
+         COALESCE(SUM(ai_cost_eur), 0) AS ai_cost_eur,
+         COALESCE(SUM(revenue_eur), 0) AS revenue_eur,
+         COALESCE(SUM(net_margin_eur), 0) AS net_margin_eur
+       FROM economics_events
+       WHERE datetime(at) >= datetime(?)`
+    )
+    .get(since);
+  return {
+    sinceIso: since,
+    searches: {
+      total: Number(searchRow?.total_searches || 0),
+      uniqueUsers: Number(searchRow?.unique_search_users || 0)
+    },
+    costs: {
+      providerCostEur: Number(economicsRow?.provider_cost_eur || 0),
+      aiCostEur: Number(economicsRow?.ai_cost_eur || 0),
+      revenueEur: Number(economicsRow?.revenue_eur || 0),
+      netMarginEur: Number(economicsRow?.net_margin_eur || 0)
+    }
+  };
 }

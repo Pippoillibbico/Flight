@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,28 +6,43 @@ import { buildBookingLink } from './flight-engine.js';
 import { listPriceObservationsSince, scoreDeal } from './deal-engine-store.js';
 import { parseFlag } from './env-flags.js';
 import { getCacheClient } from './free-cache.js';
-import { extractJsonObject, resolveOpportunityEnrichmentPayload } from './ai-output-guards.js';
+import { createAiCache } from './ai-cache.js';
 import { sanitizeFollowMetadata } from './follow-metadata.js';
-import { ORIGINS, ROUTES } from '../data/local-flight-data.js';
+import { logger } from './logger.js';
+import { OPPORTUNITY_UPSERT_POSTGRES_SQL, OPPORTUNITY_UPSERT_SQLITE_SQL, buildOpportunityUpsertValues } from './opportunity-store-queries.js';
+import {
+  OPPORTUNITY_POSTGRES_ALTER_SQL,
+  OPPORTUNITY_POSTGRES_SCHEMA_SQL,
+  OPPORTUNITY_SQLITE_REQUIRED_COLUMNS,
+  OPPORTUNITY_SQLITE_SCHEMA_SQL
+} from './opportunity-store-schema.js';
+import { applyOpportunityFilters, mapUserFollowRow, parsePromptFilters } from './opportunity-store-query-helpers.js';
+import { createOpportunityAiEnricher } from './opportunity-ai-enricher.js';
+import { deriveClusterInfo, resolveOrigin, resolveRoute, resolveRouteMeta } from './opportunity-geo.js';
 import { scoreOpportunityCandidate } from './opportunity-scoring.js';
+import {
+  budgetBucketFromPrice,
+  buildAiCopy,
+  clampMinutes,
+  computeTripLength,
+  estimateStops,
+  isIataCode,
+  isYmd,
+  normalizeTripType,
+  parseBaggageIncluded,
+  parseJsonSafe,
+  shortHash,
+  slugify,
+  stringifyJsonSafe,
+  toIso,
+  toNullableInt,
+  toNullableScore,
+  toNumber,
+  toYmd
+} from './opportunity-store-helpers.js';
 
 const DB_FILE_URL = new URL('../../data/app.db', import.meta.url);
 const DB_FILE_PATH = fileURLToPath(DB_FILE_URL);
-
-const originMap = new Map(
-  ORIGINS.map((item) => {
-    const label = String(item.label || item.code || '').trim();
-    const city = label.split('(')[0].trim() || item.code;
-    return [String(item.code || '').toUpperCase(), { airport: String(item.code || '').toUpperCase(), city }];
-  })
-);
-
-const routeMap = new Map(
-  ROUTES.map((route) => [
-    `${String(route.origin || '').toUpperCase()}-${String(route.destinationIata || '').toUpperCase()}`,
-    route
-  ])
-);
 
 let sqliteDb = null;
 let pgPool = null;
@@ -54,451 +68,34 @@ const OPPORTUNITY_PIPELINE_OVERLAP_GUARD_MINUTES = Math.max(
   1,
   Math.min(24 * 60, Number(process.env.OPPORTUNITY_PIPELINE_OVERLAP_GUARD_MINUTES || 30))
 );
+const OPPORTUNITY_AI_CACHE_TTL_SECONDS = Math.max(
+  60,
+  Number(process.env.OPPORTUNITY_AI_ENRICHMENT_CACHE_TTL_SECONDS || 172800)
+);
+const OPPORTUNITY_AI_CACHE_ONLY_MODE = parseFlag(process.env.OPPORTUNITY_AI_ENRICHMENT_CACHE_ONLY_MODE, false);
+const opportunityCacheClient = getCacheClient();
+const opportunityAiCache = createAiCache({
+  cacheClient: opportunityCacheClient,
+  defaultTtlSeconds: OPPORTUNITY_AI_CACHE_TTL_SECONDS
+});
 
 function getMode() {
   return process.env.DATABASE_URL ? 'postgres' : 'sqlite';
 }
 
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
-}
 
-function toNumber(value, fallback = 0) {
-  const out = Number(value);
-  return Number.isFinite(out) ? out : fallback;
-}
-
-function clampMinutes(value, fallback, minValue = 1, maxValue = 24 * 60) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.max(minValue, Math.min(maxValue, Math.trunc(parsed)));
-}
-
-function toIso(value = new Date()) {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
-}
-
-function shortHash(value) {
-  return createHash('sha1')
-    .update(String(value || ''))
-    .digest('hex')
-    .slice(0, 16);
-}
-
-function normalizeText(value) {
-  return String(value || '').trim().toLowerCase();
-}
-
-function isIataCode(value) {
-  return /^[A-Z]{3}$/.test(String(value || '').trim().toUpperCase());
-}
-
-function isYmd(value) {
-  return /^\d{4}-\d{2}-\d{2}$/.test(String(value || '').trim());
-}
-
-function toYmd(value) {
-  if (!value) return '';
-  if (value instanceof Date) {
-    if (Number.isNaN(value.getTime())) return '';
-    return value.toISOString().slice(0, 10);
-  }
-  const text = String(value || '').trim();
-  if (!text) return '';
-  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
-  const leadingIso = text.match(/^(\d{4}-\d{2}-\d{2})[T\s]/);
-  if (leadingIso) return leadingIso[1];
-  const parsed = new Date(text);
-  if (Number.isNaN(parsed.getTime())) return '';
-  return parsed.toISOString().slice(0, 10);
-}
-
-function slugify(value) {
-  return String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 80);
-}
-
-function parseJsonSafe(value, fallback = {}) {
-  if (value == null) return fallback;
-  if (typeof value === 'object' && !Array.isArray(value)) return value;
-  try {
-    return JSON.parse(String(value || '{}'));
-  } catch {
-    return fallback;
-  }
-}
-
-function compactRunMetadata(value) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
-  const clone = { ...value };
-  if (clone.stats && typeof clone.stats === 'object' && !Array.isArray(clone.stats)) {
-    const stats = { ...clone.stats };
-    if (Array.isArray(stats.recentRuns)) {
-      stats.recentRuns = stats.recentRuns.slice(0, 5).map((run) => ({
-        id: run?.id || null,
-        status: run?.status || null,
-        started_at: run?.started_at || null,
-        finished_at: run?.finished_at || null,
-        processed_count: Number(run?.processed_count || 0),
-        published_count: Number(run?.published_count || 0),
-        deduped_count: Number(run?.deduped_count || 0),
-        enriched_count: Number(run?.enriched_count || 0),
-        enrich_failed_count: Number(run?.enrich_failed_count || 0)
-      }));
-    }
-    clone.stats = stats;
-  }
-  return clone;
-}
-
-function stringifyJsonSafe(value) {
-  if (value == null) return null;
-  try {
-    return JSON.stringify(value);
-  } catch {}
-  try {
-    return JSON.stringify(compactRunMetadata(value));
-  } catch {}
-  try {
-    return JSON.stringify({ truncated: true, reason: 'serialization_failed' });
-  } catch {
-    return '{"truncated":true}';
-  }
-}
-
-function toRouteMeta(originAirport, destinationAirport) {
-  const route = routeMap.get(`${String(originAirport || '').toUpperCase()}-${String(destinationAirport || '').toUpperCase()}`) || null;
-  return {
-    route,
-    country: String(route?.country || '').trim(),
-    region: String(route?.region || '').trim().toLowerCase()
-  };
-}
-
-const EAST_COAST_CITIES = new Set(['new york', 'newark', 'boston', 'washington', 'washington dc', 'philadelphia']);
-const SEA_COUNTRIES = new Set(['thailand', 'malaysia', 'vietnam', 'indonesia', 'philippines', 'singapore', 'cambodia']);
-
-function deriveClusterInfo(opportunity) {
-  const city = String(opportunity?.destination_city || '').trim();
-  const cityKey = normalizeText(city);
-  const { country, region } = toRouteMeta(opportunity?.origin_airport, opportunity?.destination_airport);
-  const countryKey = normalizeText(opportunity?.destination_country || country);
-  const regionKey = normalizeText(opportunity?.destination_region || region);
-
-  if (countryKey === 'japan') {
-    return { slug: 'japan', cluster_name: 'Japan', region: 'asia' };
-  }
-  if (SEA_COUNTRIES.has(countryKey)) {
-    return { slug: 'southeast-asia', cluster_name: 'Southeast Asia', region: 'asia' };
-  }
-  if (countryKey === 'united states' && EAST_COAST_CITIES.has(cityKey)) {
-    return { slug: 'usa-east-coast', cluster_name: 'USA East Coast', region: 'america' };
-  }
-  if (country) {
-    return {
-      slug: slugify(country),
-      cluster_name: country,
-      region: regionKey || 'global'
-    };
-  }
-  if (regionKey) {
-    const regionName = regionKey === 'eu' ? 'Europe' : regionKey.charAt(0).toUpperCase() + regionKey.slice(1);
-    return {
-      slug: slugify(regionName),
-      cluster_name: regionName,
-      region: regionKey
-    };
-  }
-  return {
-    slug: slugify(city || 'global'),
-    cluster_name: city || 'Global',
-    region: 'global'
-  };
-}
-
-function budgetBucketFromPrice(value) {
-  const price = toNumber(value, 0);
-  if (price <= 200) return 'under_200';
-  if (price <= 400) return 'under_400';
-  if (price <= 600) return 'under_600';
-  return 'over_600';
-}
-
-function matchesBudgetBucket(item, bucket) {
-  const normalized = normalizeText(bucket).replace(/\s+/g, '_');
-  const price = toNumber(item?.price, 0);
-  if (!normalized) return true;
-  if (normalized === 'under_200') return price <= 200;
-  if (normalized === 'under_400') return price <= 400;
-  if (normalized === 'under_600') return price <= 600;
-  if (normalized === 'over_600') return price > 600;
-  return normalized === budgetBucketFromPrice(price);
-}
-
-function estimateStops(route) {
-  const distribution = route?.comfortMetadata?.stopCountDistribution || {};
-  const candidates = [
-    { stops: 0, score: toNumber(distribution[0], 0) },
-    { stops: 1, score: toNumber(distribution[1], 0) },
-    { stops: 2, score: toNumber(distribution[2], 0) }
-  ].sort((a, b) => b.score - a.score);
-  return candidates[0]?.stops ?? 1;
-}
-
-function computeTripLength(departDate, returnDate) {
-  const depart = new Date(departDate);
-  const ret = new Date(returnDate);
-  if (Number.isNaN(depart.getTime()) || Number.isNaN(ret.getTime()) || ret <= depart) return null;
-  const days = Math.round((ret.getTime() - depart.getTime()) / (24 * 3600 * 1000));
-  return clamp(days, 1, 60);
-}
-
-function normalizeTripType(value, returnDate) {
-  const raw = normalizeText(value);
-  if (raw === 'one_way' || raw === 'round_trip') return raw;
-  return returnDate ? 'round_trip' : 'one_way';
-}
-
-function toNullableInt(value) {
-  const out = Math.floor(toNumber(value, NaN));
-  return Number.isFinite(out) ? out : null;
-}
-
-function toNullableScore(value) {
-  const out = toNumber(value, NaN);
-  if (!Number.isFinite(out)) return null;
-  return clamp(Math.round(out * 100) / 100, 0, 100);
-}
-
-function parseBaggageIncluded(value) {
-  if (value === true || value === false) return value;
-  const text = normalizeText(value);
-  if (!text) return null;
-  if (['1', 'true', 'yes', 'included', 'incl', 'si', 's\u00ec'].includes(text)) return true;
-  if (['0', 'false', 'no', 'excluded', 'none'].includes(text)) return false;
-  return null;
-}
-
-function buildAiCopy(row) {
-  const level =
-    row.opportunity_level === 'Rare opportunity'
-      ? 'Opportunit\u00e0 rara'
-      : row.opportunity_level === 'Exceptional price'
-      ? 'Prezzo eccezionale'
-      : row.opportunity_level === 'Great deal'
-      ? 'Ottimo affare'
-      : "Da tenere d'occhio";
-
-  const period = row.return_date
-    ? `${row.depart_date} - ${row.return_date}`
-    : `partenza ${row.depart_date}`;
-
-  const aiTitle = `${level}: ${row.origin_airport} -> ${row.destination_city} a ${Math.round(row.price)} ${row.currency}`;
-  const aiDescription = `Questa opportunit\u00e0 combina prezzo competitivo, rotta ${row.stops === 0 ? 'diretta' : `con ${row.stops} scalo`} e finestra viaggio ${period}.`;
-  const notificationText = `${level}: ${row.origin_airport} -> ${row.destination_airport} da ${Math.round(row.price)} ${row.currency}.`;
-  const whyItMatters = `Score ${row.final_score}/100 con prezzo ${Math.round(row.price)} ${row.currency} e qualit\u00e0 itinerario verificata.`;
-
-  return {
-    aiTitle: aiTitle.slice(0, 180),
-    aiDescription: aiDescription.slice(0, 280),
-    notificationText: notificationText.slice(0, 180),
-    whyItMatters: whyItMatters.slice(0, 220)
-  };
-}
-
-async function enrichWithProviderIfEnabled(row, fallback) {
-  const aiEnabled = parseFlag(process.env.OPPORTUNITY_AI_ENRICHMENT_ENABLED, false);
-  if (!aiEnabled) return fallback;
-
-  const openaiKey = String(process.env.OPENAI_API_KEY || '').trim();
-  const claudeKey = String(process.env.CLAUDE_API_KEY || process.env.ANTHROPIC_API_KEY || '').trim();
-  const provider =
-    String(process.env.OPPORTUNITY_AI_PROVIDER || '').trim().toLowerCase() === 'claude'
-      ? 'claude'
-      : openaiKey
-      ? 'openai'
-      : claudeKey
-      ? 'claude'
-      : 'none';
-  if (provider === 'none') return fallback;
-
-  const systemPrompt =
-    'You are a travel opportunity enrichment engine. Return strict JSON only: {"ai_title":"","ai_description":"","notification_text":"","why_it_matters":"","short_badge_text":""}. Never invent facts or urgency.';
-  const inputPayload = {
-    origin_city: row.origin_city,
-    origin_airport: row.origin_airport,
-    destination_city: row.destination_city,
-    destination_airport: row.destination_airport,
-    price: row.price,
-    currency: row.currency,
-    depart_date: row.depart_date,
-    return_date: row.return_date,
-    trip_length_days: row.trip_length_days,
-    stops: row.stops,
-    airline: row.airline,
-    raw_score: row.raw_score,
-    final_score: row.final_score,
-    opportunity_level: row.opportunity_level,
-    baseline_price: row.baseline_price,
-    savings_percent_if_available: row.savings_percent_if_available
-  };
-
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 9000);
-    let json = null;
-    try {
-      if (provider === 'openai' && openaiKey) {
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${openaiKey}`
-          },
-          body: JSON.stringify({
-            model: process.env.OPENAI_MODEL || 'gpt-4.1-mini',
-            temperature: 0.2,
-            response_format: { type: 'json_object' },
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: JSON.stringify(inputPayload) }
-            ]
-          }),
-          signal: controller.signal
-        });
-        if (!response.ok) return fallback;
-        const payload = await response.json().catch(() => ({}));
-        json = extractJsonObject(payload?.choices?.[0]?.message?.content || '');
-      } else if (provider === 'claude' && claudeKey) {
-        const response = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': claudeKey,
-            'anthropic-version': '2023-06-01'
-          },
-          body: JSON.stringify({
-            model: process.env.ANTHROPIC_MODEL || 'claude-3-5-sonnet-20241022',
-            max_tokens: 350,
-            temperature: 0.2,
-            system: systemPrompt,
-            messages: [{ role: 'user', content: JSON.stringify(inputPayload) }]
-          }),
-          signal: controller.signal
-        });
-        if (!response.ok) return fallback;
-        const payload = await response.json().catch(() => ({}));
-        const content = Array.isArray(payload?.content) ? payload.content.map((item) => item?.text || '').join('\n') : '';
-        json = extractJsonObject(content);
-      }
-    } finally {
-      clearTimeout(timer);
-    }
-    return resolveOpportunityEnrichmentPayload(json, fallback, row.opportunity_level || '');
-  } catch {
-    return fallback;
-  }
-}
+const enrichWithProviderIfEnabled = createOpportunityAiEnricher({
+  aiCache: opportunityAiCache,
+  cacheClient: opportunityCacheClient,
+  cacheTtlSeconds: OPPORTUNITY_AI_CACHE_TTL_SECONDS,
+  cacheOnlyMode: OPPORTUNITY_AI_CACHE_ONLY_MODE,
+  logger
+});
 
 async function ensurePostgres() {
   if (!pgPool) pgPool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
-  await pgPool.query(`
-    CREATE TABLE IF NOT EXISTS travel_opportunities (
-      id TEXT PRIMARY KEY,
-      observation_fingerprint TEXT NOT NULL UNIQUE,
-      origin_city TEXT NOT NULL,
-      origin_airport TEXT NOT NULL,
-      destination_city TEXT NOT NULL,
-      destination_airport TEXT NOT NULL,
-      price NUMERIC(10,2) NOT NULL,
-      currency TEXT NOT NULL,
-      depart_date DATE NOT NULL,
-      return_date DATE NULL,
-      trip_length_days INTEGER NULL,
-      trip_type TEXT NOT NULL DEFAULT 'round_trip',
-      stops INTEGER NOT NULL DEFAULT 1,
-      airline TEXT NOT NULL,
-      baggage_included BOOLEAN NULL,
-      travel_duration_minutes INTEGER NULL,
-      distance_km INTEGER NULL,
-      airline_quality_score NUMERIC(5,2) NULL,
-      booking_url TEXT NOT NULL,
-      raw_score NUMERIC(6,2) NOT NULL,
-      final_score NUMERIC(6,2) NOT NULL,
-      opportunity_level TEXT NOT NULL,
-      ai_title TEXT NULL,
-      ai_description TEXT NULL,
-      notification_text TEXT NULL,
-      why_it_matters TEXT NULL,
-      baseline_price NUMERIC(10,2) NULL,
-      savings_percent_if_available NUMERIC(6,2) NULL,
-      dedupe_key TEXT NULL,
-      is_published BOOLEAN NOT NULL DEFAULT true,
-      published_at TIMESTAMPTZ NULL,
-      enrichment_status TEXT NOT NULL DEFAULT 'pending',
-      alert_status TEXT NOT NULL DEFAULT 'pending',
-      source_observed_at TIMESTAMPTZ NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_travel_opportunities_feed
-      ON travel_opportunities(is_published, final_score DESC, source_observed_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_travel_opportunities_route
-      ON travel_opportunities(origin_airport, destination_airport, depart_date);
-    CREATE INDEX IF NOT EXISTS idx_travel_opportunities_dedupe
-      ON travel_opportunities(dedupe_key, final_score DESC, source_observed_at DESC);
-    CREATE TABLE IF NOT EXISTS opportunity_pipeline_runs (
-      id TEXT PRIMARY KEY,
-      status TEXT NOT NULL,
-      started_at TIMESTAMPTZ NOT NULL,
-      finished_at TIMESTAMPTZ NULL,
-      processed_count INTEGER NOT NULL DEFAULT 0,
-      published_count INTEGER NOT NULL DEFAULT 0,
-      deduped_count INTEGER NOT NULL DEFAULT 0,
-      enriched_count INTEGER NOT NULL DEFAULT 0,
-      enrich_failed_count INTEGER NOT NULL DEFAULT 0,
-      provider_fetch_enabled BOOLEAN NOT NULL DEFAULT false,
-      error_summary TEXT NULL,
-      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_opportunity_pipeline_runs_started_at
-      ON opportunity_pipeline_runs(started_at DESC);
-    CREATE TABLE IF NOT EXISTS opportunity_user_follows (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      entity_type TEXT NOT NULL,
-      slug TEXT NOT NULL,
-      display_name TEXT NOT NULL,
-      follow_type TEXT NOT NULL DEFAULT 'radar',
-      metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_opportunity_user_follows_unique
-      ON opportunity_user_follows(user_id, entity_type, slug, follow_type);
-    CREATE INDEX IF NOT EXISTS idx_opportunity_user_follows_user
-      ON opportunity_user_follows(user_id, updated_at DESC);
-  `);
-  await pgPool.query(`
-    ALTER TABLE travel_opportunities ADD COLUMN IF NOT EXISTS baseline_price NUMERIC(10,2) NULL;
-    ALTER TABLE travel_opportunities ADD COLUMN IF NOT EXISTS savings_percent_if_available NUMERIC(6,2) NULL;
-    ALTER TABLE travel_opportunities ADD COLUMN IF NOT EXISTS dedupe_key TEXT NULL;
-    ALTER TABLE travel_opportunities ADD COLUMN IF NOT EXISTS published_at TIMESTAMPTZ NULL;
-    ALTER TABLE travel_opportunities ADD COLUMN IF NOT EXISTS enrichment_status TEXT NOT NULL DEFAULT 'pending';
-    ALTER TABLE travel_opportunities ADD COLUMN IF NOT EXISTS alert_status TEXT NOT NULL DEFAULT 'pending';
-    ALTER TABLE travel_opportunities ADD COLUMN IF NOT EXISTS trip_type TEXT NOT NULL DEFAULT 'round_trip';
-    ALTER TABLE travel_opportunities ADD COLUMN IF NOT EXISTS baggage_included BOOLEAN NULL;
-    ALTER TABLE travel_opportunities ADD COLUMN IF NOT EXISTS travel_duration_minutes INTEGER NULL;
-    ALTER TABLE travel_opportunities ADD COLUMN IF NOT EXISTS distance_km INTEGER NULL;
-    ALTER TABLE travel_opportunities ADD COLUMN IF NOT EXISTS airline_quality_score NUMERIC(5,2) NULL;
-  `);
+  await pgPool.query(OPPORTUNITY_POSTGRES_SCHEMA_SQL);
+  await pgPool.query(OPPORTUNITY_POSTGRES_ALTER_SQL);
 }
 
 async function ensureSqlite() {
@@ -506,102 +103,15 @@ async function ensureSqlite() {
   await mkdir(dirname(DB_FILE_PATH), { recursive: true });
   const sqlite = await import('node:sqlite');
   sqliteDb = new sqlite.DatabaseSync(DB_FILE_PATH);
-  sqliteDb.exec(`
-    PRAGMA journal_mode = WAL;
-    CREATE TABLE IF NOT EXISTS travel_opportunities (
-      id TEXT PRIMARY KEY,
-      observation_fingerprint TEXT NOT NULL UNIQUE,
-      origin_city TEXT NOT NULL,
-      origin_airport TEXT NOT NULL,
-      destination_city TEXT NOT NULL,
-      destination_airport TEXT NOT NULL,
-      price REAL NOT NULL,
-      currency TEXT NOT NULL,
-      depart_date TEXT NOT NULL,
-      return_date TEXT NULL,
-      trip_length_days INTEGER NULL,
-      trip_type TEXT NOT NULL DEFAULT 'round_trip',
-      stops INTEGER NOT NULL DEFAULT 1,
-      airline TEXT NOT NULL,
-      baggage_included INTEGER NULL,
-      travel_duration_minutes INTEGER NULL,
-      distance_km INTEGER NULL,
-      airline_quality_score REAL NULL,
-      booking_url TEXT NOT NULL,
-      raw_score REAL NOT NULL,
-      final_score REAL NOT NULL,
-      opportunity_level TEXT NOT NULL,
-      ai_title TEXT NULL,
-      ai_description TEXT NULL,
-      notification_text TEXT NULL,
-      why_it_matters TEXT NULL,
-      baseline_price REAL NULL,
-      savings_percent_if_available REAL NULL,
-      dedupe_key TEXT NULL,
-      is_published INTEGER NOT NULL DEFAULT 1,
-      published_at TEXT NULL,
-      enrichment_status TEXT NOT NULL DEFAULT 'pending',
-      alert_status TEXT NOT NULL DEFAULT 'pending',
-      source_observed_at TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-    CREATE INDEX IF NOT EXISTS idx_travel_opportunities_feed
-      ON travel_opportunities(is_published, final_score DESC, source_observed_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_travel_opportunities_route
-      ON travel_opportunities(origin_airport, destination_airport, depart_date);
-    CREATE INDEX IF NOT EXISTS idx_travel_opportunities_dedupe
-      ON travel_opportunities(dedupe_key, final_score DESC, source_observed_at DESC);
-    CREATE TABLE IF NOT EXISTS opportunity_pipeline_runs (
-      id TEXT PRIMARY KEY,
-      status TEXT NOT NULL,
-      started_at TEXT NOT NULL,
-      finished_at TEXT NULL,
-      processed_count INTEGER NOT NULL DEFAULT 0,
-      published_count INTEGER NOT NULL DEFAULT 0,
-      deduped_count INTEGER NOT NULL DEFAULT 0,
-      enriched_count INTEGER NOT NULL DEFAULT 0,
-      enrich_failed_count INTEGER NOT NULL DEFAULT 0,
-      provider_fetch_enabled INTEGER NOT NULL DEFAULT 0,
-      error_summary TEXT NULL,
-      metadata TEXT NOT NULL DEFAULT '{}',
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-    CREATE INDEX IF NOT EXISTS idx_opportunity_pipeline_runs_started_at
-      ON opportunity_pipeline_runs(started_at DESC);
-    CREATE TABLE IF NOT EXISTS opportunity_user_follows (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      entity_type TEXT NOT NULL,
-      slug TEXT NOT NULL,
-      display_name TEXT NOT NULL,
-      follow_type TEXT NOT NULL DEFAULT 'radar',
-      metadata_json TEXT NOT NULL DEFAULT '{}',
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_opportunity_user_follows_unique
-      ON opportunity_user_follows(user_id, entity_type, slug, follow_type);
-    CREATE INDEX IF NOT EXISTS idx_opportunity_user_follows_user
-      ON opportunity_user_follows(user_id, updated_at DESC);
-  `);
+  sqliteDb.exec(OPPORTUNITY_SQLITE_SCHEMA_SQL);
   const columns = sqliteDb.prepare(`PRAGMA table_info(travel_opportunities)`).all().map((row) => String(row.name));
   const ensureColumn = (name, sqlType) => {
     if (columns.includes(name)) return;
     sqliteDb.exec(`ALTER TABLE travel_opportunities ADD COLUMN ${name} ${sqlType}`);
   };
-  ensureColumn('baseline_price', 'REAL NULL');
-  ensureColumn('savings_percent_if_available', 'REAL NULL');
-  ensureColumn('dedupe_key', 'TEXT NULL');
-  ensureColumn('published_at', 'TEXT NULL');
-  ensureColumn('enrichment_status', "TEXT NOT NULL DEFAULT 'pending'");
-  ensureColumn('alert_status', "TEXT NOT NULL DEFAULT 'pending'");
-  ensureColumn('trip_type', "TEXT NOT NULL DEFAULT 'round_trip'");
-  ensureColumn('baggage_included', 'INTEGER NULL');
-  ensureColumn('travel_duration_minutes', 'INTEGER NULL');
-  ensureColumn('distance_km', 'INTEGER NULL');
-  ensureColumn('airline_quality_score', 'REAL NULL');
+  for (const [name, sqlType] of OPPORTUNITY_SQLITE_REQUIRED_COLUMNS) {
+    ensureColumn(name, sqlType);
+  }
 }
 
 async function ensureInitialized() {
@@ -683,181 +193,13 @@ function normalizeOpportunityRow({
 
 async function upsertOpportunity(row) {
   if (getMode() === 'postgres') {
-    await pgPool.query(
-      `INSERT INTO travel_opportunities (
-        id, observation_fingerprint, origin_city, origin_airport, destination_city, destination_airport,
-        price, currency, depart_date, return_date, trip_length_days, trip_type, stops, airline,
-        baggage_included, travel_duration_minutes, distance_km, airline_quality_score, booking_url,
-        raw_score, final_score, opportunity_level, ai_title, ai_description, notification_text,
-        why_it_matters, baseline_price, savings_percent_if_available, dedupe_key, is_published,
-        published_at, enrichment_status, alert_status, source_observed_at, created_at, updated_at
-      ) VALUES (
-        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36
-      )
-      ON CONFLICT (observation_fingerprint) DO UPDATE SET
-        origin_city = EXCLUDED.origin_city,
-        origin_airport = EXCLUDED.origin_airport,
-        destination_city = EXCLUDED.destination_city,
-        destination_airport = EXCLUDED.destination_airport,
-        price = EXCLUDED.price,
-        currency = EXCLUDED.currency,
-        depart_date = EXCLUDED.depart_date,
-        return_date = EXCLUDED.return_date,
-        trip_length_days = EXCLUDED.trip_length_days,
-        trip_type = EXCLUDED.trip_type,
-        stops = EXCLUDED.stops,
-        airline = EXCLUDED.airline,
-        baggage_included = EXCLUDED.baggage_included,
-        travel_duration_minutes = EXCLUDED.travel_duration_minutes,
-        distance_km = EXCLUDED.distance_km,
-        airline_quality_score = EXCLUDED.airline_quality_score,
-        booking_url = EXCLUDED.booking_url,
-        raw_score = EXCLUDED.raw_score,
-        final_score = EXCLUDED.final_score,
-        opportunity_level = EXCLUDED.opportunity_level,
-        ai_title = EXCLUDED.ai_title,
-        ai_description = EXCLUDED.ai_description,
-        notification_text = EXCLUDED.notification_text,
-        why_it_matters = EXCLUDED.why_it_matters,
-        baseline_price = EXCLUDED.baseline_price,
-        savings_percent_if_available = EXCLUDED.savings_percent_if_available,
-        dedupe_key = EXCLUDED.dedupe_key,
-        is_published = EXCLUDED.is_published,
-        published_at = EXCLUDED.published_at,
-        enrichment_status = EXCLUDED.enrichment_status,
-        alert_status = EXCLUDED.alert_status,
-        source_observed_at = EXCLUDED.source_observed_at,
-        updated_at = NOW()`,
-      [
-        row.id,
-        row.observation_fingerprint,
-        row.origin_city,
-        row.origin_airport,
-        row.destination_city,
-        row.destination_airport,
-        row.price,
-        row.currency,
-        row.depart_date,
-        row.return_date,
-        row.trip_length_days,
-        row.trip_type,
-        row.stops,
-        row.airline,
-        row.baggage_included,
-        row.travel_duration_minutes,
-        row.distance_km,
-        row.airline_quality_score,
-        row.booking_url,
-        row.raw_score,
-        row.final_score,
-        row.opportunity_level,
-        row.ai_title,
-        row.ai_description,
-        row.notification_text,
-        row.why_it_matters,
-        row.baseline_price,
-        row.savings_percent_if_available,
-        row.dedupe_key,
-        row.is_published,
-        row.published_at,
-        row.enrichment_status,
-        row.alert_status,
-        row.source_observed_at,
-        row.created_at,
-        row.updated_at
-      ]
-    );
+    await pgPool.query(OPPORTUNITY_UPSERT_POSTGRES_SQL, buildOpportunityUpsertValues(row));
     return;
   }
 
   sqliteDb
-    .prepare(
-      `INSERT INTO travel_opportunities (
-        id, observation_fingerprint, origin_city, origin_airport, destination_city, destination_airport,
-        price, currency, depart_date, return_date, trip_length_days, trip_type, stops, airline,
-        baggage_included, travel_duration_minutes, distance_km, airline_quality_score, booking_url,
-        raw_score, final_score, opportunity_level, ai_title, ai_description, notification_text,
-        why_it_matters, baseline_price, savings_percent_if_available, dedupe_key, is_published,
-        published_at, enrichment_status, alert_status, source_observed_at, created_at, updated_at
-      ) VALUES (
-        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?, ?
-      )
-      ON CONFLICT(observation_fingerprint) DO UPDATE SET
-        origin_city=excluded.origin_city,
-        origin_airport=excluded.origin_airport,
-        destination_city=excluded.destination_city,
-        destination_airport=excluded.destination_airport,
-        price=excluded.price,
-        currency=excluded.currency,
-        depart_date=excluded.depart_date,
-        return_date=excluded.return_date,
-        trip_length_days=excluded.trip_length_days,
-        trip_type=excluded.trip_type,
-        stops=excluded.stops,
-        airline=excluded.airline,
-        baggage_included=excluded.baggage_included,
-        travel_duration_minutes=excluded.travel_duration_minutes,
-        distance_km=excluded.distance_km,
-        airline_quality_score=excluded.airline_quality_score,
-        booking_url=excluded.booking_url,
-        raw_score=excluded.raw_score,
-        final_score=excluded.final_score,
-        opportunity_level=excluded.opportunity_level,
-        ai_title=excluded.ai_title,
-        ai_description=excluded.ai_description,
-        notification_text=excluded.notification_text,
-        why_it_matters=excluded.why_it_matters,
-        baseline_price=excluded.baseline_price,
-        savings_percent_if_available=excluded.savings_percent_if_available,
-        dedupe_key=excluded.dedupe_key,
-        is_published=excluded.is_published,
-        published_at=excluded.published_at,
-        enrichment_status=excluded.enrichment_status,
-        alert_status=excluded.alert_status,
-        source_observed_at=excluded.source_observed_at,
-        updated_at=datetime('now')`
-    )
-    .run(
-      row.id,
-      row.observation_fingerprint,
-      row.origin_city,
-      row.origin_airport,
-      row.destination_city,
-      row.destination_airport,
-      row.price,
-      row.currency,
-      row.depart_date,
-      row.return_date,
-      row.trip_length_days,
-      row.trip_type,
-      row.stops,
-      row.airline,
-      row.baggage_included == null ? null : row.baggage_included ? 1 : 0,
-      row.travel_duration_minutes,
-      row.distance_km,
-      row.airline_quality_score,
-      row.booking_url,
-      row.raw_score,
-      row.final_score,
-      row.opportunity_level,
-      row.ai_title,
-      row.ai_description,
-      row.notification_text,
-      row.why_it_matters,
-      row.baseline_price,
-      row.savings_percent_if_available,
-      row.dedupe_key,
-      row.is_published ? 1 : 0,
-      row.published_at,
-      row.enrichment_status,
-      row.alert_status,
-      row.source_observed_at,
-      row.created_at,
-      row.updated_at
-    );
+    .prepare(OPPORTUNITY_UPSERT_SQLITE_SQL)
+    .run(...buildOpportunityUpsertValues(row, { sqlite: true }));
 }
 
 export async function refreshOpportunityFeed({ lookbackDays = 75, limit = 2000 } = {}) {
@@ -886,8 +228,8 @@ export async function refreshOpportunityFeed({ lookbackDays = 75, limit = 2000 }
       }
       const observationMeta = parseJsonSafe(observation.metadata, {});
       const returnDate = toYmd(observation.return_date) || null;
-      const route = routeMap.get(`${originAirport}-${destinationAirport}`) || null;
-      const origin = originMap.get(originAirport) || { airport: originAirport, city: originAirport };
+      const route = resolveRoute(originAirport, destinationAirport);
+      const origin = resolveOrigin(originAirport);
       const stopHint = toNullableInt(observationMeta.totalStops ?? observationMeta.stops ?? observationMeta.stopCount);
       const stops = Number.isFinite(stopHint) ? Math.max(0, stopHint) : estimateStops(route);
       if (stops > 3) {
@@ -984,7 +326,7 @@ export async function refreshOpportunityFeed({ lookbackDays = 75, limit = 2000 }
 
 function normalizeOpportunityRowForApi(row) {
   if (!row) return null;
-  const meta = toRouteMeta(row.origin_airport, row.destination_airport);
+  const meta = resolveRouteMeta(row.origin_airport, row.destination_airport);
   const destinationCountry = String(row.destination_country || meta.country || '').trim();
   const destinationRegion = String(row.destination_region || meta.region || '').trim().toLowerCase();
   const departDate = toYmd(row.depart_date);
@@ -1085,34 +427,6 @@ async function dedupePublishedRows() {
   `);
 }
 
-function applyOpportunityFilters(items, { country = '', region = '', cluster = '', budgetBucket = '', entity = '' } = {}) {
-  const safeCountry = normalizeText(country);
-  const safeRegion = normalizeText(region);
-  const safeCluster = normalizeText(cluster);
-  const safeEntity = normalizeText(entity);
-
-  return items.filter((item) => {
-    if (safeCountry && normalizeText(item.destination_country) !== safeCountry) return false;
-    if (safeRegion && normalizeText(item.destination_region) !== safeRegion) return false;
-    if (safeCluster && normalizeText(item.destination_cluster_slug) !== safeCluster) return false;
-    if (budgetBucket && !matchesBudgetBucket(item, budgetBucket)) return false;
-    if (safeEntity) {
-      const entityPool = new Set([
-        normalizeText(item.destination_city),
-        normalizeText(item.destination_country),
-        normalizeText(item.destination_region),
-        normalizeText(item.destination_cluster_slug),
-        normalizeText(item.destination_airport),
-        normalizeText(item.origin_airport),
-        slugify(item.destination_city),
-        slugify(item.destination_country)
-      ]);
-      if (!entityPool.has(safeEntity)) return false;
-    }
-    return true;
-  });
-}
-
 export async function listPublishedOpportunities({
   originAirport = '',
   maxPrice = null,
@@ -1184,24 +498,6 @@ export async function listPublishedOpportunities({
   }
   const filtered = applyOpportunityFilters(sanitized, { country, region, cluster, budgetBucket, entity });
   return filtered.slice(0, safeLimit);
-}
-
-function mapUserFollowRow(row) {
-  if (!row) return null;
-  const metadata = sanitizeFollowMetadata(parseJsonSafe(row.metadata_json, {}));
-  return {
-    id: String(row.id),
-    user_id: String(row.user_id),
-    follow_type: String(row.follow_type || 'radar'),
-    created_at: row.created_at ? String(row.created_at) : null,
-    updated_at: row.updated_at ? String(row.updated_at) : null,
-    entity: {
-      entity_type: String(row.entity_type || 'destination_cluster'),
-      slug: String(row.slug || ''),
-      display_name: String(row.display_name || row.slug || ''),
-      metadata
-    }
-  };
 }
 
 export async function createOrUpdateUserFollow({ userId, entityType, slug, displayName, followType = 'radar', metadata = {} }) {
@@ -1469,48 +765,6 @@ export async function listRelatedOpportunities(opportunity, limit = 4) {
   return rows.map((row) => normalizeOpportunityRowForApi({ ...row, is_published: Boolean(row.is_published) }));
 }
 
-const monthHints = [
-  { pattern: /\b(gennaio|january)\b/i, month: 1 },
-  { pattern: /\b(febbraio|february)\b/i, month: 2 },
-  { pattern: /\b(marzo|march)\b/i, month: 3 },
-  { pattern: /\b(aprile|april)\b/i, month: 4 },
-  { pattern: /\b(maggio|may)\b/i, month: 5 },
-  { pattern: /\b(giugno|june)\b/i, month: 6 },
-  { pattern: /\b(luglio|july)\b/i, month: 7 },
-  { pattern: /\b(agosto|august)\b/i, month: 8 },
-  { pattern: /\b(settembre|september)\b/i, month: 9 },
-  { pattern: /\b(ottobre|october)\b/i, month: 10 },
-  { pattern: /\b(novembre|november)\b/i, month: 11 },
-  { pattern: /\b(dicembre|december)\b/i, month: 12 }
-];
-
-function parsePromptFilters(prompt) {
-  const raw = String(prompt || '').trim();
-  const filters = {
-    budget: null,
-    originAirport: '',
-    destinationKeyword: '',
-    travelMonth: ''
-  };
-  const budgetMatch = raw.match(/(\d{2,5})\s*(eur|euro|€)/i) || raw.match(/budget[^0-9]*(\d{2,5})/i);
-  if (budgetMatch) filters.budget = Number(budgetMatch[1]);
-
-  const iataMatches = raw.match(/\b[A-Z]{3}\b/g) || [];
-  if (iataMatches.length > 0) filters.originAirport = String(iataMatches[0]).toUpperCase();
-
-  for (const hint of monthHints) {
-    if (hint.pattern.test(raw)) {
-      const year = new Date().getUTCFullYear();
-      filters.travelMonth = `${year}-${String(hint.month).padStart(2, '0')}`;
-      break;
-    }
-  }
-
-  const fromMatch = raw.match(/(?:for|per|to|verso)\s+([A-Za-zÀ-ÿ'\-\s]{3,30})/i);
-  if (fromMatch) filters.destinationKeyword = String(fromMatch[1]).trim();
-  return filters;
-}
-
 export async function queryOpportunitiesByPrompt({ prompt, limit = 12 }) {
   const parsed = parsePromptFilters(prompt);
   const items = await listPublishedOpportunities({
@@ -1538,7 +792,11 @@ export async function enrichShortlistedOpportunities({ maxItems = 10 } = {}) {
   await ensureInitialized();
   const safeLimit = Math.max(1, Math.min(40, Number(maxItems) || 10));
   const perRunCap = Math.max(0, Number(process.env.OPPORTUNITY_AI_ENRICHMENT_MAX_CALLS_PER_RUN || 0));
-  const dailyCap = Math.max(0, Number(process.env.OPPORTUNITY_AI_ENRICHMENT_DAILY_BUDGET || 0));
+  // Safe default: 20 enrichment calls/day in production if not explicitly configured.
+  // Set OPPORTUNITY_AI_ENRICHMENT_DAILY_BUDGET=0 to fully disable budget-gating
+  // (not recommended; prefer setting OPPORTUNITY_AI_ENRICHMENT_ENABLED=false instead).
+  const isProduction = String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
+  const dailyCap = Math.max(0, Number(process.env.OPPORTUNITY_AI_ENRICHMENT_DAILY_BUDGET || (isProduction ? 20 : 200)));
   const effectiveLimit = perRunCap > 0 ? Math.min(safeLimit, perRunCap) : safeLimit;
   const cache = getCacheClient();
   const dayStamp = (() => {
@@ -1548,7 +806,9 @@ export async function enrichShortlistedOpportunities({ maxItems = 10 } = {}) {
   const dailyKey = `opportunity:ai:enrichment:day:${dayStamp}`;
 
   async function claimDailyBudget() {
-    if (!dailyCap || !cache || typeof cache.incr !== 'function') return true;
+    // Fail closed: no Redis or cap=0 means no AI calls are allowed.
+    if (!cache || typeof cache.incr !== 'function') return false;
+    if (dailyCap <= 0) return false;
     const used = Number(await cache.incr(dailyKey));
     if (used === 1 && typeof cache.expire === 'function') {
       await cache.expire(dailyKey, 24 * 60 * 60 + 120);
@@ -1903,3 +1163,4 @@ export async function getOpportunityIntelligenceDebugStats() {
     refreshedAt: new Date().toISOString()
   };
 }
+

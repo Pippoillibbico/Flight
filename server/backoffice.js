@@ -41,6 +41,7 @@ import { buildAdminBackofficeReport } from './lib/admin-backoffice-report.js';
 import { readDb } from './lib/db.js';
 import { parseCookieHeader } from './lib/http-cookies.js';
 import { getFollowSignalsSummary } from './lib/opportunity-store.js';
+import { getCostCapMonitoringSnapshot } from './lib/cost-cap-monitor.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -609,11 +610,13 @@ app.get('/api/report', requireAdminApi, async (_req, res) => {
   try {
     const db = await readDb();
     const followSignals = await getFollowSignalsSummary({ limit: 10 }).catch(() => ({ total: 0, topRoutes: [] }));
+    const costMonitoring = await getCostCapMonitoringSnapshot().catch(() => null);
     const report = buildAdminBackofficeReport({
       db,
       followSignals,
       now: Date.now(),
-      windowDays: 30
+      windowDays: 30,
+      costMonitoring
     });
     res.setHeader('Cache-Control', 'no-store');
     return res.status(200).json({ ok: true, report });

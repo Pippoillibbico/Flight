@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path';
 
 const FRONTEND_ROOT = resolve(process.cwd(), 'src');
 const FORBIDDEN_PATTERNS = [
-  /process\.env\.(JWT_SECRET|OPENAI_API_KEY|ANTHROPIC_API_KEY|CLAUDE_API_KEY|STRIPE_SECRET_KEY|BT_PRIVATE_KEY|INTERNAL_INGEST_TOKEN)/,
+  /process\.env\.(JWT_SECRET|OPENAI_API_KEY|ANTHROPIC_API_KEY|CLAUDE_API_KEY|STRIPE_SECRET_KEY|INTERNAL_INGEST_TOKEN)/,
   /\bsk-[A-Za-z0-9_-]{20,}\b/
 ];
 const ALLOWED_PUBLIC_ENV_PATTERN = /import\.meta\.env\.VITE_[A-Z0-9_]+/g;

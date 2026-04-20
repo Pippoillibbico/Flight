@@ -9,7 +9,7 @@ function budgetToBucket(budget) {
   return 'high';
 }
 
-function utcDateString(date = new Date()) {
+export function utcDateString(date = new Date()) {
   return date.toISOString().slice(0, 10);
 }
 

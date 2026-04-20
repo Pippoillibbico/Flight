@@ -1,6 +1,9 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { canUseRadar } from '../lib/plan-access.js';
+import { canUseRadar, canUseSmartAlerts, getUpgradeContext, resolveUserPlan } from '../lib/plan-access.js';
+
+// Pro users get a limited number of active price alerts per month.
+const SMART_ALERTS_PRO_LIMIT = Number(process.env.SMART_ALERTS_PRO_LIMIT ?? 3);
 import { getPriceAlertsStore } from '../lib/price-alerts-store.js';
 
 const iataSchema = z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/, 'Invalid IATA code.');
@@ -304,6 +307,42 @@ export function buildAlertsRouter({
   router.post('/alerts/price-alerts', authGuard, csrfGuard, requireApiScope('alerts'), quotaGuard({ counter: 'alerts', amount: 1 }), async (req, res) => {
     const parsed = priceAlertCreateSchema.safeParse(req.body);
     if (!parsed.success) return sendInvalidPayload(req, res, parsed.error.issues[0]?.message ?? 'Invalid price alert payload.');
+
+    const user = await fetchCurrentUser(req.user.sub);
+    if (!user) return sendMachineError(req, res, 404, 'user_not_found');
+    const { planType } = resolveUserPlan(user);
+
+    if (planType === 'free') {
+      // Free users cannot create price alerts at all.
+      return res.status(402).json({
+        error: 'premium_required',
+        message: 'Price alerts are available on the Pro and Elite plans.',
+        upgrade_context: getUpgradeContext(user, 'smart_alerts'),
+        pro_limit: SMART_ALERTS_PRO_LIMIT,
+        request_id: req.id || null
+      });
+    }
+
+    if (planType === 'pro') {
+      // Pro users are capped at SMART_ALERTS_PRO_LIMIT active price alerts.
+      try {
+        const existing = await priceAlertsStore.listPriceAlerts({ userId: req.user.sub });
+        const activeCount = (Array.isArray(existing) ? existing : []).filter((a) => !a.deletedAt && a.enabled !== false).length;
+        if (activeCount >= SMART_ALERTS_PRO_LIMIT) {
+          return res.status(402).json({
+            error: 'premium_required',
+            message: `Pro plan allows up to ${SMART_ALERTS_PRO_LIMIT} active price alerts. Upgrade to Elite for unlimited alerts.`,
+            upgrade_context: 'smart_alerts_limit',
+            alerts_used: activeCount,
+            alerts_limit: SMART_ALERTS_PRO_LIMIT,
+            request_id: req.id || null
+          });
+        }
+      } catch {
+        // Count check failed — allow the request rather than blocking unfairly.
+      }
+    }
+    // Elite: unlimited — no additional check needed.
 
     try {
       const item = await priceAlertsStore.createPriceAlert({

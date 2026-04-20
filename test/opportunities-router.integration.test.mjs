@@ -123,6 +123,60 @@ test('opportunities follows CRUD works for authenticated user', async () => {
   });
 });
 
+test('opportunities follows allow re-saving an existing follow when free limit is already reached', async () => {
+  const { app } = createRouterApp({
+    user: {
+      id: 'u-free-cap',
+      planType: 'free',
+      planStatus: 'active',
+      isPremium: false
+    }
+  });
+
+  const seedSlugs = ['japan', 'spain', 'greece', 'thailand', 'canary-islands'];
+  await withServer(app, async (baseUrl) => {
+    for (const slug of seedSlugs) {
+      const createRes = await fetch(`${baseUrl}/api/opportunities/follows`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          entityType: 'destination_cluster',
+          slug,
+          displayName: slug,
+          followType: 'radar'
+        })
+      });
+      assert.equal(createRes.status, 201);
+    }
+
+    const duplicateRes = await fetch(`${baseUrl}/api/opportunities/follows`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        entityType: 'destination_cluster',
+        slug: 'japan',
+        displayName: 'Japan',
+        followType: 'radar'
+      })
+    });
+    assert.equal(duplicateRes.status, 201, 'duplicate follow should update, not be blocked by plan limit');
+
+    const overLimitRes = await fetch(`${baseUrl}/api/opportunities/follows`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        entityType: 'destination_cluster',
+        slug: 'mexico',
+        displayName: 'Mexico',
+        followType: 'radar'
+      })
+    });
+    assert.equal(overLimitRes.status, 402);
+    const body = await overLimitRes.json();
+    assert.equal(body.error, 'premium_required');
+  });
+});
+
 test('radar preferences persist across PUT and GET', async () => {
   const { app } = createRouterApp();
   await withServer(app, async (baseUrl) => {
