@@ -67,7 +67,48 @@ const ReportSchema = z.object({
       label: z.string(),
       meta: z.string().optional()
     })
-  )
+  ),
+  monitoring: z
+    .object({
+      callsPerUser: z
+        .object({
+          search: z.number(),
+          provider: z.number(),
+          ai: z.number()
+        })
+        .nullable(),
+      costPerUser: z
+        .object({
+          provider: z.number(),
+          ai: z.number(),
+          total: z.number()
+        })
+        .nullable(),
+      budgetUsedPercent: z.object({
+        providerDailyCalls: z.number(),
+        aiMonthlyTokens: z.number()
+      }),
+      search429Count: z.number(),
+      search429Pct: z.number(),
+      usersActiveEstimated: z.number(),
+      feedViews: z.number(),
+      redirectClicks: z.number(),
+      ctrPercent: z.number(),
+      providerCostTotalEur: z.number(),
+      aiCostTotalEur: z.number(),
+      providerBudgetExceededEvents: z.number(),
+      aiBudgetExceededEvents: z.number(),
+      alerts: z.array(
+        z.object({
+          level: z.string(),
+          code: z.string(),
+          message: z.string()
+        })
+      ),
+      suggestions: z.array(z.string())
+    })
+    .nullable()
+    .optional()
 });
 
 const AdminBackofficeSectionPropsSchema = z
@@ -110,6 +151,25 @@ function healthBadge(count, warnAt = 1, badAt = 5) {
   if (count === 0) return { text: 'OK', cls: 'admin-badge-ok' };
   if (count < badAt) return { text: `${count} warn`, cls: 'admin-badge-warn' };
   return { text: `${count} issues`, cls: 'admin-badge-bad' };
+}
+
+function formatPercent(value) {
+  const numeric = Number(value || 0);
+  if (!Number.isFinite(numeric)) return '0.0%';
+  return `${numeric.toFixed(1)}%`;
+}
+
+function formatCurrencyEur(value) {
+  const numeric = Number(value || 0);
+  if (!Number.isFinite(numeric)) return 'EUR 0.00';
+  return `EUR ${numeric.toFixed(2)}`;
+}
+
+function alertClass(level) {
+  const safe = String(level || '').toLowerCase();
+  if (safe === 'critical') return 'admin-insight-high';
+  if (safe === 'warning') return 'admin-insight-medium';
+  return 'admin-insight-ok';
 }
 
 function deriveWhyNoPurchase(funnelView, monetization) {
@@ -611,6 +671,134 @@ function AdminBackofficeSection(props) {
               <p className="muted" style={{ marginTop: 12 }}>No recent errors — system is clean.</p>
             )}
           </SectionCard>
+          {report.monitoring ? (
+            <SectionCard
+              icon="Monitoring"
+              title="Economic monitoring"
+              subtitle="Daily KPI for costs, caps, and funnel pressure"
+              testId="admin-economic-monitoring-section"
+              insight="Use this block for daily tuning decisions before scaling traffic."
+            >
+              <div className="admin-ops-grid">
+                <div className="admin-ops-stat">
+                  <span className="admin-ops-value admin-ops-ok">{report.monitoring.usersActiveEstimated}</span>
+                  <span className="admin-ops-label">Active users (est.)</span>
+                </div>
+                <div className="admin-ops-stat">
+                  <span className="admin-ops-value admin-ops-ok">{report.monitoring.feedViews}</span>
+                  <span className="admin-ops-label">Feed views</span>
+                </div>
+                <div className="admin-ops-stat">
+                  <span className="admin-ops-value admin-ops-ok">{report.monitoring.redirectClicks}</span>
+                  <span className="admin-ops-label">Redirect clicks</span>
+                </div>
+                <div className="admin-ops-stat">
+                  <span className="admin-ops-value admin-ops-ok">{formatPercent(report.monitoring.ctrPercent)}</span>
+                  <span className="admin-ops-label">CTR</span>
+                </div>
+                <div className="admin-ops-stat">
+                  <span className="admin-ops-value admin-ops-warn">{formatCurrencyEur(report.monitoring.providerCostTotalEur)}</span>
+                  <span className="admin-ops-label">Provider cost total</span>
+                </div>
+                <div className="admin-ops-stat">
+                  <span className="admin-ops-value admin-ops-warn">{formatCurrencyEur(report.monitoring.aiCostTotalEur)}</span>
+                  <span className="admin-ops-label">AI cost total</span>
+                </div>
+                <div className="admin-ops-stat">
+                  <span className="admin-ops-value admin-ops-ok">
+                    {report.monitoring.costPerUser ? formatCurrencyEur(report.monitoring.costPerUser.total) : 'n/a'}
+                  </span>
+                  <span className="admin-ops-label">Cost per user</span>
+                </div>
+                <div className="admin-ops-stat">
+                  <span className="admin-ops-value admin-ops-ok">
+                    {report.monitoring.callsPerUser ? Number(report.monitoring.callsPerUser.search || 0).toFixed(2) : 'n/a'}
+                  </span>
+                  <span className="admin-ops-label">Calls per user</span>
+                </div>
+                <div className="admin-ops-stat">
+                  <span
+                    className={`admin-ops-value ${
+                      report.monitoring.budgetUsedPercent.providerDailyCalls >= 100
+                        ? 'admin-ops-bad'
+                        : report.monitoring.budgetUsedPercent.providerDailyCalls >= 80
+                        ? 'admin-ops-warn'
+                        : 'admin-ops-ok'
+                    }`}
+                  >
+                    {formatPercent(report.monitoring.budgetUsedPercent.providerDailyCalls)}
+                  </span>
+                  <span className="admin-ops-label">% provider budget used</span>
+                </div>
+                <div className="admin-ops-stat">
+                  <span
+                    className={`admin-ops-value ${
+                      report.monitoring.budgetUsedPercent.aiMonthlyTokens >= 90
+                        ? 'admin-ops-bad'
+                        : report.monitoring.budgetUsedPercent.aiMonthlyTokens >= 70
+                        ? 'admin-ops-warn'
+                        : 'admin-ops-ok'
+                    }`}
+                  >
+                    {formatPercent(report.monitoring.budgetUsedPercent.aiMonthlyTokens)}
+                  </span>
+                  <span className="admin-ops-label">% AI budget used</span>
+                </div>
+                <div className="admin-ops-stat">
+                  <span
+                    className={`admin-ops-value ${
+                      report.monitoring.search429Pct > 20 ? 'admin-ops-bad' : report.monitoring.search429Pct > 0 ? 'admin-ops-warn' : 'admin-ops-ok'
+                    }`}
+                  >
+                    {formatPercent(report.monitoring.search429Pct)}
+                  </span>
+                  <span className="admin-ops-label">Search 429%</span>
+                </div>
+                <div className="admin-ops-stat">
+                  <span className="admin-ops-value admin-ops-warn">{report.monitoring.providerBudgetExceededEvents}</span>
+                  <span className="admin-ops-label">budget_exceeded_provider</span>
+                </div>
+                <div className="admin-ops-stat">
+                  <span className="admin-ops-value admin-ops-warn">{report.monitoring.aiBudgetExceededEvents}</span>
+                  <span className="admin-ops-label">budget_exceeded_ai</span>
+                </div>
+                <div className="admin-ops-stat">
+                  <span className={`admin-ops-value ${report.monitoring.alerts.length > 0 ? 'admin-ops-warn' : 'admin-ops-ok'}`}>
+                    {report.monitoring.alerts.length}
+                  </span>
+                  <span className="admin-ops-label">Active alerts</span>
+                </div>
+              </div>
+              {report.monitoring.alerts.length > 0 ? (
+                <div style={{ marginTop: 16 }}>
+                  <p className="admin-section-subtitle" style={{ marginBottom: 8 }}>Alerts</p>
+                  <ul className="admin-insight-list">
+                    {report.monitoring.alerts.map((item) => (
+                      <li key={`${item.code}:${item.message}`} className={`admin-insight-item ${alertClass(item.level)}`}>
+                        <span className="admin-insight-icon">!</span>
+                        <span className="admin-insight-text">
+                          [{String(item.level || 'info').toUpperCase()}] {item.message}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {report.monitoring.suggestions.length > 0 ? (
+                <div style={{ marginTop: 16 }}>
+                  <p className="admin-section-subtitle" style={{ marginBottom: 8 }}>Automatic suggestions</p>
+                  <ul className="admin-insight-list">
+                    {report.monitoring.suggestions.map((item) => (
+                      <li key={item} className="admin-insight-item admin-insight-ok">
+                        <span className="admin-insight-icon">i</span>
+                        <span className="admin-insight-text">{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </SectionCard>
+          ) : null}
 
           {/* ── Recent Activity ── */}
           <SectionCard

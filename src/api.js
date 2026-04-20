@@ -88,11 +88,14 @@ async function fetchWithPolicy(url, init = {}, { timeoutMs = REQUEST_TIMEOUT_MS,
 }
 
 function createApiError(response, payload) {
-  const code = String(payload.error || '').trim();
-  const friendlyMessage = String(payload.message || '').trim();
+  const safePayload = payload && typeof payload === 'object' ? payload : {};
+  const code = String(safePayload.error || '').trim();
+  const friendlyMessage = String(safePayload.message || '').trim();
   const fallbackMessage =
     code === 'rate_limited' || code === 'limit_exceeded'
       ? 'Monthly plan limit reached. Upgrade to keep discovering opportunities.'
+      : code === 'premium_required'
+      ? 'This feature requires a higher plan. Upgrade to continue.'
       : code === 'unauthorized' || code === 'auth_required'
       ? 'Sign in to continue.'
       : code === 'forbidden'
@@ -105,8 +108,33 @@ function createApiError(response, payload) {
   const error = new Error(friendlyMessage || fallbackMessage);
   error.status = response.status;
   error.code = code || 'request_failed';
-  error.resetAt = payload.reset_at || null;
-  error.requestId = payload.request_id || null;
+  error.resetAt = safePayload.reset_at || safePayload.resetAt || null;
+  error.requestId = safePayload.request_id || null;
+
+  const upgradeContext = String(safePayload.upgrade_context || safePayload.upgradeContext || '').trim();
+  if (upgradeContext) {
+    error.upgradeContext = upgradeContext;
+    error.upgrade_context = upgradeContext;
+  }
+
+  const passthroughKeys = [
+    'follows_limit',
+    'follows_used',
+    'alerts_limit',
+    'alerts_used',
+    'pro_limit',
+    'plan_type',
+    'plan_status',
+    'counter',
+    'limit',
+    'remaining'
+  ];
+  for (const key of passthroughKeys) {
+    if (Object.prototype.hasOwnProperty.call(safePayload, key)) {
+      error[key] = safePayload[key];
+    }
+  }
+  error.data = safePayload;
   return error;
 }
 
@@ -292,6 +320,9 @@ export const api = {
     if (forceRefresh) return request('/billing/pricing', { auth: false });
     return requestCached('/billing/pricing', { auth: false }, 60 * 1000);
   },
+  billingQuota(token) {
+    return request('/billing/quota', { token });
+  },
   upgradeDemo(token) {
     return request('/billing/upgrade-demo', { method: 'POST', token });
   },
@@ -411,11 +442,26 @@ export const api = {
   subscription(token) {
     return request('/billing/subscription', { token });
   },
-  billingClientToken(token) {
-    return request('/billing/client-token', { token });
+  billingSyncSubscription(token) {
+    return request('/billing/subscription/sync', { method: 'POST', token, body: {} });
+  },
+  billingChangePlan(token, body) {
+    return request('/billing/subscription/change-plan', { method: 'POST', token, body });
+  },
+  billingCancelSubscription(token, body = {}) {
+    return request('/billing/subscription/cancel', { method: 'POST', token, body });
+  },
+  billingResumeSubscription(token, body = {}) {
+    return request('/billing/subscription/resume', { method: 'POST', token, body });
+  },
+  billingPublicConfig() {
+    return requestCached('/billing/public-config', { auth: false }, 5 * 60 * 1000);
   },
   billingCheckout(token, body) {
     return request('/billing/checkout', { method: 'POST', token, body });
+  },
+  billingPortal(token, body = {}) {
+    return request('/billing/portal', { method: 'POST', token, body });
   },
   opportunityFeed(token, params = {}, options = {}) {
     const query = new URLSearchParams();
@@ -431,6 +477,14 @@ export const api = {
     const suffix = query.toString() ? `?${query.toString()}` : '';
     if (options?.forceRefresh) return request(`/opportunities/feed${suffix}`, { token, auth: false });
     return requestCached(`/opportunities/feed${suffix}`, { token, auth: false }, 30 * 1000);
+  },
+  discoveryOpportunitiesFeed(params = {}) {
+    const query = new URLSearchParams();
+    if (params.origin) query.set('origin', String(params.origin).toUpperCase());
+    if (params.month) query.set('month', String(params.month));
+    if (params.limit) query.set('limit', String(params.limit));
+    const suffix = query.toString() ? `?${query.toString()}` : '';
+    return requestCached(`/discovery/opportunities-feed${suffix}`, { auth: false }, 5 * 60 * 1000);
   },
   opportunityClusters(token, params = {}, options = {}) {
     const query = new URLSearchParams();
@@ -486,7 +540,7 @@ export const api = {
     return request('/opportunities/radar/matches', { token });
   },
   myRadar(token) {
-    return request('/opportunities/me/radar', { token });
+    return request('/opportunities/radar/preferences', { token });
   },
   queryAiTravel(token, body) {
     return request('/opportunities/ai/query', { method: 'POST', token, body });
@@ -496,6 +550,20 @@ export const api = {
   },
   opportunityPipelineRun(token) {
     return request('/opportunities/pipeline/run', { method: 'POST', token });
+  },
+  realtimeDeals(params = {}, options = {}) {
+    const query = new URLSearchParams();
+    if (params.limit) query.set('limit', String(params.limit));
+    if (params.origin) query.set('origin', String(params.origin).toUpperCase());
+    if (params.minConfidence != null) query.set('min_confidence', String(params.minConfidence));
+    if (params.minDelta != null) query.set('min_delta', String(params.minDelta));
+    const suffix = query.toString() ? `?${query.toString()}` : '';
+    if (options?.forceRefresh) return request(`/engine/realtime-deals${suffix}`, { auth: false });
+    return requestCached(`/engine/realtime-deals${suffix}`, { auth: false }, 20 * 1000);
+  },
+  realtimeDealsStats(options = {}) {
+    if (options?.forceRefresh) return request('/engine/realtime-deals/stats', { auth: false });
+    return requestCached('/engine/realtime-deals/stats', { auth: false }, 20 * 1000);
   },
   /**
    * Public endpoint — no auth required.

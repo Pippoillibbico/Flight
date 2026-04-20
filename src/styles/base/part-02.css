@@ -1,0 +1,761 @@
+.opportunity-top-deal-badge {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(252, 122, 42, 0.52);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #9e420d;
+  background: rgba(252, 122, 42, 0.16);
+}
+
+.opportunity-urgency-pill {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(240, 124, 40, 0.48);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 800;
+  color: #9a3f0d;
+  background: rgba(248, 133, 50, 0.14);
+}
+
+.opportunity-top-deal-price {
+  margin: 0;
+  font-size: clamp(28px, 5vw, 36px);
+  font-weight: 900;
+  color: #0f4ea1;
+  line-height: 1.05;
+}
+
+.opportunity-top-deal-saving {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f8f58;
+}
+
+.opportunity-top-deal-meta {
+  margin: 0;
+  color: #4d6f9e;
+  font-size: 13px;
+}
+
+.opportunity-activity-signal {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: #2f5f9f;
+}
+
+.opportunity-urgency-note {
+  margin: 0;
+  font-size: 11px;
+  color: #5679a7;
+  line-height: 1.45;
+}
+
+.opportunity-clusters-section {
+  margin-top: 4px;
+}
+
+.opportunity-retention-hook {
+  margin: 0;
+  border: 1px dashed rgba(73, 127, 207, 0.34);
+  border-radius: 12px;
+  background: rgba(236, 246, 255, 0.66);
+  color: #1f528f;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.4;
+  padding: 9px 12px;
+}
+
+.opportunity-cluster-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin: 8px 0 4px;
+}
+
+.opportunity-cluster-card {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px;
+  background: var(--surface-soft);
+  display: grid;
+  gap: 10px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.opportunity-cluster-card:hover {
+  border-color: rgba(86, 136, 217, 0.52);
+  box-shadow: 0 12px 28px rgba(15, 87, 173, 0.18);
+  transform: scale(1.02);
+}
+
+.opportunity-cluster-card.active {
+  border-color: #5d95f0;
+  box-shadow: 0 12px 30px rgba(15, 111, 255, 0.2);
+}
+
+.opportunity-cluster-trigger {
+  text-align: left;
+  justify-content: flex-start;
+  display: grid;
+  gap: 6px;
+}
+
+.opportunity-cluster-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.opportunity-cluster-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.opportunity-cluster-badge-hot {
+  border-color: rgba(249, 104, 35, 0.58);
+  color: #9b3e0e;
+  background: rgba(249, 104, 35, 0.16);
+}
+
+.opportunity-cluster-badge-trending {
+  border-color: rgba(26, 119, 231, 0.48);
+  color: #0f4f9a;
+  background: rgba(26, 119, 231, 0.16);
+}
+
+.opportunity-cluster-badge-new {
+  border-color: rgba(15, 143, 88, 0.52);
+  color: #0f7a4d;
+  background: rgba(15, 143, 88, 0.14);
+}
+
+.opportunity-cluster-price {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 900;
+  color: #104f9f;
+  line-height: 1.15;
+}
+
+.opportunity-cluster-meta {
+  margin: 0;
+  color: #4a6c98;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.opportunity-card {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px;
+  background: var(--surface-soft);
+  display: grid;
+  gap: 12px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.18s ease;
+}
+
+.opportunity-card:hover {
+  border-color: #9fc0f6;
+  box-shadow: 0 10px 24px rgba(15, 111, 255, 0.14);
+  transform: translateY(-1px);
+}
+
+.opportunity-soft-gate {
+  border: 1px dashed #7eaef8;
+  border-radius: 14px;
+  padding: 14px;
+  background: linear-gradient(180deg, rgba(15, 111, 255, 0.07), rgba(15, 111, 255, 0.02));
+  display: grid;
+  gap: 8px;
+}
+
+.opportunity-soft-gate h4 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.upgrade-prompt {
+  border: 1px dashed #f0b91f;
+  border-radius: 14px;
+  padding: 14px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.04));
+  display: grid;
+  gap: 8px;
+}
+
+.upgrade-prompt h4 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.opportunity-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.opportunity-card-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.opportunity-card .item-actions {
+  align-items: center;
+}
+
+.opportunity-card .item-actions > .opportunity-view-itinerary-cta {
+  min-height: 44px;
+  padding: 11px 18px;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.opportunity-card .item-actions > .ghost {
+  min-height: 42px;
+  padding: 10px 15px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.opportunity-badge {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #9fbef3;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #174987;
+  background: #eaf2ff;
+}
+
+.app-shell.app-dark .opportunity-badge {
+  border-color: rgba(119, 157, 210, 0.6);
+  color: #d9e8ff;
+  background: rgba(32, 52, 82, 0.72);
+}
+
+.app-shell.app-dark .opportunity-top-deal-card {
+  border-color: rgba(111, 150, 208, 0.48);
+  background:
+    linear-gradient(145deg, rgba(23, 37, 58, 0.95), rgba(19, 30, 47, 0.92)),
+    radial-gradient(500px 180px at 100% 20%, rgba(39, 107, 207, 0.26), transparent 78%);
+  box-shadow: 0 22px 40px rgba(0, 0, 0, 0.42);
+}
+
+.app-shell.app-dark .opportunity-top-deal-badge {
+  border-color: rgba(254, 149, 79, 0.58);
+  color: #ffd4af;
+  background: rgba(252, 122, 42, 0.2);
+}
+
+.app-shell.app-dark .opportunity-urgency-pill {
+  border-color: rgba(253, 167, 102, 0.58);
+  color: #ffd9bc;
+  background: rgba(252, 122, 42, 0.26);
+}
+
+.app-shell.app-dark .opportunity-top-deal-price {
+  color: #9dc6ff;
+}
+
+.app-shell.app-dark .opportunity-top-deal-saving {
+  color: #52d08f;
+}
+
+.app-shell.app-dark .opportunity-top-deal-meta {
+  color: #98b5dc;
+}
+
+.app-shell.app-dark .opportunity-activity-signal {
+  color: #aac9f1;
+}
+
+.app-shell.app-dark .opportunity-urgency-note {
+  color: #9bb6da;
+}
+
+.app-shell.app-dark .opportunity-retention-hook {
+  border-color: rgba(107, 146, 201, 0.44);
+  background: rgba(20, 33, 50, 0.84);
+  color: #cae0ff;
+}
+
+.app-shell.app-dark .opportunity-cluster-card:hover {
+  border-color: rgba(157, 189, 234, 0.74);
+  box-shadow: 0 14px 30px rgba(7, 20, 40, 0.45);
+}
+
+.app-shell.app-dark .opportunity-cluster-price {
+  color: #9dc6ff;
+}
+
+.app-shell.app-dark .opportunity-cluster-meta {
+  color: #aac1e1;
+}
+
+.app-shell.app-dark .opportunity-cluster-badge-hot {
+  border-color: rgba(254, 149, 79, 0.56);
+  color: #ffd4af;
+  background: rgba(252, 122, 42, 0.2);
+}
+
+.app-shell.app-dark .opportunity-cluster-badge-trending {
+  border-color: rgba(109, 210, 165, 0.58);
+  color: #c9f2df;
+  background: rgba(15, 143, 88, 0.22);
+}
+
+.app-shell.app-dark .opportunity-cluster-badge-new {
+  border-color: rgba(109, 210, 165, 0.58);
+  color: #c9f2df;
+  background: rgba(15, 143, 88, 0.22);
+}
+
+.opportunity-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 16px;
+}
+
+.opportunity-why-box {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px;
+  background: var(--surface-soft);
+}
+
+.opportunity-related-btn {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface-soft);
+}
+
+.opportunity-related-btn:hover {
+  border-color: #9fc0f6;
+}
+
+.explore-discovery-panel {
+  gap: 12px;
+}
+
+.explore-data-source-note {
+  margin: -2px 0 0;
+  border-radius: 10px;
+  border: 1px solid #d3e2f9;
+  background: #f6faff;
+  color: #305b91;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+  padding: 8px 10px;
+}
+
+.explore-data-source-note.live {
+  border-color: #9ed5b5;
+  background: #ecfcf3;
+  color: #1f7149;
+}
+
+.explore-data-source-note.synthetic {
+  border-color: #e2cba4;
+  background: #fff8ec;
+  color: #8a5b1c;
+}
+
+.explore-discovery-form {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.explore-discovery-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(0, 1.5fr);
+  gap: 12px;
+}
+
+.explore-budget-card,
+.explore-map-card {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-soft);
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.explore-budget-list {
+  display: grid;
+  gap: 8px;
+  max-height: 440px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.explore-budget-item {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 8px;
+  background: var(--surface);
+  display: grid;
+  gap: 8px;
+}
+
+.explore-budget-item.active {
+  border-color: #8eb6fa;
+  box-shadow: 0 8px 18px rgba(15, 111, 255, 0.15);
+}
+
+.explore-budget-main {
+  width: 100%;
+  text-align: left;
+  display: grid;
+  gap: 4px;
+}
+
+.explore-budget-main p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.explore-map-svg-wrap {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+  background: linear-gradient(160deg, rgba(15, 111, 255, 0.06), rgba(15, 111, 255, 0.02));
+}
+
+.explore-map-svg {
+  width: 100%;
+  display: block;
+}
+
+.explore-map-grid-line {
+  stroke: rgba(15, 111, 255, 0.12);
+  stroke-width: 1;
+}
+
+.explore-map-route-line {
+  stroke: rgba(15, 111, 255, 0.28);
+  stroke-width: 1.4;
+  stroke-dasharray: 5 5;
+}
+
+.explore-map-origin-dot {
+  fill: #0f6fff;
+  stroke: #ffffff;
+  stroke-width: 2;
+}
+
+.explore-map-destination-dot {
+  fill: #2e80ff;
+  stroke: rgba(255, 255, 255, 0.9);
+  stroke-width: 1.5;
+  cursor: pointer;
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 0.15s ease, fill 0.15s ease;
+}
+
+.explore-map-destination-dot:hover {
+  transform: scale(1.35);
+  fill: #1a72ef;
+}
+
+.explore-map-destination-dot.active {
+  fill: #ffffff;
+  stroke: #0f6fff;
+  stroke-width: 2.5;
+}
+
+.explore-map-equator-line {
+  stroke: rgba(15, 111, 255, 0.22);
+  stroke-width: 1;
+  stroke-dasharray: 5 4;
+}
+
+.explore-map-tropic-line {
+  stroke: rgba(15, 111, 255, 0.10);
+  stroke-width: 0.75;
+  stroke-dasharray: 2 6;
+}
+
+.explore-map-continent-label {
+  font-size: 11px;
+  fill: rgba(15, 111, 255, 0.30);
+  font-family: inherit;
+  pointer-events: none;
+  user-select: none;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.premium-panel .premium-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  align-items: stretch;
+}
+
+.premium-trust-note {
+  margin-top: -4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #2f5f99;
+}
+
+.premium-card {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 0 16px 16px;
+  background: linear-gradient(160deg, #101a2a 0%, #131f33 50%, #11192a 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  isolation: isolate;
+}
+
+.premium-package-theme-free {
+  border-color: #364a66;
+  background: linear-gradient(160deg, #121d2f 0%, #151f2d 54%, #101927 100%);
+}
+
+.premium-package-theme-pro {
+  border-color: #7b2a73;
+  background: linear-gradient(160deg, #25142a 0%, #1b1b2e 55%, #1a1829 100%);
+}
+
+.premium-package-theme-elite {
+  border-color: #2d61c8;
+  background: linear-gradient(160deg, #0f1f40 0%, #152846 52%, #111c34 100%);
+}
+
+.premium-plan-tag {
+  margin: 0;
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.premium-package-topband {
+  margin: 0 -16px;
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.premium-package-topband-free {
+  background: linear-gradient(90deg, rgba(111, 140, 184, 0.25), rgba(106, 154, 226, 0.16));
+}
+
+.premium-package-topband-pro {
+  background: linear-gradient(90deg, rgba(229, 62, 138, 0.9), rgba(192, 30, 121, 0.82));
+}
+
+.premium-package-topband-elite {
+  background: linear-gradient(90deg, rgba(44, 106, 255, 0.9), rgba(28, 85, 224, 0.84));
+}
+
+.premium-package-topband-detail {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.premium-package-headline {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.premium-card-sub {
+  margin: 0;
+  color: rgba(228, 236, 248, 0.84);
+  font-size: 13px;
+  line-height: 1.4;
+  min-height: 54px;
+}
+
+.premium-feature-list {
+  margin: 4px 0 0;
+  padding-left: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+  flex: 1;
+}
+
+.premium-feature-list li {
+  border: 1px solid rgba(140, 162, 193, 0.36);
+  background: rgba(238, 247, 255, 0.05);
+  color: #d7e6fa;
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+}
+
+.premium-cta {
+  margin-top: 6px;
+  width: 100%;
+  min-height: 54px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: linear-gradient(180deg, #ff3f9d 0%, #d61c7d 100%);
+  color: #ffffff;
+  font-weight: 800;
+  font-size: 20px;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  box-shadow: 0 8px 22px rgba(214, 28, 125, 0.36);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 14px;
+}
+
+.premium-cta:hover {
+  background: linear-gradient(180deg, #ff54ab 0%, #e62086 100%);
+  box-shadow: 0 10px 24px rgba(214, 28, 125, 0.44);
+}
+
+.premium-card-featured .premium-cta {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.premium-cta-light {
+  border-color: rgba(144, 179, 228, 0.6);
+  background: linear-gradient(180deg, #eff5ff 0%, #d9e8ff 100%);
+  color: #193964;
+  box-shadow: 0 10px 22px rgba(49, 97, 170, 0.25);
+}
+
+.premium-cta-light:hover {
+  background: linear-gradient(180deg, #f8fbff 0%, #e7f1ff 100%);
+  border-color: rgba(163, 191, 229, 0.82);
+  color: #142f53;
+  box-shadow: 0 12px 24px rgba(49, 97, 170, 0.28);
+}
+
+.premium-cta-dark {
+  border-color: rgba(56, 108, 224, 0.8);
+  background: linear-gradient(180deg, #316dff 0%, #1f4ed8 100%);
+  color: #ffffff;
+  box-shadow: 0 8px 24px rgba(33, 78, 216, 0.44);
+}
+
+.premium-cta-dark:hover {
+  background: linear-gradient(180deg, #3f7aff 0%, #2457e3 100%);
+  border-color: rgba(83, 135, 255, 0.9);
+  color: #ffffff;
+  box-shadow: 0 12px 26px rgba(33, 78, 216, 0.5);
+}
+
+.app-shell.app-dark .premium-cta {
+  background: linear-gradient(180deg, #ff4ca6, #d61c7d);
+  color: #ffffff;
+  box-shadow: 0 10px 24px rgba(214, 28, 125, 0.4);
+}
+
+.app-shell.app-dark .premium-cta:hover {
+  background: linear-gradient(180deg, #ff61b2, #de2288);
+  box-shadow: 0 12px 28px rgba(214, 28, 125, 0.46);
+}
+
+.app-shell.app-dark .premium-cta-light,
+.app-shell.app-dark .premium-cta-dark {
+  color: #ffffff;
+}
+
+.app-shell.app-dark .premium-cta-light:hover,
+.app-shell.app-dark .premium-cta-dark:hover {
+  color: #ffffff;
+}
+
+.premium-card-featured {
+  border-color: #f158b3;
+  box-shadow:
+    0 14px 34px rgba(202, 31, 120, 0.28),
+    0 0 0 1px rgba(241, 88, 179, 0.26) inset;
+}
+
+.premium-price {
+  font-size: 36px;
+  font-weight: 800;
+  margin: 0;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  letter-spacing: -0.01em;
+  color: #ffffff;
+}
+
+.premium-package-card {
+  border-radius: 20px;
+  padding: 0 16px 16px;
+  gap: 12px;
+}
+
+.premium-package-card-featured {
+  transform: translateY(-2px);
+}
+
+.premium-package-badge {
+  text-transform: uppercase;
+}
+
+.premium-package-badge.featured {
+  border-color: rgba(255, 255, 255, 0.42);
+  background: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+}
+
+.premium-package-title {
+  margin: 0;

@@ -8,6 +8,7 @@ import {
   persistUpgradeInterest,
   submitUpgradeFlow
 } from '../../upgrade-flow';
+import { isMockBillingUpgradeEnabled } from '../domain/billing-mode.js';
 
 export function useUpgradeFlowController({
   user,
@@ -20,11 +21,17 @@ export function useUpgradeFlowController({
   systemCapabilities = null
 }) {
   const [upgradeFlowState, setUpgradeFlowState] = useState(() => createUpgradeFlowState());
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
   const upgradeIntentTracker = useMemo(() => createUpgradeIntentTracker(), []);
+  const isProductionBuild = String(import.meta?.env?.MODE || '').trim().toLowerCase() === 'production' || Boolean(import.meta?.env?.PROD);
+  const mockBillingEnabled = isMockBillingUpgradeEnabled({
+    systemCapabilities,
+    isProduction: isProductionBuild
+  });
 
   const upgradePlanContent = useMemo(
-    () => (upgradeFlowState.planType ? getUpgradePlanContent(upgradeFlowState.planType) : null),
-    [upgradeFlowState.planType]
+    () => (upgradeFlowState.planType ? getUpgradePlanContent(upgradeFlowState.planType, upgradeFlowState.source) : null),
+    [upgradeFlowState.planType, upgradeFlowState.source]
   );
 
   const openPlanUpgradeFlow = useCallback(
@@ -32,6 +39,8 @@ export function useUpgradeFlowController({
       const normalizedPlanType = planType === 'elite' ? 'elite' : 'pro';
       const normalizedSource = String(source || 'unknown').trim() || 'unknown';
       setSubMessage('');
+      // Track that the upgrade CTA was shown (conversion funnel step 1).
+      upgradeIntentTracker.track('upgrade_cta_shown', normalizedPlanType, normalizedSource);
       if (normalizedPlanType === 'elite') {
         upgradeIntentTracker.track('elite_cta_clicked', 'elite', normalizedSource);
         upgradeIntentTracker.track('elite_modal_opened', 'elite', normalizedSource);
@@ -48,27 +57,56 @@ export function useUpgradeFlowController({
     setUpgradeFlowState(closeUpgradeFlow());
   }, []);
 
-  const submitPlanUpgradeInterest = useCallback(() => {
+  const submitPlanUpgradeInterest = useCallback(async () => {
     if (!upgradeFlowState.isOpen || !upgradeFlowState.planType) return;
     const planType = upgradeFlowState.planType;
     const source = String(upgradeFlowState.source || 'unknown');
+
     upgradeIntentTracker.track('upgrade_primary_cta_clicked', planType, source);
     persistUpgradeInterest(planType, source, user?.id ? String(user.id) : null);
-    applyLocalPlanChange(planType);
-    setUpgradeFlowState((current) => submitUpgradeFlow(current));
 
-    // When mock billing is enabled (dev/demo), also sync the upgrade server-side
-    // so that server-enforced quota limits reflect the new plan immediately.
-    if (systemCapabilities?.billing_mock_mode === true && api && token) {
+    // ── Real Stripe checkout (production path) ─────────────────────────────
+    // When Stripe is configured (billing_mock_mode !== true) redirect the user
+    // to a real Stripe Checkout session instead of applying a local plan change.
+    if (!mockBillingEnabled && api && token) {
+      setCheckoutLoading(true);
+      setSubMessage('');
+      try {
+        const result = await api.billingCheckout(token, {
+          planType: planType === 'elite' ? 'elite' : 'pro'
+        });
+        if (result?.checkoutUrl) {
+          upgradeIntentTracker.track('checkout_session_created', planType, source);
+          upgradeIntentTracker.track('checkout_started', planType, source);
+          window.location.href = result.checkoutUrl;
+          return; // Navigation started — do not continue
+        }
+        // No URL returned — fall through to mock path
+        setSubMessage('Checkout unavailable right now. Please try again.');
+      } catch {
+        setSubMessage('Unable to start checkout. Please try again.');
+      } finally {
+        setCheckoutLoading(false);
+      }
+      return;
+    }
+
+    // ── Mock / demo path (dev/test only) ────────────────────────────────────
+    if (mockBillingEnabled) {
+      applyLocalPlanChange(planType);
+      setUpgradeFlowState((current) => submitUpgradeFlow(current));
       const mockEndpoint = planType === 'elite' ? api.mockUpgradeElite : api.mockUpgradePro;
       if (typeof mockEndpoint === 'function') {
         mockEndpoint(token).catch(() => {});
       }
+      return;
     }
+    setSubMessage('Checkout unavailable right now. Please try again.');
   }, [
     api,
     applyLocalPlanChange,
-    systemCapabilities,
+    mockBillingEnabled,
+    setSubMessage,
     token,
     upgradeFlowState.isOpen,
     upgradeFlowState.planType,
@@ -99,6 +137,8 @@ export function useUpgradeFlowController({
   return {
     upgradeFlowState,
     upgradePlanContent,
+    checkoutLoading,
+    openPlanUpgradeFlow,
     closePlanUpgradeFlow,
     submitPlanUpgradeInterest,
     openPremiumSectionFromUpgradeFlow,

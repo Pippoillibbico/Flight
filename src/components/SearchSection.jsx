@@ -61,7 +61,8 @@ const SearchSectionPropsSchema = z
       })
       .passthrough(),
     searchResult: z.object({ flights: z.array(z.object({}).passthrough()), meta: z.unknown() }).passthrough(),
-    config: z.object({ origins: z.array(z.any()), regions: z.array(z.any()), cabins: z.array(z.any()), connectionTypes: z.array(z.any()), travelTimes: z.array(z.any()) }).passthrough()
+    config: z.object({ origins: z.array(z.any()), regions: z.array(z.any()), cabins: z.array(z.any()), connectionTypes: z.array(z.any()), travelTimes: z.array(z.any()) }).passthrough(),
+    limitReachedBanner: z.any().optional()
   })
   .passthrough();
 
@@ -120,6 +121,7 @@ function SearchSection(props) {
     searchError,
     searchResult,
     autoFixSearchFilters,
+    limitReachedBanner = null,
     prefetchAdvancedAnalyticsChunk
   } = validateProps(SearchSectionPropsSchema, props, 'SearchSection');
   const isMultiCityMode = searchMode === 'multi_city';
@@ -661,7 +663,23 @@ function SearchSection(props) {
 
           <p className="muted">{t('quickTips')}</p>
           <p className="muted search-trust-note">{searchTrustNote}</p>
-          {searchError ? <p className="error">{searchError}</p> : null}
+          {limitReachedBanner?.show ? (
+            <div className="limit-reached-card" role="alert" data-testid="limit-reached-card">
+              <div className="limit-reached-card-body">
+                <p className="limit-reached-card-title">{limitReachedBanner.title}</p>
+                <p className="limit-reached-card-message">{limitReachedBanner.message}</p>
+              </div>
+              <div className="limit-reached-card-actions">
+                <button type="button" className="primary limit-reached-card-cta" onClick={limitReachedBanner.onCta}>
+                  {limitReachedBanner.ctaLabel}
+                </button>
+                <button type="button" className="ghost limit-reached-card-secondary" onClick={limitReachedBanner.onSecondaryCta}>
+                  {limitReachedBanner.secondaryCtaLabel}
+                </button>
+                <button type="button" className="ghost limit-reached-card-dismiss" onClick={limitReachedBanner.onDismiss} aria-label="Dismiss">✕</button>
+              </div>
+            </div>
+          ) : searchError ? <p className="error">{searchError}</p> : null}
           {isMultiCityMode && multiCityRetryVisible ? (
             <div className="item-actions">
               <button type="button" className="ghost" data-testid="retry-multi-city" onClick={retryMultiCitySearch} disabled={searchLoading}>

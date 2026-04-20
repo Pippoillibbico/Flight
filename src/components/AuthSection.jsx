@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { z } from 'zod';
 import { useAppContext } from '../context/AppContext';
 import { validateProps } from '../utils/validateProps';
@@ -133,6 +133,8 @@ function AuthSection(props) {
   const anyOAuthAvailable = showGoogle || showFacebook || showApple;
 
   const mfaInputRef = useRef(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isMfaSubmitting, setIsMfaSubmitting] = useState(false);
 
   useEffect(() => {
     if (isMfaChallengeActive && mfaInputRef.current) {
@@ -140,12 +142,33 @@ function AuthSection(props) {
     }
   }, [isMfaChallengeActive]);
 
+  const handleSubmitAuth = useCallback(async (e) => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      await submitAuth(e);
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [isSubmitting, submitAuth]);
+
+  const handleSubmitMfa = useCallback(async (e) => {
+    if (isMfaSubmitting) return;
+    setIsMfaSubmitting(true);
+    try {
+      await submitLoginMfa(e);
+    } finally {
+      setIsMfaSubmitting(false);
+    }
+  }, [isMfaSubmitting, submitLoginMfa]);
+
   const planTypeRaw = String(user?.planType || user?.plan_type || '').trim().toLowerCase();
   const planType = planTypeRaw === 'creator' ? 'elite' : planTypeRaw || (user?.isPremium ? 'pro' : 'free');
   const mfaCodeValue = String(mfaActionCode || '').trim();
   const hasMfaCode = /^\d{6}$/.test(mfaCodeValue);
   const mfaSetupActive = Boolean(!user?.mfaEnabled && mfaSetupData?.qrDataUrl);
-  const showEmailForm = authView === 'email' || authView === 'options';
+  // Email form only appears after clicking "Continue with email", not on the initial options view
+  const showEmailForm = authView === 'email';
   const formattedMfaManualKey = (() => {
     const key = String(mfaSetupData?.manualKey || '')
       .replace(/\s+/g, '')
@@ -318,6 +341,12 @@ function AuthSection(props) {
                 {!isMfaChallengeActive ? (
                   <>
                     <div className="auth-brand-row">
+                      <img
+                        src="/jetly-logo.png"
+                        alt="Jetly"
+                        className="auth-modal-logo"
+                        draggable="false"
+                      />
                       <button
                         type="button"
                         className="auth-close-btn"
@@ -336,7 +365,7 @@ function AuthSection(props) {
 
                     <div className="social-auth social-auth-stack">
                       {anyOAuthAvailable ? (
-                        <p className="auth-social-label">{t('authSocialOrEmailLabel') || 'Continue with email or social login'}</p>
+                        <p className="auth-social-label">{t('authSocialOrEmailLabel') || 'Continue with'}</p>
                       ) : null}
                       <button
                         type="button"
@@ -348,18 +377,6 @@ function AuthSection(props) {
                       >
                         {authUi.email}
                       </button>
-                      {showFacebook ? (
-                        <button type="button" className="auth-provider-btn" onClick={loginWithFacebook} disabled={oauthLoading === 'facebook'}>
-                          <span className="social-icon facebook" aria-hidden="true">
-                            <svg viewBox="0 0 24 24">
-                              <path fill="currentColor" d="M24 12.073C24 5.405 18.627 0 12 0S0 5.405 0 12.073c0 6.026 4.388 11.022 10.125 11.926v-8.437H7.078v-3.49h3.047V9.413c0-3.017 1.792-4.687 4.533-4.687 1.313 0 2.686.236 2.686.236v2.965h-1.514c-1.491 0-1.956.93-1.956 1.885v2.26h3.328l-.532 3.49h-2.796V24C19.612 23.095 24 18.1 24 12.073z"/>
-                            </svg>
-                          </span>
-                          {oauthLoading === 'facebook' ? (
-                            <span className="auth-btn-loading"><span className="auth-spinner" aria-hidden="true" /> {authUi.facebook}</span>
-                          ) : authUi.facebook}
-                        </button>
-                      ) : null}
                       {showGoogle ? (
                         <button type="button" className="auth-provider-btn" onClick={loginWithGoogle} disabled={oauthLoading === 'google'}>
                           <span className="social-icon google" aria-hidden="true">
@@ -373,6 +390,18 @@ function AuthSection(props) {
                           {oauthLoading === 'google' ? (
                             <span className="auth-btn-loading"><span className="auth-spinner" aria-hidden="true" /> {authUi.google}</span>
                           ) : authUi.google}
+                        </button>
+                      ) : null}
+                      {showFacebook ? (
+                        <button type="button" className="auth-provider-btn" onClick={loginWithFacebook} disabled={oauthLoading === 'facebook'}>
+                          <span className="social-icon facebook" aria-hidden="true">
+                            <svg viewBox="0 0 24 24">
+                              <path fill="currentColor" d="M24 12.073C24 5.405 18.627 0 12 0S0 5.405 0 12.073c0 6.026 4.388 11.022 10.125 11.926v-8.437H7.078v-3.49h3.047V9.413c0-3.017 1.792-4.687 4.533-4.687 1.313 0 2.686.236 2.686.236v2.965h-1.514c-1.491 0-1.956.93-1.956 1.885v2.26h3.328l-.532 3.49h-2.796V24C19.612 23.095 24 18.1 24 12.073z"/>
+                            </svg>
+                          </span>
+                          {oauthLoading === 'facebook' ? (
+                            <span className="auth-btn-loading"><span className="auth-spinner" aria-hidden="true" /> {authUi.facebook}</span>
+                          ) : authUi.facebook}
                         </button>
                       ) : null}
                       {showApple ? (
@@ -390,7 +419,7 @@ function AuthSection(props) {
                     </div>
 
                     {showEmailForm ? (
-                      <form className="form-stack auth-email-form" onSubmit={submitAuth} noValidate>
+                      <form className="form-stack auth-email-form" onSubmit={handleSubmitAuth} noValidate>
                         {authMode === 'register' ? (
                           <label htmlFor="auth-name">
                             {t('fullName')}
@@ -441,7 +470,11 @@ function AuthSection(props) {
                           {authUi.remember}
                         </label>
                         <div className="item-actions auth-form-actions">
-                          <button type="submit" data-testid="auth-submit">{authTitle}</button>
+                          <button type="submit" data-testid="auth-submit" disabled={isSubmitting} aria-busy={isSubmitting}>
+                            {isSubmitting ? (
+                              <span className="auth-btn-loading"><span className="auth-spinner" aria-hidden="true" /> {authTitle}</span>
+                            ) : authTitle}
+                          </button>
                           {authView === 'email' ? (
                             <button
                               type="button"
@@ -481,7 +514,7 @@ function AuthSection(props) {
                     </p>
                   </>
                 ) : (
-                  <form className="form-stack" onSubmit={submitLoginMfa} noValidate>
+                  <form className="form-stack" onSubmit={handleSubmitMfa} noValidate>
                     <h3>{t('mfaLoginTitle')}</h3>
                     <p className="muted">{t('mfaLoginHint')}</p>
                     <label htmlFor="mfa-login-code">
@@ -489,19 +522,27 @@ function AuthSection(props) {
                       <input
                         id="mfa-login-code"
                         ref={mfaInputRef}
+                        type="text"
                         inputMode="numeric"
                         autoComplete="one-time-code"
+                        aria-label={t('mfaCode')}
+                        aria-required="true"
                         value={authMfa.code}
-                        onChange={(e) => setAuthMfa((prev) => ({ ...prev, code: e.target.value.trim() }))}
+                        onChange={(e) => setAuthMfa((prev) => ({ ...prev, code: e.target.value.replace(/\D/g, '').slice(0, 8) }))}
                         placeholder="123456"
                         maxLength={8}
                       />
                     </label>
                     <div className="item-actions">
-                      <button type="submit">{t('mfaContinue')}</button>
+                      <button type="submit" disabled={isMfaSubmitting || !authMfa.code} aria-busy={isMfaSubmitting}>
+                        {isMfaSubmitting ? (
+                          <span className="auth-btn-loading"><span className="auth-spinner" aria-hidden="true" /> {t('mfaContinue')}</span>
+                        ) : t('mfaContinue')}
+                      </button>
                       <button
                         type="button"
                         className="ghost"
+                        disabled={isMfaSubmitting}
                         onClick={() => setAuthMfa({ ticket: '', code: '', expiresAt: '' })}
                       >
                         {t('back')}

@@ -692,7 +692,17 @@ const pack = {
     "forbiddenFriendly": "You don't have permission to perform this action.",
     "requestTimeoutFriendly": "The request is taking too long. Please try again in a moment.",
     "requestFailedFriendly": "Connection temporarily unavailable. Check your network and try again.",
-    "limitResetLabel": "Resets on"
+    "limitResetLabel": "Resets on",
+    "searchLimitReachedFree": "You've reached your free plan search limit.",
+    "searchLimitUpgradeCta": "Unlock unlimited searches with PRO",
+    "upgradeToPro": "Upgrade to PRO",
+    "limitedResultsBannerTitle": "You are seeing a limited version of the results",
+    "limitedResultsBannerMessage": "With PRO you can unlock real results and keep searching without restrictions.",
+    "limitedResultsBannerCta": "Unlock real results",
+    "limitReachedBannerTitle": "You have reached your free search limit",
+    "limitReachedBannerMessage": "With PRO you can keep searching right away and access real live results.",
+    "limitReachedBannerCta": "Continue with PRO",
+    "limitReachedBannerSecondaryCta": "See what's included"
   },
   "tooltips": {
     "mode_help": "Simple mode shows only essential actions. Advanced mode unlocks detailed filters and analytics.",

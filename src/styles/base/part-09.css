@@ -1,0 +1,763 @@
+/* Unified app-shell hover policy for discovery/radar CTAs: transparent -> white tint, no yellow. */
+.app-shell .opportunity-hero .item-actions > .opportunity-discover-cta:hover,
+.app-shell .opportunity-hero .item-actions > .opportunity-activate-radar-cta:hover {
+  background: rgba(255, 255, 255, 0.38) !important;
+  border-color: #e4efff !important;
+  box-shadow: 0 12px 26px rgba(112, 154, 217, 0.28) !important;
+  color: #ffffff !important;
+  transform: none !important;
+}
+
+.app-shell.app-dark .opportunity-hero .item-actions > .opportunity-discover-cta:hover,
+.app-shell.app-dark .opportunity-hero .item-actions > .opportunity-activate-radar-cta:hover {
+  background: rgba(255, 255, 255, 0.24) !important;
+  border-color: rgba(236, 244, 255, 0.9) !important;
+  color: #f5f9ff !important;
+  box-shadow: 0 14px 28px rgba(160, 188, 232, 0.32) !important;
+  transform: none !important;
+}
+
+.app-shell .opportunity-hero .item-actions > .ghost:not(.opportunity-activate-radar-cta):hover {
+  background: transparent !important;
+  border-color: #8db4ff !important;
+  box-shadow: none !important;
+}
+
+.app-shell.app-dark .opportunity-hero .item-actions > .ghost:not(.opportunity-activate-radar-cta):hover {
+  background: transparent !important;
+  border-color: #47566a !important;
+  box-shadow: none !important;
+}
+
+/* kept intentionally empty: covered by unified CTA hover block above */
+
+/* Landing dark hero secondary CTA: keep transparent hover, no yellow accent. */
+.landing-shell.landing-dark .landing-hero-cta .landing-cta-ghost:hover {
+  background: transparent !important;
+  border-color: rgba(255, 255, 255, 0.28) !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+/* =====================================================================
+   UI stability patch (final overrides)
+   - remove inconsistent yellow glow in light mode
+   - unify CTA hover behavior
+   - remove card/button jitter in opportunity cards
+   - keep social login hover neutral
+   ===================================================================== */
+
+.landing-shell:not(.landing-dark) .landing-nav-link:hover {
+  background: #eef5ff !important;
+  border-color: #cddfff !important;
+  color: #0f3d7c !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+.landing-shell:not(.landing-dark) .landing-theme-btn:hover,
+.landing-shell:not(.landing-dark) .landing-lang-btn:hover,
+.landing-shell:not(.landing-dark) .landing-lang-btn:has(.landing-lang-trigger:hover) {
+  background: rgba(15, 111, 255, 0.1) !important;
+  border-color: rgba(15, 111, 255, 0.34) !important;
+  box-shadow: 0 10px 24px rgba(44, 88, 158, 0.18) !important;
+  transform: none !important;
+}
+
+.landing-shell:not(.landing-dark) .landing-accedi-btn:hover {
+  border-color: transparent !important;
+  background: var(--brand-dark) !important;
+  box-shadow: 0 12px 26px rgba(15, 111, 255, 0.34) !important;
+  transform: none !important;
+}
+
+.app-shell .hero-controls .landing-theme-btn:hover,
+.app-shell .hero-controls .landing-lang-btn:hover,
+.app-shell .hero-controls .landing-lang-btn:has(.landing-lang-trigger:hover) {
+  background: rgba(255, 255, 255, 0.16) !important;
+  border-color: rgba(255, 255, 255, 0.34) !important;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22) !important;
+  transform: none !important;
+}
+
+.app-shell .opportunity-hero .item-actions > .opportunity-discover-cta:hover {
+  background: linear-gradient(180deg, #3d94ff, #1967e0) !important;
+  border-color: #2d74df !important;
+  color: #ffffff !important;
+  box-shadow: 0 12px 24px rgba(15, 111, 255, 0.28) !important;
+  transform: none !important;
+}
+
+.app-shell .opportunity-hero .item-actions > .opportunity-activate-radar-cta:hover {
+  background: #deebff !important;
+  border-color: #8db4ff !important;
+  color: #173f84 !important;
+  box-shadow: 0 8px 18px rgba(44, 88, 158, 0.18) !important;
+  transform: none !important;
+}
+
+.app-shell.app-dark .opportunity-hero .item-actions > .ghost:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-color: rgba(157, 189, 234, 0.92) !important;
+  color: #f3f8ff !important;
+  box-shadow: 0 10px 22px rgba(5, 17, 35, 0.42) !important;
+  transform: none !important;
+}
+
+.opportunity-card {
+  transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
+}
+
+.opportunity-card:hover {
+  transform: none !important;
+}
+
+.opportunity-card .item-actions > button:hover {
+  transform: none !important;
+}
+
+.upgrade-prompt .item-actions > button,
+.upgrade-prompt .item-actions > button:hover {
+  transform: none !important;
+}
+
+.auth-provider-btn:hover {
+  background: #dce2ea !important;
+  border-color: #c5ceda !important;
+  color: #101419 !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+.app-shell.app-dark .auth-provider-btn:hover {
+  background: #1b355b !important;
+  border-color: #6c93c6 !important;
+  color: #f1f7ff !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+/* CTA interaction states are centralized in src/styles/cta-system.css */
+
+
+.opportunity-radar-session-message {
+  margin: 4px 0 0;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(43, 122, 229, 0.36);
+  background: rgba(230, 242, 255, 0.9);
+  color: #1d4f93;
+  font-size: 13px;
+  font-weight: 700;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.opportunity-hot-state {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(251, 128, 42, 0.38);
+  background: rgba(251, 128, 42, 0.16);
+  color: #9f430f;
+  font-weight: 800;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.opportunity-hot-empty {
+  margin: 0;
+  color: #4f6f9c;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.opportunity-cluster-card.tracked {
+  border-color: rgba(21, 133, 84, 0.55);
+  box-shadow: 0 14px 28px rgba(14, 90, 58, 0.16);
+}
+
+.opportunity-follow-cluster-cta.tracking {
+  border-color: rgba(21, 133, 84, 0.52);
+  background: rgba(21, 133, 84, 0.13);
+  color: #0e7a4e;
+}
+
+.opportunity-tracked-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(21, 133, 84, 0.52);
+  background: rgba(21, 133, 84, 0.16);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.radar-session-active .radar-hero {
+  border-color: rgba(53, 126, 226, 0.46);
+  box-shadow: 0 14px 34px rgba(20, 83, 163, 0.2);
+}
+
+.radar-session-message {
+  margin: 2px 0 0;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(43, 122, 229, 0.36);
+  background: rgba(230, 242, 255, 0.9);
+  color: #1d4f93;
+  font-size: 13px;
+  font-weight: 700;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.radar-session-highlight {
+  border-color: rgba(53, 126, 226, 0.42);
+  box-shadow: 0 12px 28px rgba(20, 83, 163, 0.16);
+}
+
+.upgrade-flow-value-note {
+  margin: 0;
+  border: 1px solid rgba(54, 125, 223, 0.28);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: rgba(235, 245, 255, 0.72);
+  color: #1f4f92;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.opportunity-card,
+.opportunity-cluster-card,
+.opportunity-top-deal-card,
+.watch-item,
+.upgrade-prompt,
+.radar-hero,
+.ai-travel-candidate-card {
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.18s ease, opacity 0.18s ease;
+}
+
+.opportunity-card:active,
+.opportunity-cluster-card:active,
+.opportunity-top-deal-card:active,
+.watch-item:active {
+  transform: scale(0.995);
+  opacity: 0.96;
+}
+
+.item-actions > button {
+  transition: transform 0.18s ease, opacity 0.18s ease;
+}
+
+.item-actions > button:active {
+  transform: scale(0.98);
+  opacity: 0.92;
+}
+
+.app-shell.app-dark .opportunity-radar-session-message,
+.app-shell.app-dark .radar-session-message {
+  border-color: rgba(115, 160, 222, 0.5);
+  background: rgba(18, 34, 55, 0.86);
+  color: #cbe2ff;
+}
+
+.app-shell.app-dark .opportunity-hot-state {
+  border-color: rgba(254, 152, 84, 0.55);
+  background: rgba(252, 122, 42, 0.2);
+  color: #ffd7ba;
+}
+
+.app-shell.app-dark .opportunity-hot-empty {
+  color: #a9c2e4;
+}
+
+.app-shell.app-dark .opportunity-cluster-card.tracked {
+  border-color: rgba(93, 196, 152, 0.54);
+  box-shadow: 0 14px 30px rgba(6, 36, 24, 0.38);
+}
+
+.app-shell.app-dark .opportunity-follow-cluster-cta.tracking {
+  border-color: rgba(101, 206, 162, 0.56);
+  background: rgba(21, 133, 84, 0.22);
+  color: #c8f0df;
+}
+
+.app-shell.app-dark .opportunity-tracked-check {
+  border-color: rgba(101, 206, 162, 0.56);
+  background: rgba(21, 133, 84, 0.28);
+  color: #c8f0df;
+}
+
+.app-shell.app-dark .radar-session-highlight {
+  border-color: rgba(111, 151, 211, 0.48);
+  box-shadow: 0 12px 28px rgba(7, 25, 44, 0.42);
+}
+
+.app-shell.app-dark .upgrade-flow-value-note {
+  border-color: rgba(105, 148, 211, 0.44);
+  background: rgba(24, 38, 58, 0.86);
+  color: #c7defc;
+}
+
+.admin-backoffice-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.admin-backoffice-login {
+  max-width: 680px;
+  margin: 0 auto;
+  display: grid;
+  gap: 12px;
+}
+
+.admin-backoffice-login-form {
+  max-width: 560px;
+}
+
+.admin-backoffice-head {
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.admin-kpi-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
+}
+
+.admin-kpi-card {
+  border: 1px solid rgba(116, 149, 196, 0.28);
+  border-radius: 14px;
+  padding: 12px;
+  background: rgba(242, 247, 255, 0.6);
+}
+
+.admin-kpi-label {
+  margin: 0 0 4px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #5a78a8;
+}
+
+.admin-kpi-value {
+  margin: 0 0 6px;
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1;
+  color: #1e3f71;
+}
+
+.admin-funnel-list {
+  display: grid;
+  gap: 10px;
+}
+
+.admin-funnel-step {
+  border: 1px solid rgba(116, 149, 196, 0.24);
+  border-radius: 12px;
+  padding: 10px;
+  background: rgba(243, 248, 255, 0.58);
+}
+
+.admin-funnel-step-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.admin-funnel-bar-track {
+  width: 100%;
+  height: 9px;
+  border-radius: 999px;
+  background: rgba(148, 176, 214, 0.35);
+  overflow: hidden;
+  margin: 8px 0 6px;
+}
+
+.admin-funnel-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #2f7dff, #54b0ff);
+}
+
+.admin-grid-two {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.admin-top-list,
+.admin-activity-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.admin-top-item,
+.admin-activity-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid rgba(116, 149, 196, 0.2);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: rgba(246, 250, 255, 0.52);
+}
+
+.admin-activity-item {
+  align-items: center;
+}
+
+.admin-backoffice-denied {
+  max-width: 760px;
+}
+
+.app-shell.app-dark .admin-kpi-card,
+.app-shell.app-dark .admin-funnel-step,
+.app-shell.app-dark .admin-top-item,
+.app-shell.app-dark .admin-activity-item {
+  border-color: rgba(109, 146, 194, 0.36);
+  background: rgba(14, 28, 46, 0.82);
+}
+
+.app-shell.app-dark .admin-kpi-label {
+  color: #8eb4e9;
+}
+
+.app-shell.app-dark .admin-kpi-value {
+  color: #d9e9ff;
+}
+
+.app-shell.app-dark .admin-funnel-bar-track {
+  background: rgba(101, 133, 175, 0.34);
+}
+
+@media (max-width: 980px) {
+  .admin-grid-two {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Admin dashboard v2 ──────────────────────────────────────────────────── */
+
+.admin-dashboard {
+  display: grid;
+  gap: 20px;
+  padding-bottom: 40px;
+}
+
+.admin-dashboard-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  background: linear-gradient(135deg, #1a3a6e 0%, #1e4f9e 60%, #2563c8 100%);
+  border-radius: 20px;
+  padding: 24px 28px;
+  color: #fff;
+}
+
+.admin-dashboard-header-left {
+  display: grid;
+  gap: 14px;
+  flex: 1;
+  min-width: 0;
+}
+
+.admin-dashboard-title-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.admin-dashboard-logo {
+  font-size: 32px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.admin-dashboard-title {
+  margin: 0 0 2px;
+  font-size: 22px;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: -0.02em;
+}
+
+.admin-dashboard-subtitle {
+  margin: 0;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.admin-status-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.admin-status-label {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.65);
+  margin-right: 4px;
+}
+
+.admin-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.admin-badge-ok {
+  background: rgba(16, 185, 129, 0.22);
+  color: #6ee7b7;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.admin-badge-warn {
+  background: rgba(245, 158, 11, 0.22);
+  color: #fcd34d;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
+.admin-badge-bad {
+  background: rgba(239, 68, 68, 0.22);
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+.admin-dashboard-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+  align-self: flex-start;
+}
+
+.admin-empty-state {
+  text-align: center;
+  padding: 60px 24px;
+}
+
+.admin-empty-icon {
+  font-size: 48px;
+  margin: 0 0 12px;
+}
+
+.admin-empty-text {
+  color: #64748b;
+  font-size: 15px;
+}
+
+/* KPI grid */
+.admin-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.admin-kpi-v2 {
+  background: rgba(242, 247, 255, 0.7);
+  border: 1px solid rgba(99, 148, 214, 0.25);
+  border-radius: 16px;
+  padding: 16px;
+  display: grid;
+  gap: 4px;
+  transition: box-shadow 0.15s, border-color 0.15s;
+}
+
+.admin-kpi-v2:hover {
+  box-shadow: 0 4px 18px rgba(30, 79, 158, 0.1);
+  border-color: rgba(99, 148, 214, 0.5);
+}
+
+.admin-kpi-v2-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.admin-kpi-v2-icon {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.admin-kpi-v2-value {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 800;
+  color: #1e3f71;
+  line-height: 1;
+}
+
+.admin-kpi-v2-label {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #5a78a8;
+}
+
+.admin-kpi-v2-sub {
+  margin: 0;
+  font-size: 12px;
+  color: #8ea6cc;
+}
+
+/* Two-col layout */
+.admin-two-col {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+/* Section card */
+.admin-section-card {
+  background: rgba(246, 250, 255, 0.6);
+  border: 1px solid rgba(99, 148, 214, 0.22);
+  border-radius: 18px;
+  padding: 20px;
+  display: grid;
+  gap: 14px;
+}
+
+.admin-section-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.admin-section-icon {
+  font-size: 22px;
+  line-height: 1;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.admin-section-title {
+  margin: 0 0 2px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #1a3a6e;
+}
+
+.admin-section-subtitle {
+  margin: 0;
+  font-size: 12px;
+  color: #7a94bb;
+}
+
+.admin-section-body {
+  min-width: 0;
+}
+
+.admin-section-insight {
+  background: rgba(219, 234, 254, 0.6);
+  border: 1px solid rgba(99, 148, 214, 0.3);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 12px;
+  color: #2a4f8a;
+  line-height: 1.5;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.admin-insight-bulb {
+  flex-shrink: 0;
+  font-size: 14px;
+}
+
+/* Bar list */
+.admin-bar-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.admin-bar-item {
+  display: grid;
+  gap: 5px;
+}
+
+.admin-bar-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.admin-bar-item-label {
+  font-size: 13px;
+  color: #2e4a73;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.admin-bar-item-count {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1a3a6e;
+  flex-shrink: 0;
+}
+
+.admin-bar-track {
+  width: 100%;
+  height: 8px;
+  background: rgba(148, 176, 214, 0.28);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.admin-bar-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #2f7dff, #54b0ff);
+  transition: width 0.4s ease;
+}
+
+/* Funnel v2 */
+.admin-funnel-v2 {
+  display: grid;
+  gap: 0;
+}
+
+.admin-funnel-v2-step {
+  display: grid;
+  gap: 0;
+}
+
+.admin-funnel-connector {
+  display: flex;
+  justify-content: flex-start;
+  padding: 4px 8px;
+}
+
+.admin-funnel-drop {
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 2px 8px;

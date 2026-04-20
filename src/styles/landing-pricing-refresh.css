@@ -70,18 +70,33 @@
   transition: color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
 }
 
-.landing-shell .landing-pricing-cycle-btn:hover,
-.landing-shell .landing-pricing-cycle-btn:focus-visible,
-.landing-shell .landing-pricing-cycle-btn:active {
-  border-color: transparent !important;
+/* Hover su bottone INATTIVO: ghost leggero, chiaramente diverso dall'attivo */
+.landing-shell .landing-pricing-cycle-btn:not(.is-active):hover,
+.landing-shell .landing-pricing-cycle-btn:not(.is-active):focus-visible {
+  background: rgba(80, 130, 220, 0.12) !important;
+  border-color: rgba(90, 150, 230, 0.3) !important;
+  color: #1a4080 !important;
   box-shadow: none !important;
+}
+
+/* Hover sul bottone ATTIVO: nessun cambiamento — è già scelto */
+.landing-shell .landing-pricing-cycle-btn.is-active:hover,
+.landing-shell .landing-pricing-cycle-btn.is-active:focus-visible {
+  background: linear-gradient(130deg, #257dff, #20b8ff) !important;
+  border-color: rgba(153, 218, 255, 0.62) !important;
+  box-shadow:
+    0 8px 20px rgba(33, 144, 255, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25) !important;
+  cursor: default;
 }
 
 .landing-shell .landing-pricing-cycle-btn.is-active {
   color: #ffffff;
   border-color: rgba(153, 218, 255, 0.62);
   background: linear-gradient(130deg, #257dff, #20b8ff);
-  box-shadow: 0 8px 20px rgba(33, 144, 255, 0.28);
+  box-shadow:
+    0 8px 20px rgba(33, 144, 255, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
 }
 
 .landing-shell .landing-pricing-cycle-note {
@@ -259,16 +274,29 @@
   border-radius: 14px;
   font-weight: 800;
   letter-spacing: 0.01em;
-  transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.22s ease, filter 0.18s ease, background 0.18s ease;
 }
 
 .landing-shell .landing-plan-cta:hover:not(:disabled) {
-  transform: translateY(-2px) !important;
-  filter: brightness(1.04);
+  transform: translateY(-4px) scale(1.012) !important;
+  filter: brightness(1.06);
+}
+
+.landing-shell .landing-plan-cta:active:not(:disabled) {
+  transform: translateY(-1px) scale(1.005) !important;
+  filter: brightness(0.98);
 }
 
 .landing-shell .landing-plan-cta.landing-plan-cta-primary {
   box-shadow: 0 16px 30px rgba(7, 18, 40, 0.22);
+}
+
+.landing-shell .landing-plan-cta.landing-plan-cta-primary:hover:not(:disabled) {
+  box-shadow: 0 22px 44px rgba(7, 18, 40, 0.32);
+}
+
+.landing-shell .landing-pricing-card:not(.landing-pricing-card-featured) .landing-plan-cta:hover:not(:disabled) {
+  box-shadow: 0 14px 32px rgba(25, 80, 175, 0.22);
 }
 
 .landing-shell .landing-pricing-card-featured .landing-plan-name,
@@ -312,11 +340,33 @@
   color: #8ab2dc;
 }
 
+/* Hover su bottone INATTIVO dark: ghost appena percettibile */
+.landing-shell.landing-dark .landing-pricing-cycle-btn:not(.is-active):hover,
+.landing-shell.landing-dark .landing-pricing-cycle-btn:not(.is-active):focus-visible {
+  background: rgba(90, 155, 240, 0.14) !important;
+  border-color: rgba(100, 165, 255, 0.28) !important;
+  color: #bcd8ff !important;
+  box-shadow: none !important;
+}
+
+/* Hover sul bottone ATTIVO dark: invariato */
+.landing-shell.landing-dark .landing-pricing-cycle-btn.is-active:hover,
+.landing-shell.landing-dark .landing-pricing-cycle-btn.is-active:focus-visible {
+  background: linear-gradient(130deg, #2b86ff, #4ca7ff) !important;
+  border-color: rgba(147, 218, 255, 0.58) !important;
+  box-shadow:
+    0 8px 20px rgba(25, 122, 224, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18) !important;
+  cursor: default;
+}
+
 .landing-shell.landing-dark .landing-pricing-cycle-btn.is-active {
   color: #f7fcff;
   border-color: rgba(147, 218, 255, 0.58);
   background: linear-gradient(130deg, #2b86ff, #4ca7ff);
-  box-shadow: 0 8px 20px rgba(25, 122, 224, 0.42);
+  box-shadow:
+    0 8px 20px rgba(25, 122, 224, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 
 .landing-shell.landing-dark .landing-pricing-cycle-note {

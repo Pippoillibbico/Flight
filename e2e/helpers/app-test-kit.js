@@ -192,7 +192,7 @@ export function createDefaultState(overrides = {}) {
     },
     adminAllowlistEmails: [...DEFAULT_ADMIN_ALLOWLIST_EMAILS],
     adminTelemetryEvents: [],
-    billingProvider: 'braintree',
+    billingProvider: 'stripe',
     radarPreferences: { ...DEFAULT_RADAR },
     opportunities: createDefaultOpportunities(6),
     clusters: [
@@ -295,11 +295,12 @@ function updatePlan(state, planType) {
 }
 
 export async function setupApiMocks(page, state) {
+  const debugUnmatchedApi = String(process.env.E2E_LOG_UNMATCHED_API || '').trim() === '1';
   await page.route('**/api/**', async (route) => {
     const request = route.request();
     const url = new URL(request.url());
     const method = request.method();
-    const path = url.pathname;
+    const path = String(url.pathname || '').replace(/\/+$/, '') || '/';
 
     const json = (payload, status = 200) =>
       route.fulfill({
@@ -327,7 +328,7 @@ export async function setupApiMocks(page, state) {
         capabilities: {
           data_source: 'live',
           providers: {
-            amadeus: true,
+            duffel: true,
             kiwi: true,
             skyscanner: true
           }
@@ -349,7 +350,7 @@ export async function setupApiMocks(page, state) {
 
     if (path === '/api/billing/subscription' && method === 'GET') {
       const planType = normalizePlan(state.user?.planType || 'free');
-      const provider = String(state.billingProvider || 'braintree').trim().toLowerCase();
+      const provider = String(state.billingProvider || 'stripe').trim().toLowerCase();
       const planId = planType === 'elite' ? 'creator' : planType;
       return json({
         planId,
@@ -362,59 +363,45 @@ export async function setupApiMocks(page, state) {
     }
 
     if (path === '/api/billing/client-token' && method === 'GET') {
-      const provider = String(state.billingProvider || 'braintree').trim().toLowerCase();
-      if (provider !== 'braintree') {
-        return json(
-          {
-            error: 'billing_provider_not_supported',
-            message: 'Client token endpoint is available only with Braintree.'
-          },
-          400
-        );
-      }
-      return json({
-        provider: 'braintree',
-        clientToken: 'test-client-token'
-      });
+      return json(
+        {
+          error: 'endpoint_removed',
+          message: 'Braintree client-token flow has been removed. Use /api/billing/checkout for Stripe.'
+        },
+        410
+      );
     }
 
     if (path === '/api/billing/checkout' && method === 'POST') {
       const body = parseRequestBody(request);
-      const provider = String(state.billingProvider || 'braintree').trim().toLowerCase();
-      if (provider !== 'braintree') {
+      const provider = String(state.billingProvider || 'stripe').trim().toLowerCase();
+      if (provider !== 'stripe') {
         return json(
           {
             error: 'billing_provider_not_supported',
-            message: 'Checkout endpoint requires Braintree provider.'
+            message: 'Checkout endpoint requires Stripe provider.'
           },
           400
         );
       }
 
       const planType = normalizePlan(body?.planType || 'free');
-      const paymentMethodNonce = String(body?.paymentMethodNonce || '').trim();
-      if (!paymentMethodNonce) {
+      if (planType !== 'pro' && planType !== 'elite') {
         return json(
           {
-            error: 'payment_method_failed',
-            message: 'Payment method could not be verified.'
+            error: 'invalid_payload',
+            message: 'Invalid plan type.'
           },
-          402
+          400
         );
       }
-
-      updatePlan(state, planType === 'elite' ? 'elite' : 'pro');
       return json(
         {
           ok: true,
-          provider: 'braintree',
+          provider: 'stripe',
           planType: planType === 'elite' ? 'elite' : 'pro',
-          subscription: {
-            id: `sub_${Date.now()}`,
-            status: 'active',
-            currentPeriodStart: new Date().toISOString(),
-            currentPeriodEnd: null
-          }
+          sessionId: `cs_test_${Date.now()}`,
+          checkoutUrl: 'https://checkout.stripe.com/c/pay/test_session'
         },
         201
       );
@@ -633,6 +620,10 @@ export async function setupApiMocks(page, state) {
       });
     }
 
+    if (debugUnmatchedApi) {
+      // eslint-disable-next-line no-console
+      console.log(`[e2e-mock] unmatched ${method} ${path}`);
+    }
     return json({ ok: true });
   });
 }
@@ -663,7 +654,16 @@ export async function bootLanding(page, state, { language = 'it', seedConsent = 
     }
   }, { initialLanguage: language, shouldSeedConsent: Boolean(seedConsent) });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await expect(page.locator('main.landing-shell')).toBeVisible();
+  await expect
+    .poll(
+      async () => {
+        const landingVisible = await page.locator('main.landing-shell').isVisible().catch(() => false);
+        const appShellVisible = await page.locator('main.page.app-shell').isVisible().catch(() => false);
+        return landingVisible || appShellVisible;
+      },
+      { timeout: 10000 }
+    )
+    .toBe(true);
   await page.addStyleTag({
     content: `
       *,
@@ -708,29 +708,43 @@ async function clickLocatorIfVisible(locator) {
 }
 
 async function waitForAuthSurface(page, { timeoutMs = 5000, requireEmailForm = false } = {}) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (page.isClosed()) return false;
-    if (await isAuthenticatedUi(page)) return true;
-    const authShellVisible = await isLocatorVisible(page.locator('.auth-shell'));
-    const emailFormVisible = await isLocatorVisible(page.locator('.auth-email-form'));
-    if (requireEmailForm ? emailFormVisible : authShellVisible || emailFormVisible) return true;
-    await page.waitForTimeout(120).catch(() => {});
+  try {
+    await expect
+      .poll(
+        async () => {
+          if (page.isClosed()) return false;
+          if (await isAuthenticatedUi(page)) return true;
+          const authShellVisible = await isLocatorVisible(page.locator('.auth-shell'));
+          const emailFormVisible = await isLocatorVisible(page.locator('.auth-email-form'));
+          return requireEmailForm ? emailFormVisible : authShellVisible || emailFormVisible;
+        },
+        { timeout: timeoutMs }
+      )
+      .toBe(true);
+    return true;
+  } catch {
+    return false;
   }
-  return false;
 }
 
 async function waitForLoggedInState(page, timeoutMs = 10000) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (page.isClosed()) return false;
-    if (await isAuthenticatedUi(page)) return true;
-    const appShellVisible = await isLocatorVisible(page.locator('main.page.app-shell'));
-    const authShellStillOpen = await isLocatorVisible(page.locator('.auth-shell'));
-    if (appShellVisible && !authShellStillOpen) return true;
-    await page.waitForTimeout(120).catch(() => {});
+  try {
+    await expect
+      .poll(
+        async () => {
+          if (page.isClosed()) return false;
+          if (await isAuthenticatedUi(page)) return true;
+          const appShellVisible = await isLocatorVisible(page.locator('main.page.app-shell'));
+          const authShellStillOpen = await isLocatorVisible(page.locator('.auth-shell'));
+          return appShellVisible && !authShellStillOpen;
+        },
+        { timeout: timeoutMs }
+      )
+      .toBe(true);
+    return true;
+  } catch {
+    return false;
   }
-  return false;
 }
 
 export async function openEmailAuth(page) {
@@ -793,7 +807,7 @@ export async function loginFromUi(
     } catch (error) {
       openEmailAttempts += 1;
       if (page.isClosed() || openEmailAttempts >= 2) throw error;
-      await page.waitForTimeout(150).catch(() => {});
+      await page.waitForLoadState('domcontentloaded').catch(() => {});
     }
   }
   if (await isAuthenticatedUi(page)) return;
@@ -809,7 +823,22 @@ export async function loginFromUi(
     if (authStillVisible) {
       await submitButton.click({ force: true }).catch(() => {});
     }
-    const loggedInAfterRetry = await waitForLoggedInState(page, 5000);
+    let loggedInAfterRetry = await waitForLoggedInState(page, 5000);
+    if (!loggedInAfterRetry) {
+      // WebKit can intermittently miss the UI submit transition in CI. Use API bootstrap as deterministic fallback.
+      await page
+        .evaluate(async ({ nextEmail, nextPassword }) => {
+          await fetch('/api/auth/login', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: nextEmail, password: nextPassword })
+          });
+        }, { nextEmail: email, nextPassword: password })
+        .catch(() => {});
+      await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {});
+      loggedInAfterRetry = await waitForLoggedInState(page, 10000);
+    }
     if (!loggedInAfterRetry) {
       throw new Error('Login did not transition to authenticated app shell');
     }

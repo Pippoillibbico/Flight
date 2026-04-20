@@ -1,5 +1,18 @@
 import type { UpgradePlanContent, UpgradePlanType } from '../types/index.ts';
 
+const SOURCE_OVERRIDES: Partial<Record<string, Partial<UpgradePlanContent>>> = {
+  search_limit: {
+    title: 'Hai raggiunto il limite gratuito',
+    description: 'Con PRO puoi continuare subito, vedere risultati reali e accedere a più opportunità.',
+    primaryCtaLabel: 'Continua con PRO'
+  },
+  limited_results: {
+    title: 'Sblocca risultati reali',
+    description: 'Stai vedendo una versione limitata. Con PRO accedi a ricerche illimitate e dati live.',
+    primaryCtaLabel: 'Sblocca risultati reali'
+  }
+};
+
 const PLAN_CONTENT: Record<UpgradePlanType, UpgradePlanContent> = {
   pro: {
     planType: 'pro',
@@ -33,6 +46,9 @@ const PLAN_CONTENT: Record<UpgradePlanType, UpgradePlanContent> = {
   }
 };
 
-export function getUpgradePlanContent(planType: UpgradePlanType): UpgradePlanContent {
-  return PLAN_CONTENT[planType];
+export function getUpgradePlanContent(planType: UpgradePlanType, source?: string | null): UpgradePlanContent {
+  const base = PLAN_CONTENT[planType];
+  const overrides = source ? SOURCE_OVERRIDES[source] : undefined;
+  if (!overrides) return base;
+  return { ...base, ...overrides };
 }

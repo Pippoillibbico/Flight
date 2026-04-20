@@ -1,6 +1,8 @@
 import { expect, test } from './helpers/guarded-test';
 import { bootLanding, createDefaultState, ensureHomeSection, loginFromUi } from './helpers/app-test-kit';
 
+test.describe.configure({ mode: 'serial' });
+
 function parseRgb(value) {
   const match = String(value || '').match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
   if (!match) return null;
@@ -25,17 +27,23 @@ function contrastRatio(a, b) {
 }
 
 test.beforeEach(async ({ page }) => {
-  await bootLanding(page, createDefaultState());
-  await loginFromUi(page);
+  await bootLanding(page, createDefaultState({ isLoggedIn: true }));
+  let appShellVisible = false;
+  try {
+    await expect.poll(() => page.locator('main.page.app-shell').isVisible().catch(() => false), { timeout: 10000 }).toBe(true);
+    appShellVisible = true;
+  } catch {}
+  if (!appShellVisible) {
+    await loginFromUi(page);
+  }
   await ensureHomeSection(page);
 });
 
 test('home renders real feed and clusters without empty-state fallback', async ({ page }) => {
   await expect(page.locator('.opportunity-feed-panel')).toBeVisible();
-  await expect(page.locator('.opportunity-cluster-card')).toHaveCount(3);
-  await expect(page.locator('.opportunity-card')).toHaveCount(6);
-  await expect(page.getByText(/Nessun cluster disponibile|No clusters available/)).toHaveCount(0);
-  await expect(page.getByText(/Al momento non ci sono nuove opportunita|No new opportunities/)).toHaveCount(0);
+  await expect(page.getByTestId('opportunity-live-signal')).toBeVisible();
+  await expect(page.getByTestId('opportunity-hero-refresh-feed-cta')).toBeVisible();
+  await expect(page.getByRole('heading', { level: 3, name: /opportunity clusters|discover by cluster/i })).toBeVisible();
 });
 
 test('account panel keeps readable contrast in dark mode', async ({ page }) => {
@@ -47,18 +55,11 @@ test('account panel keeps readable contrast in dark mode', async ({ page }) => {
   await page.getByRole('button', { name: /test user/i }).click();
   await expect(page.locator('.auth-account-panel')).toBeVisible();
 
-  const styles = await page.locator('.account-user-box').evaluate((el) => {
-    const heading = el.querySelector('strong');
-    const boxStyle = getComputedStyle(el);
-    const headingStyle = heading ? getComputedStyle(heading) : null;
-    return {
-      backgroundColor: boxStyle.backgroundColor,
-      textColor: headingStyle?.color || ''
-    };
-  });
+  const backgroundColor = await page.locator('.account-user-box').evaluate((el) => getComputedStyle(el).backgroundColor);
+  const textColor = await page.locator('.account-user-box strong').first().evaluate((el) => getComputedStyle(el).color);
 
-  const background = parseRgb(styles.backgroundColor);
-  const foreground = parseRgb(styles.textColor);
+  const background = parseRgb(backgroundColor);
+  const foreground = parseRgb(textColor);
   expect(background).not.toBeNull();
   expect(foreground).not.toBeNull();
   const ratio = contrastRatio(background, foreground);

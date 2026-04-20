@@ -23,7 +23,9 @@ export type UpgradeTriggerContext =
   | 'saved_itineraries_limit'
   | 'radar_hot_opened'
   | 'ai_travel_limit'
-  | 'personal_hub';
+  | 'personal_hub'
+  | 'limited_results_soft'
+  | 'deal_urgency';
 
 export interface UpgradeTriggerContent {
   title: string;

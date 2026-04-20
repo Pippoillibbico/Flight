@@ -24,7 +24,8 @@ export function useOpportunityFlow({
   setOpportunityDetail,
   setOpportunityDetailLoading,
   setOpportunityDetailError,
-  setOpportunityDetailUpgradePrompt
+  setOpportunityDetailUpgradePrompt,
+  shouldShowUrgencyPrompt = null
 }) {
   const opportunityDetailRequestIdRef = useRef(0);
 
@@ -72,6 +73,9 @@ export function useOpportunityFlow({
           } else if (radarState === 'radar_hot' && userPlanType !== 'elite') {
             const content = resolveUpgradeTriggerContent('radar_hot_opened');
             setOpportunityDetailUpgradePrompt(toUpgradePrompt(content));
+          } else if (userPlanType === 'free' && typeof shouldShowUrgencyPrompt === 'function' && shouldShowUrgencyPrompt()) {
+            const content = resolveUpgradeTriggerContent('deal_urgency');
+            setOpportunityDetailUpgradePrompt(toUpgradePrompt(content));
           }
         }
       } catch (error) {
@@ -99,7 +103,8 @@ export function useOpportunityFlow({
       token,
       trackItineraryOpened,
       trackResultInteraction,
-      userPlanType
+      userPlanType,
+      shouldShowUrgencyPrompt
     ]
   );
 

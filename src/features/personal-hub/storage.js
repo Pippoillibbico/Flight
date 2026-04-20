@@ -310,6 +310,7 @@ export function subscribeToPersonalHubStorage(listener) {
   if (typeof listener !== 'function') return () => {};
 
   const onCustomEvent = () => listener();
+  const onConsentEvent = () => listener();
   const onStorageEvent = (event) => {
     const storageKey = String(event?.key || '');
     if (
@@ -323,10 +324,12 @@ export function subscribeToPersonalHubStorage(listener) {
   };
 
   window.addEventListener(PERSONAL_HUB_STORAGE_EVENT, onCustomEvent);
+  window.addEventListener('flight_consent_changed', onConsentEvent);
   window.addEventListener('storage', onStorageEvent);
 
   return () => {
     window.removeEventListener(PERSONAL_HUB_STORAGE_EVENT, onCustomEvent);
+    window.removeEventListener('flight_consent_changed', onConsentEvent);
     window.removeEventListener('storage', onStorageEvent);
   };
 }

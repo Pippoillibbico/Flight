@@ -1,0 +1,762 @@
+}
+
+.admin-funnel-drop-ok {
+  background: rgba(16, 185, 129, 0.12);
+  color: #059669;
+}
+
+.admin-funnel-drop-warn {
+  background: rgba(245, 158, 11, 0.12);
+  color: #d97706;
+}
+
+.admin-funnel-drop-bad {
+  background: rgba(239, 68, 68, 0.12);
+  color: #dc2626;
+}
+
+.admin-funnel-bar-wrapper {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0;
+}
+
+.admin-funnel-bar-block {
+  background: linear-gradient(90deg, #1e4f9e, #3b7de8);
+  border-radius: 8px;
+  padding: 9px 12px;
+  min-width: 40px;
+  transition: width 0.4s ease;
+}
+
+.admin-funnel-bar-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+
+.admin-funnel-bar-count {
+  font-size: 18px;
+  font-weight: 800;
+  color: #1e3f71;
+  min-width: 36px;
+  text-align: right;
+}
+
+.admin-funnel-conv-pct {
+  font-size: 11px;
+  color: #7a94bb;
+  min-width: 72px;
+  text-align: right;
+}
+
+/* Why no purchase insight list */
+.admin-insight-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.admin-insight-item {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.admin-insight-high {
+  background: rgba(239, 68, 68, 0.07);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  color: #7f1d1d;
+}
+
+.admin-insight-medium {
+  background: rgba(245, 158, 11, 0.07);
+  border: 1px solid rgba(245, 158, 11, 0.22);
+  color: #78350f;
+}
+
+.admin-insight-ok {
+  background: rgba(16, 185, 129, 0.07);
+  border: 1px solid rgba(16, 185, 129, 0.22);
+  color: #064e3b;
+}
+
+.admin-insight-icon {
+  font-size: 16px;
+  flex-shrink: 0;
+  line-height: 1.5;
+}
+
+.admin-insight-text {
+  flex: 1;
+}
+
+/* Plan badges */
+.admin-plan-badge {
+  display: inline-block;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.admin-plan-free {
+  background: rgba(100, 116, 139, 0.15);
+  color: #475569;
+}
+
+.admin-plan-pro {
+  background: rgba(59, 130, 246, 0.15);
+  color: #1d4ed8;
+}
+
+.admin-plan-elite {
+  background: rgba(245, 158, 11, 0.15);
+  color: #b45309;
+}
+
+/* Mono stats (3-up) */
+.admin-mono-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.admin-mono-stat {
+  text-align: center;
+  padding: 14px 8px;
+  background: rgba(242, 247, 255, 0.8);
+  border: 1px solid rgba(99, 148, 214, 0.2);
+  border-radius: 12px;
+}
+
+.admin-mono-stat-value {
+  display: block;
+  font-size: 28px;
+  font-weight: 800;
+  color: #1e3f71;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+
+.admin-mono-stat-pro {
+  color: #1d4ed8;
+}
+
+.admin-mono-stat-elite {
+  color: #b45309;
+}
+
+.admin-mono-stat-label {
+  font-size: 11px;
+  color: #7a94bb;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Operations */
+.admin-ops-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.admin-ops-stat {
+  text-align: center;
+  padding: 16px 10px;
+  background: rgba(242, 247, 255, 0.8);
+  border: 1px solid rgba(99, 148, 214, 0.2);
+  border-radius: 12px;
+}
+
+.admin-ops-value {
+  display: block;
+  font-size: 32px;
+  font-weight: 800;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+
+.admin-ops-ok { color: #059669; }
+.admin-ops-warn { color: #d97706; }
+.admin-ops-bad { color: #dc2626; }
+
+.admin-ops-label {
+  font-size: 11px;
+  color: #7a94bb;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Timeline */
+.admin-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0;
+}
+
+.admin-timeline-item {
+  display: flex;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(148, 176, 214, 0.18);
+}
+
+.admin-timeline-item:last-child {
+  border-bottom: none;
+}
+
+.admin-timeline-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #3b7de8;
+  flex-shrink: 0;
+  margin-top: 5px;
+}
+
+.admin-timeline-error .admin-timeline-dot {
+  background: #dc2626;
+}
+
+.admin-timeline-body {
+  flex: 1;
+  font-size: 13px;
+  color: #2e4a73;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.admin-timeline-scope {
+  font-weight: 700;
+  color: #1a3a6e;
+}
+
+.admin-timeline-event-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.admin-timeline-meta {
+  font-size: 11px;
+  color: #8ea6cc;
+}
+
+.admin-timeline-time {
+  margin-left: auto;
+  font-size: 11px;
+  color: #8ea6cc;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Dark mode — admin v2 */
+.app-shell.app-dark .admin-dashboard-header {
+  background: linear-gradient(135deg, #0d2044 0%, #102a5e 60%, #1a3a7e 100%);
+}
+
+.app-shell.app-dark .admin-kpi-v2 {
+  background: rgba(14, 28, 52, 0.9);
+  border-color: rgba(60, 100, 160, 0.4);
+}
+
+.app-shell.app-dark .admin-kpi-v2-value {
+  color: #d9e9ff;
+}
+
+.app-shell.app-dark .admin-kpi-v2-label {
+  color: #7099cc;
+}
+
+.app-shell.app-dark .admin-kpi-v2-sub {
+  color: #4a6a99;
+}
+
+.app-shell.app-dark .admin-section-card {
+  background: rgba(10, 20, 40, 0.82);
+  border-color: rgba(60, 100, 160, 0.35);
+}
+
+.app-shell.app-dark .admin-section-title {
+  color: #b8d4ff;
+}
+
+.app-shell.app-dark .admin-section-subtitle {
+  color: #5a7aaa;
+}
+
+.app-shell.app-dark .admin-section-insight {
+  background: rgba(30, 60, 120, 0.4);
+  border-color: rgba(60, 100, 160, 0.4);
+  color: #8ab4e8;
+}
+
+.app-shell.app-dark .admin-bar-track {
+  background: rgba(60, 100, 160, 0.22);
+}
+
+.app-shell.app-dark .admin-bar-item-label {
+  color: #8ab4e8;
+}
+
+.app-shell.app-dark .admin-bar-item-count {
+  color: #c8defc;
+}
+
+.app-shell.app-dark .admin-funnel-bar-count {
+  color: #c8defc;
+}
+
+.app-shell.app-dark .admin-funnel-conv-pct {
+  color: #5a7aaa;
+}
+
+.app-shell.app-dark .admin-insight-high {
+  background: rgba(127, 29, 29, 0.3);
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #fca5a5;
+}
+
+.app-shell.app-dark .admin-insight-medium {
+  background: rgba(120, 53, 15, 0.3);
+  border-color: rgba(245, 158, 11, 0.35);
+  color: #fcd34d;
+}
+
+.app-shell.app-dark .admin-insight-ok {
+  background: rgba(6, 78, 59, 0.3);
+  border-color: rgba(16, 185, 129, 0.35);
+  color: #6ee7b7;
+}
+
+.app-shell.app-dark .admin-mono-stat {
+  background: rgba(14, 28, 52, 0.9);
+  border-color: rgba(60, 100, 160, 0.4);
+}
+
+.app-shell.app-dark .admin-mono-stat-value {
+  color: #c8defc;
+}
+
+.app-shell.app-dark .admin-ops-stat {
+  background: rgba(14, 28, 52, 0.9);
+  border-color: rgba(60, 100, 160, 0.4);
+}
+
+.app-shell.app-dark .admin-timeline-body {
+  color: #8ab4e8;
+}
+
+.app-shell.app-dark .admin-timeline-scope {
+  color: #b8d4ff;
+}
+
+.app-shell.app-dark .admin-timeline-item {
+  border-color: rgba(60, 100, 160, 0.22);
+}
+
+.app-shell.app-dark .admin-empty-text {
+  color: #5a7aaa;
+}
+
+.app-shell.app-dark .admin-plan-free {
+  background: rgba(100, 116, 139, 0.25);
+  color: #94a3b8;
+}
+
+.app-shell.app-dark .admin-plan-pro {
+  background: rgba(59, 130, 246, 0.22);
+  color: #93c5fd;
+}
+
+.app-shell.app-dark .admin-plan-elite {
+  background: rgba(245, 158, 11, 0.22);
+  color: #fcd34d;
+}
+
+/* Responsive — admin v2 */
+@media (max-width: 980px) {
+  .admin-two-col {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .admin-dashboard-header {
+    flex-direction: column;
+    gap: 14px;
+  }
+  .admin-dashboard-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+  .admin-kpi-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .admin-mono-stats,
+  .admin-ops-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Sprint 12: presentation styles were modularized under src/styles/presentation/*.css and are imported from src/main.jsx. */
+
+/* Search mode toggle (Single trip / Multitratta): keep readable hover, no yellow border accent. */
+.app-shell .trip-mode-toggle .search-mode-toggle-btn:hover {
+  border-color: #8db4ff !important;
+  box-shadow: 0 8px 18px rgba(44, 88, 158, 0.18) !important;
+  background: #deebff !important;
+  color: #163f84 !important;
+  transform: none !important;
+}
+
+.app-shell .trip-mode-toggle .search-mode-toggle-btn.active:hover {
+  border-color: #2d74df !important;
+  box-shadow: 0 12px 24px rgba(15, 111, 255, 0.28) !important;
+  background: linear-gradient(180deg, #2f87ff, var(--brand)) !important;
+  color: #ffffff !important;
+  transform: none !important;
+}
+
+.app-shell.app-dark .trip-mode-toggle .search-mode-toggle-btn:hover {
+  border-color: rgba(255, 255, 255, 0.45) !important;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35), 0 8px 18px rgba(0, 0, 0, 0.22) !important;
+  background: rgba(255, 255, 255, 0.1) !important;
+  color: #e8f0ff !important;
+  transform: none !important;
+}
+
+.app-shell.app-dark .trip-mode-toggle .search-mode-toggle-btn.active:hover {
+  border-color: #3a7fe6 !important;
+  box-shadow: 0 12px 24px rgba(15, 111, 255, 0.28) !important;
+  background: linear-gradient(180deg, #2f87ff, #1666d9) !important;
+  color: #ffffff !important;
+  transform: none !important;
+}
+
+/* Explore cluster shortcuts (e.g. BER): match standard app CTA hover behavior. */
+.app-shell .explore-cluster-shortcuts > .tab:hover {
+  border-color: #8db4ff !important;
+  box-shadow: 0 8px 18px rgba(44, 88, 158, 0.18) !important;
+  transform: none !important;
+}
+
+.app-shell .explore-cluster-shortcuts > .tab.active {
+  color: #ffffff !important;
+}
+
+.app-shell:not(.app-dark) .explore-cluster-shortcuts > .tab:hover {
+  background: #deebff !important;
+  color: #163f84 !important;
+  border-color: #8db4ff !important;
+  box-shadow: 0 8px 18px rgba(44, 88, 158, 0.18) !important;
+}
+
+.app-shell:not(.app-dark) .explore-cluster-shortcuts > .tab.active:hover {
+  background: linear-gradient(180deg, #2f87ff, var(--brand)) !important;
+  color: #ffffff !important;
+  border-color: #2d74df !important;
+  box-shadow: 0 12px 24px rgba(15, 111, 255, 0.28) !important;
+}
+
+.app-shell.app-dark .explore-cluster-shortcuts > .tab:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+  color: #e8f0ff !important;
+  border-color: rgba(255, 255, 255, 0.45) !important;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35), 0 8px 18px rgba(0, 0, 0, 0.22) !important;
+}
+
+.app-shell.app-dark .explore-cluster-shortcuts > .tab.active:hover {
+  background: linear-gradient(180deg, #2f87ff, #1666d9) !important;
+  color: #ffffff !important;
+  border-color: #3a7fe6 !important;
+  box-shadow: 0 12px 24px rgba(15, 111, 255, 0.28) !important;
+}
+
+/* Final lock (end-of-file): unified CTA hover behavior across light/dark and all app surfaces. */
+.page {
+  --unified-cta-hover-border: #8db4ff;
+  --unified-cta-hover-glow: rgba(44, 88, 158, 0.22);
+}
+
+.page.app-dark,
+.page.landing-shell.landing-dark {
+  --unified-cta-hover-border: rgba(167, 194, 235, 0.95);
+  --unified-cta-hover-glow: rgba(8, 20, 38, 0.34);
+}
+
+.page button:hover:not(:disabled):not(.landing-lang-trigger):not(.account-close-btn):not(.cookie-banner-link):not(.cookie-banner-details-toggle):not(.cookie-btn),
+.page .tab:hover,
+.page .ghost:hover,
+.page .item-actions > a:hover,
+.page .landing-ctrl-btn:hover,
+.page .landing-accedi-btn:hover,
+.page .landing-cta-primary:hover,
+.page .landing-cta-ghost:hover,
+.page .landing-plan-cta:hover,
+.page .premium-cta:hover {
+  border-color: var(--unified-cta-hover-border) !important;
+  box-shadow:
+    0 0 0 1px var(--unified-cta-hover-border),
+    0 0 18px var(--unified-cta-hover-glow) !important;
+  transform: none !important;
+}
+
+/* ============================================================
+   AUTH — password toggle, spinner, error region, legal links
+   ============================================================ */
+
+.auth-field-label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.auth-password-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.auth-password-input {
+  flex: 1;
+  padding-right: 40px !important;
+}
+
+.auth-password-toggle {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 4px;
+  cursor: pointer;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  min-height: unset !important;
+  border-radius: 4px;
+  transition: color 0.15s;
+}
+
+.auth-password-toggle:hover {
+  color: var(--brand);
+}
+
+.auth-password-toggle:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* OAuth loading spinner */
+@keyframes auth-spin {
+  to { transform: rotate(360deg); }
+}
+
+.auth-spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: auth-spin 0.7s linear infinite;
+  vertical-align: middle;
+}
+
+.auth-btn-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Error region with smooth entrance */
+.auth-error-region {
+  min-height: 0;
+}
+
+@keyframes auth-error-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.auth-error-msg {
+  animation: auth-error-in 0.2s ease;
+}
+
+/* Legal link style (replaces <u> anti-pattern) */
+.auth-legal-link {
+  text-decoration: underline;
+  text-decoration-color: rgba(86, 113, 152, 0.5);
+  text-underline-offset: 2px;
+  cursor: pointer;
+  transition: text-decoration-color 0.15s;
+}
+
+.auth-legal-link:hover {
+  text-decoration-color: var(--brand);
+}
+
+/* Remember me / form actions spacing */
+.auth-form-actions {
+  margin-top: 4px;
+}
+
+/* Focus ring — universal improvement */
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.app-shell.app-dark :focus-visible {
+  outline-color: #6aadff;
+}
+
+/* ============================================================
+   UPGRADE PROMPT — feature list, plan head, CTA buttons
+   ============================================================ */
+
+.upgrade-prompt-header {
+  display: grid;
+  gap: 4px;
+}
+
+.upgrade-prompt-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.upgrade-prompt-message {
+  margin: 0;
+  font-size: 13px;
+}
+
+.upgrade-prompt-plan-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.upgrade-prompt-plan-badge {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #1a56b0;
+  background: rgba(15, 111, 255, 0.1);
+  border: 1px solid rgba(15, 111, 255, 0.22);
+  border-radius: 99px;
+  padding: 2px 7px;
+  white-space: nowrap;
+}
+
+.upgrade-prompt-plan-tag--elite {
+  color: #8a5f00 !important;
+}
+
+.upgrade-prompt-features {
+  list-style: none;
+  margin: 4px 0 10px;
+  padding: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.upgrade-prompt-feature-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 12px;
+  color: #3c5f8d;
+  line-height: 1.4;
+}
+
+.upgrade-prompt-feature-item--elite {
+  color: #6b4d00;
+}
+
+.upgrade-check-icon {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: #1a7a4d;
+}
+
+.upgrade-prompt-feature-item--elite .upgrade-check-icon {
+  color: #8a5f00;
+}
+
+.upgrade-prompt-cta-pro {
+  width: 100%;
+  background: linear-gradient(180deg, #2f87ff, var(--brand)) !important;
+  color: #fff !important;
+  border-color: #2d74df !important;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 9px 12px !important;
+}
+
+.upgrade-prompt-cta-pro:hover {
+  background: linear-gradient(180deg, #4d96ff, #1c72f0) !important;
+}
+
+.upgrade-prompt-cta-elite {
+  width: 100%;
+  font-size: 13px;
+  padding: 8px 12px !important;
+}
+
+.upgrade-prompt-trust {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  color: #4e6f9d;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+/* Dark mode overrides for new upgrade elements */
+.app-shell.app-dark .upgrade-prompt-title {
+  color: #e8f0fc;
+}
+
+.app-shell.app-dark .upgrade-prompt-plan-badge {
+  color: #89bfff;
+  background: rgba(100, 163, 255, 0.12);
+  border-color: rgba(100, 163, 255, 0.3);
+}
+
+.app-shell.app-dark .upgrade-prompt-plan-tag--elite {
+  color: #f0c060 !important;
+}
+
+.app-shell.app-dark .upgrade-prompt-feature-item {
+  color: #c2d8f7;
+}

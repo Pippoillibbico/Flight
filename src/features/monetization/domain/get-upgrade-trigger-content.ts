@@ -68,6 +68,24 @@ export function getUpgradeTriggerContent(
     };
   }
 
+  if (context === 'limited_results_soft') {
+    return {
+      title: 'Stai vedendo una versione limitata dei risultati',
+      message: 'Con PRO puoi sbloccare risultati reali e continuare a cercare senza restrizioni.',
+      proLabel: 'Sblocca risultati reali',
+      eliteLabel: 'Go ELITE'
+    };
+  }
+
+  if (context === 'deal_urgency') {
+    return {
+      title: 'Questo prezzo potrebbe non restare disponibile a lungo',
+      message: 'Con PRO puoi verificare più rapidamente i risultati reali e seguire le opportunità migliori.',
+      proLabel: 'Verifica disponibilità',
+      eliteLabel: 'Go ELITE'
+    };
+  }
+
   return {
     title: 'Make your radar smarter',
     message:

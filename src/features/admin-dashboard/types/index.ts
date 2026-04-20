@@ -68,6 +68,34 @@ export interface AdminBackofficeReport {
     recentErrors: AdminRecentError[];
   };
   recentActivity: AdminRecentActivity[];
+  monitoring?: {
+    callsPerUser: {
+      search: number;
+      provider: number;
+      ai: number;
+    } | null;
+    costPerUser: {
+      provider: number;
+      ai: number;
+      total: number;
+    } | null;
+    budgetUsedPercent: {
+      providerDailyCalls: number;
+      aiMonthlyTokens: number;
+    };
+    search429Count: number;
+    search429Pct: number;
+    usersActiveEstimated: number;
+    feedViews: number;
+    redirectClicks: number;
+    ctrPercent: number;
+    providerCostTotalEur: number;
+    aiCostTotalEur: number;
+    providerBudgetExceededEvents: number;
+    aiBudgetExceededEvents: number;
+    alerts: Array<{ level: string; code: string; message: string }>;
+    suggestions: string[];
+  } | null;
 }
 
 export interface AdminDashboardApi {
@@ -79,12 +107,27 @@ export type AdminTelemetryEventType =
   | 'result_interaction_clicked'
   | 'itinerary_opened'
   | 'booking_clicked'
+  | 'live_deal_feed_view'
+  | 'live_deal_card_click'
+  | 'live_deal_detail_open'
+  | 'live_deal_pre_redirect_open'
+  | 'live_deal_redirect_confirm'
+  | 'live_deal_return_view'
+  | 'live_deal_save_route_click'
+  | 'live_deal_alert_click'
+  | 'upgrade_cta_shown'
   | 'upgrade_cta_clicked'
   | 'elite_cta_clicked'
   | 'upgrade_modal_opened'
   | 'elite_modal_opened'
   | 'upgrade_primary_cta_clicked'
-  | 'radar_activated';
+  | 'checkout_started'
+  | 'checkout_completed'
+  | 'radar_activated'
+  | 'trial_banner_shown'
+  | 'trial_upgrade_clicked'
+  | 'upgrade_prompt_shown'
+  | 'upgrade_prompt_dismissed';
 
 export interface AdminTelemetryEventPayload {
   eventType: AdminTelemetryEventType;
@@ -99,6 +142,9 @@ export interface AdminTelemetryEventPayload {
   correlationId?: string;
   source?: string;
   routeSlug?: string;
+  dealId?: string;
+  sessionId?: string;
+  price?: number;
   planType?: AdminPlanType;
 }
 

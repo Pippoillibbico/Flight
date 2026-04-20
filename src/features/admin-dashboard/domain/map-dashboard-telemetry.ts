@@ -4,12 +4,27 @@ const TELEMETRY_EVENT_TYPES: AdminTelemetryEventType[] = [
   'result_interaction_clicked',
   'itinerary_opened',
   'booking_clicked',
+  'live_deal_feed_view',
+  'live_deal_card_click',
+  'live_deal_detail_open',
+  'live_deal_pre_redirect_open',
+  'live_deal_redirect_confirm',
+  'live_deal_return_view',
+  'live_deal_save_route_click',
+  'live_deal_alert_click',
+  'upgrade_cta_shown',
   'upgrade_cta_clicked',
   'elite_cta_clicked',
   'upgrade_modal_opened',
   'elite_modal_opened',
   'upgrade_primary_cta_clicked',
-  'radar_activated'
+  'checkout_started',
+  'checkout_completed',
+  'radar_activated',
+  'trial_banner_shown',
+  'trial_upgrade_clicked',
+  'upgrade_prompt_shown',
+  'upgrade_prompt_dismissed'
 ];
 
 function normalizeText(value: unknown, maxLength: number): string {
@@ -69,7 +84,25 @@ export function mapFunnelEventToAdminTelemetry(detail: unknown): AdminTelemetryE
     surface: normalizeText((detail as { surface?: unknown })?.surface, 80) || undefined,
     itineraryId: normalizeText((detail as { itineraryId?: unknown })?.itineraryId, 120) || undefined,
     correlationId: normalizeText((detail as { correlationId?: unknown })?.correlationId, 180) || undefined,
-    routeSlug: normalizeText((detail as { extra?: { routeSlug?: unknown } })?.extra?.routeSlug, 120) || undefined
+    routeSlug:
+      normalizeText((detail as { routeSlug?: unknown })?.routeSlug, 120) ||
+      normalizeText((detail as { extra?: { routeSlug?: unknown } })?.extra?.routeSlug, 120) ||
+      undefined,
+    dealId:
+      normalizeText((detail as { dealId?: unknown })?.dealId, 120) ||
+      normalizeText((detail as { extra?: { dealId?: unknown } })?.extra?.dealId, 120) ||
+      undefined,
+    sessionId:
+      normalizeText((detail as { sessionId?: unknown })?.sessionId, 120) ||
+      normalizeText((detail as { extra?: { sessionId?: unknown } })?.extra?.sessionId, 120) ||
+      undefined,
+    price: (() => {
+      const raw =
+        (detail as { price?: unknown })?.price ??
+        (detail as { extra?: { price?: unknown } })?.extra?.price;
+      const parsed = Number(raw);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+    })()
   };
 }
 
@@ -84,6 +117,8 @@ export function mapUpgradeEventToAdminTelemetry(detail: unknown): AdminTelemetry
     schemaVersion: normalizeVersion((detail as { schemaVersion?: unknown })?.schemaVersion, 2),
     sourceContext: normalizeSourceContext((detail as { sourceContext?: unknown })?.sourceContext),
     source: normalizeText((detail as { source?: unknown })?.source, 120) || undefined,
-    planType: normalizePlanType((detail as { planType?: unknown })?.planType)
+    planType: normalizePlanType((detail as { planType?: unknown })?.planType),
+    dealId: normalizeText((detail as { dealId?: unknown })?.dealId, 120) || undefined,
+    sessionId: normalizeText((detail as { sessionId?: unknown })?.sessionId, 120) || undefined
   };
 }

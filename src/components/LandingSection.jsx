@@ -174,10 +174,33 @@ function LandingSection(props) {
       {/* -- HEADER --------------------------------------- */}
       <header className="landing-header">
         <div className="landing-brand">
-          <svg className="landing-brand-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z" fill="currentColor"/>
-          </svg>
-          {t('landingTitle')}
+          <span className="landing-brand-logo" aria-label="Jetly" role="img">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 44" width="180" height="44" aria-hidden="true">
+              <defs>
+                <linearGradient id="ldg-j" gradientUnits="userSpaceOnUse" x1="7" y1="3" x2="25" y2="41">
+                  <stop offset="0%"   stopColor="#70bbff"/>
+                  <stop offset="50%"  stopColor="#2176f5"/>
+                  <stop offset="100%" stopColor="#0d48d0"/>
+                </linearGradient>
+              </defs>
+              <path
+                d="M 10 6 L 19 6 L 25 12 L 21 12 L 18 9 L 18 29 Q 18 37 10.5 37 Q 4 37 3 31"
+                fill="none"
+                stroke="url(#ldg-j)"
+                strokeWidth="3.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <text
+                x="36" y="30"
+                fontFamily="'Inter','Helvetica Neue',Arial,sans-serif"
+                fontWeight="800"
+                fontSize="24"
+                letterSpacing="3"
+                fill="currentColor"
+              >JETLY</text>
+            </svg>
+          </span>
         </div>
 
         {/* Desktop nav */}

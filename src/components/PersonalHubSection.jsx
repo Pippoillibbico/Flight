@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { validateProps } from '../utils/validateProps';
 import { localizeClusterDisplayName } from '../utils/localizePlace';
+import QuotaUsageBar from './QuotaUsageBar';
 import {
   clearLocalTravelData,
   readSavedItineraries,
@@ -16,6 +17,7 @@ const PersonalHubSectionPropsSchema = z
     clusters: z.array(z.any()).optional().default([]),
     language: z.string().optional().default('it'),
     planType: z.enum(['free', 'pro', 'elite']).optional().default('free'),
+    quota: z.any().optional().default(null),
     trackedRoutesLimit: z.number().nullable().optional().default(null),
     savedItinerariesLimit: z.number().nullable().optional().default(null),
     radarMessagingTier: z.enum(['basic', 'advanced', 'priority']).optional().default('basic'),
@@ -56,6 +58,7 @@ function PersonalHubSection(props) {
     clusters,
     language,
     planType,
+    quota,
     trackedRoutesLimit,
     savedItinerariesLimit,
     radarMessagingTier,
@@ -166,6 +169,14 @@ function PersonalHubSection(props) {
             Saved itineraries: {savedItineraries.length}
             {normalizedSavedLimit !== null ? `/${normalizedSavedLimit}` : ''}
           </p>
+          {quota ? (
+            <QuotaUsageBar
+              quota={quota}
+              planId={planType}
+              onUpgrade={onUpgradePro}
+              compact
+            />
+          ) : null}
         </div>
         <div className="item-actions personal-hub-actions personal-hub-privacy-actions">
           <button type="button" className="ghost" onClick={clearLocalData} data-testid="personal-hub-clear-local-data">

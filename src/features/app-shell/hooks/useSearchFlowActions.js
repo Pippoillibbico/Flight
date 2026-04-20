@@ -1,4 +1,5 @@
 import { addDays, differenceInCalendarDays, format, parseISO } from 'date-fns';
+import { extractUpgradeContext } from '../../../utils/handleApiError';
 
 export function useSearchFlowActions({
   api,
@@ -29,8 +30,24 @@ export function useSearchFlowActions({
   setIntakeInfo,
   setIntakeLoading,
   setIntakeMessages,
-  setIntakePrompt
+  setIntakePrompt,
+  onUpgradeRequired = null,
+  onLimitReached = null
 }) {
+  function handleSearchError(error) {
+    const upgradeCtx = extractUpgradeContext(error);
+    if (upgradeCtx) {
+      if (upgradeCtx.source === 'search_limit' && typeof onLimitReached === 'function') {
+        onLimitReached();
+        return;
+      }
+      if (typeof onUpgradeRequired === 'function') {
+        onUpgradeRequired(upgradeCtx.planType, upgradeCtx.source);
+        return;
+      }
+    }
+    setSearchError(resolveApiError(error));
+  }
   async function submitSearch(event) {
     event.preventDefault();
     trackSearchEvent('search_submitted', {
@@ -69,7 +86,7 @@ export function useSearchFlowActions({
         trackSearchEvent('search_succeeded', { resultCount: Array.isArray(result?.flights) ? result.flights.length : 0 });
         await refreshSearchHistory();
       } catch (error) {
-        setSearchError(resolveApiError(error));
+        handleSearchError(error);
         setMultiCityRetryVisible(true);
         trackSearchEvent('search_failed', getErrorTrackingData(error));
       } finally {
@@ -97,7 +114,7 @@ export function useSearchFlowActions({
       trackSearchEvent('search_succeeded', { resultCount: Array.isArray(result?.flights) ? result.flights.length : 0 });
       await refreshSearchHistory();
     } catch (error) {
-      setSearchError(resolveApiError(error));
+      handleSearchError(error);
       trackSearchEvent('search_failed', getErrorTrackingData(error));
     } finally {
       setSearchLoading(false);
@@ -134,7 +151,7 @@ export function useSearchFlowActions({
       trackSearchEvent('search_succeeded', { resultCount: Array.isArray(result?.flights) ? result.flights.length : 0 });
       await refreshSearchHistory();
     } catch (error) {
-      setSearchError(resolveApiError(error));
+      handleSearchError(error);
       setMultiCityRetryVisible(true);
       trackSearchEvent('search_failed', getErrorTrackingData(error));
     } finally {
@@ -226,7 +243,7 @@ export function useSearchFlowActions({
       });
       await refreshSearchHistory();
     } catch (error) {
-      setSearchError(resolveApiError(error));
+      handleSearchError(error);
     } finally {
       setSearchLoading(false);
     }

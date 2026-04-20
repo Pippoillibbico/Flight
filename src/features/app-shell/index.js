@@ -1,4 +1,6 @@
 export { useBookingFlow } from './hooks/useBookingFlow';
+export { useAppState } from './hooks/useAppState';
+export { useAppBrowserEffects, useAppSuggestionEffects, useAssistantWelcomeEffect } from './hooks/useAppUiEffects';
 export { useAppDataOperations } from './hooks/useAppDataOperations';
 export { readStoredPostAuthContext, useAuthFlowCoordinator } from './hooks/useAuthFlowCoordinator';
 export { useAppLocalization } from './hooks/useAppLocalization';
@@ -10,3 +12,5 @@ export { useRadarSessionController } from './hooks/useRadarSessionController';
 export { useResultInteractionActions } from './hooks/useResultInteractionActions';
 export { useSearchFlowActions } from './hooks/useSearchFlowActions';
 export { useUpgradeFlowController } from './hooks/useUpgradeFlowController';
+export { useQuotaStatus } from './hooks/useQuotaStatus';
+export { useConversionTriggers } from './hooks/useConversionTriggers';
