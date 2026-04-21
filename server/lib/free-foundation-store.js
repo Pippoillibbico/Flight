@@ -19,12 +19,12 @@ function cleanEmail(email) {
 
 export function getDefaultFreeLimits() {
   return {
-    daily_search_limit: Number(process.env.FREE_DAILY_SEARCH_LIMIT || 100),
-    active_alert_limit: Number(process.env.FREE_ACTIVE_ALERT_LIMIT || 5),
-    demo_daily_search_limit: Number(process.env.DEMO_DAILY_SEARCH_LIMIT || 15),
-    demo_minute_ip_limit: Number(process.env.DEMO_MINUTE_IP_LIMIT || 20),
-    demo_minute_device_limit: Number(process.env.DEMO_MINUTE_DEVICE_LIMIT || 30),
-    user_minute_limit: Number(process.env.FREE_USER_MINUTE_LIMIT || 60)
+    daily_search_limit: Number(process.env.FREE_DAILY_SEARCH_LIMIT || 5),
+    active_alert_limit: Number(process.env.FREE_ACTIVE_ALERT_LIMIT || 1),
+    demo_daily_search_limit: Number(process.env.DEMO_DAILY_SEARCH_LIMIT || 3),
+    demo_minute_ip_limit: Number(process.env.DEMO_MINUTE_IP_LIMIT || 8),
+    demo_minute_device_limit: Number(process.env.DEMO_MINUTE_DEVICE_LIMIT || 10),
+    user_minute_limit: Number(process.env.FREE_USER_MINUTE_LIMIT || 12)
   };
 }
 
