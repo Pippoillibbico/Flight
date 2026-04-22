@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import { getOrCreateSubscription } from '../lib/saas-db.js';
+import { getSmartDeparture } from '../lib/smart-departure-service.js';
 
 export function buildSearchRouter({
   ORIGINS,
@@ -108,6 +110,30 @@ export function buildSearchRouter({
     if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid payload.' });
 
     const result = searchFlights(parsed.data);
+
+    // SMART DEPARTURE INJECTION (TOP 12 ONLY)
+    try {
+      const sub = await getOrCreateSubscription(req.user.sub);
+      const planId = sub.planId;
+      const locale = String(req.headers['accept-language'] || '').startsWith('it') ? 'it' : 'en';
+
+      const enriched = await Promise.all(
+        (result.flights || []).map(async (f, idx) => {
+          if (idx >= 12) return f;
+          const smart = await getSmartDeparture({
+            userPlan: planId,
+            locale,
+            primaryFlight: f,
+            searchInput: parsed.data
+          });
+          return { ...f, smartDeparture: smart };
+        })
+      );
+
+      result.flights = enriched;
+    } catch (e) {
+      // fail-safe: ignore smart departure errors
+    }
 
     await withDb(async (db) => {
       db.searches.push({
