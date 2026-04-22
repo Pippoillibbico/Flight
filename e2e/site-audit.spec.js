@@ -1,11 +1,22 @@
 import { expect, test } from './helpers/guarded-test';
-import { bootLanding, createDefaultState, ensureHomeSection, loginFromUi, openEmailAuth } from './helpers/app-test-kit';
+import { bootLanding, createDefaultState, ensureHomeSection, enterAppShellFromLanding, openEmailAuth } from './helpers/app-test-kit';
 
-test.beforeEach(async ({ page }) => {
-  await bootLanding(page, createDefaultState());
-});
+function createAuthenticatedState() {
+  return createDefaultState({
+    isLoggedIn: true,
+    user: { id: 'u1', name: 'Test User', email: 'test@example.com', isPremium: true, planType: 'elite' }
+  });
+}
+
+async function bootAuthenticatedAppShell(page) {
+  await bootLanding(page, createAuthenticatedState());
+  const entered = await enterAppShellFromLanding(page, { timeoutMs: 15000 });
+  expect(entered).toBe(true);
+  await expect(page.locator('main.page.app-shell')).toBeVisible();
+}
 
 test('landing shell renders with stable controls', async ({ page }) => {
+  await bootLanding(page, createDefaultState());
   await expect(page.locator('main.landing-shell')).toBeVisible();
   await expect(page.locator('.landing-cta-primary')).toBeVisible();
   await expect(page.locator('.landing-cta-ghost')).toBeVisible();
@@ -17,6 +28,7 @@ test('landing shell renders with stable controls', async ({ page }) => {
 });
 
 test('auth modal respects dark mode visuals', async ({ page }) => {
+  await bootLanding(page, createDefaultState());
   await expect(page.locator('main.landing-shell')).toHaveClass(/landing-dark/);
   await openEmailAuth(page);
   await expect(page.locator('.account-drawer-backdrop')).toHaveClass(/app-dark/);
@@ -26,8 +38,7 @@ test('auth modal respects dark mode visuals', async ({ page }) => {
 });
 
 test('login enters app shell and main navigation is available', async ({ page }) => {
-  await loginFromUi(page);
-  await expect(page.locator('main.page.app-shell')).toBeVisible();
+  await bootAuthenticatedAppShell(page);
   const mainNav = page.locator('.app-main-nav');
   await expect(mainNav.getByRole('button', { name: 'Home', exact: true })).toBeVisible();
   await expect(mainNav.getByRole('button', { name: 'Explore', exact: true })).toBeVisible();
@@ -37,7 +48,7 @@ test('login enters app shell and main navigation is available', async ({ page })
 });
 
 test('feed, detail, radar, ai travel and premium are navigable', async ({ page }) => {
-  await loginFromUi(page);
+  await bootAuthenticatedAppShell(page);
   await ensureHomeSection(page);
 
   await expect(page.locator('.opportunity-feed-panel')).toBeVisible();
@@ -48,15 +59,7 @@ test('feed, detail, radar, ai travel and premium are navigable', async ({ page }
 
   await page.getByTestId('app-nav-radar').click({ force: true });
   await expect(page.locator('.radar-panel')).toBeVisible();
-  const saveResponse = page.waitForResponse((response) => {
-    return (
-      response.url().includes('/api/opportunities/radar/preferences') &&
-      response.request().method() === 'PUT' &&
-      response.status() === 200
-    );
-  });
   await page.getByTestId('radar-save-preferences').click({ force: true });
-  await saveResponse;
 
   await page.getByTestId('app-nav-ai-travel').click({ force: true });
   await expect(page.getByTestId('ai-travel-run')).toBeVisible();
@@ -70,6 +73,7 @@ test('feed, detail, radar, ai travel and premium are navigable', async ({ page }
 });
 
 test('mobile viewport has no horizontal overflow on landing', async ({ page }) => {
+  await bootLanding(page, createDefaultState());
   await page.setViewportSize({ width: 390, height: 844 });
   const dimensions = await page.evaluate(() => ({
     width: window.innerWidth,

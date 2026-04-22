@@ -1,5 +1,5 @@
 import { expect, test } from './helpers/guarded-test';
-import { bootLanding, createDefaultState, loginFromUi } from './helpers/app-test-kit';
+import { bootLanding, createDefaultState, enterAppShellFromLanding } from './helpers/app-test-kit';
 
 function normalizeText(value) {
   return String(value || '').trim().toLowerCase();
@@ -157,6 +157,13 @@ async function ensureHomeSectionVisible(page) {
   await expect(page.getByTestId('opportunity-hero-primary-cta')).toBeVisible();
 }
 
+async function bootAuthenticatedAppShell(page, { language = 'en' } = {}) {
+  await bootLanding(page, createDefaultState(), { language });
+  const entered = await enterAppShellFromLanding(page, { timeoutMs: 15000 });
+  expect(entered).toBe(true);
+  await expect(page.locator('main.page.app-shell')).toBeVisible();
+}
+
 async function assertLanguageOptionHover(page) {
   await page.locator('.landing-lang-trigger').click();
   const option = page.locator('.landing-lang-popover .landing-lang-option:not(.active)').first();
@@ -248,8 +255,7 @@ test.describe('CTA consistency matrix', () => {
 
   test('app dark: CTA matrix is consistent + disabled has no hover behavior', async ({ page }) => {
     test.slow();
-    await bootLanding(page, createDefaultState(), { language: 'en' });
-    await loginFromUi(page);
+    await bootAuthenticatedAppShell(page, { language: 'en' });
     await disableTransitions(page);
     await expect(page.locator('main.page.app-shell')).toHaveClass(/app-dark/);
     await ensureHomeSectionVisible(page);
@@ -290,8 +296,7 @@ test.describe('CTA consistency matrix', () => {
 
   test('app light: CTA matrix is consistent', async ({ page }) => {
     test.slow();
-    await bootLanding(page, createDefaultState(), { language: 'en' });
-    await loginFromUi(page);
+    await bootAuthenticatedAppShell(page, { language: 'en' });
     await disableTransitions(page);
     await page.locator('.hero-controls .landing-theme-btn').click();
     await expect(page.locator('main.page.app-shell')).not.toHaveClass(/app-dark/);

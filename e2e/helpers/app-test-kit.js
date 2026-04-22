@@ -340,8 +340,8 @@ export async function setupApiMocks(page, state) {
       return json({
         pricing: {
           free: { monthlyEur: 0 },
-          pro: { monthlyEur: 7 },
-          creator: { monthlyEur: 19 },
+          pro: { monthlyEur: 12 },
+          creator: { monthlyEur: 22 },
           updatedAt: new Date().toISOString(),
           lastCostCheckAt: new Date().toISOString()
         }
@@ -701,10 +701,60 @@ async function isLocatorVisible(locator) {
   return locator.isVisible().catch(() => false);
 }
 
-async function clickLocatorIfVisible(locator) {
+async function clickLocatorResilient(locator) {
   if (!(await isLocatorVisible(locator))) return false;
-  await locator.click({ force: true });
-  return true;
+  try {
+    await locator.click({ force: true, timeout: 3000 });
+    return true;
+  } catch {
+    // Fallback for engines where synthetic pointer interactions can intermittently stall.
+    const clicked = await locator
+      .evaluate((element) => {
+        if (element instanceof HTMLElement) {
+          element.click();
+          return true;
+        }
+        return false;
+      })
+      .catch(() => false);
+    return Boolean(clicked);
+  }
+}
+
+async function clickLocatorIfVisible(locator) {
+  return clickLocatorResilient(locator);
+}
+
+async function submitAuthFormResilient(page, submitButton) {
+  const submittedByClick = await clickLocatorResilient(submitButton);
+  if (submittedByClick) return true;
+  const authForm = page.locator('form.auth-email-form').first();
+  const formVisible = await isLocatorVisible(authForm);
+  if (!formVisible) return false;
+  const submittedByForm = await authForm
+    .evaluate((element) => {
+      if (element instanceof HTMLFormElement) {
+        element.requestSubmit();
+        return true;
+      }
+      return false;
+    })
+    .catch(() => false);
+  return Boolean(submittedByForm);
+}
+
+async function dismissCookieBannerIfPresent(page) {
+  const candidates = [
+    page.locator('.ck-btn--accept').first(),
+    page.locator('.cookie-btn--accept-all').first(),
+    page.getByRole('button', { name: /accept all|accetta tutto/i }).first()
+  ];
+  for (const candidate of candidates) {
+    if (!(await isLocatorVisible(candidate))) continue;
+    await clickLocatorResilient(candidate).catch(() => {});
+    await page.locator('.ck-banner').first().waitFor({ state: 'hidden', timeout: 2000 }).catch(() => {});
+    return;
+  }
 }
 
 async function waitForAuthSurface(page, { timeoutMs = 5000, requireEmailForm = false } = {}) {
@@ -727,7 +777,7 @@ async function waitForAuthSurface(page, { timeoutMs = 5000, requireEmailForm = f
   }
 }
 
-async function waitForLoggedInState(page, timeoutMs = 10000) {
+async function waitForLoggedInState(page, timeoutMs = 15000) {
   try {
     await expect
       .poll(
@@ -747,14 +797,60 @@ async function waitForLoggedInState(page, timeoutMs = 10000) {
   }
 }
 
+export async function enterAppShellFromLanding(page, { timeoutMs = 15000 } = {}) {
+  const appShell = page.locator('main.page.app-shell');
+  if (await isLocatorVisible(appShell)) return true;
+
+  await dismissCookieBannerIfPresent(page);
+  const openers = [
+    page.locator('.landing-cta-primary').first(),
+    page.locator('.landing-hero-card-btn').first(),
+    page.getByRole('button', { name: /discover opportunities|scopri|opportunit[aà]/i }).first()
+  ];
+
+  for (const opener of openers) {
+    const clicked = await clickLocatorIfVisible(opener);
+    if (!clicked) continue;
+    const entered = await expect
+      .poll(
+        async () => {
+          if (page.isClosed()) return false;
+          return isLocatorVisible(appShell);
+        },
+        { timeout: 2500 }
+      )
+      .toBeTruthy()
+      .then(() => true)
+      .catch(() => false);
+    if (entered) return true;
+  }
+
+  return expect
+    .poll(
+      async () => {
+        if (page.isClosed()) return false;
+        return isLocatorVisible(appShell);
+      },
+      { timeout: timeoutMs }
+    )
+    .toBeTruthy()
+    .then(() => true)
+    .catch(() => false);
+}
+
 export async function openEmailAuth(page) {
   if (await isAuthenticatedUi(page)) return;
+  await dismissCookieBannerIfPresent(page);
   const authShell = page.locator('.auth-shell');
   const authShellVisible = await isLocatorVisible(authShell);
   if (!authShellVisible) {
+    const signInByRole = page.getByRole('button', {
+      name: /sign in|accedi|anmelden|connexion|iniciar sesi[oó]n|iniciar sess[aã]o/i
+    }).first();
     const openers = [
       async () => clickLocatorIfVisible(page.getByTestId('header-account-button')),
       async () => clickLocatorIfVisible(page.getByTestId('landing-signin-button').first()),
+      async () => clickLocatorIfVisible(signInByRole),
       async () => {
         const mobileLoginButton = page.getByTestId('landing-signin-button-mobile').first();
         if (!(await isLocatorVisible(mobileLoginButton))) {
@@ -763,7 +859,9 @@ export async function openEmailAuth(page) {
             await hamburger.click({ force: true }).catch(() => {});
           }
         }
-        return clickLocatorIfVisible(mobileLoginButton);
+        const clickedMobile = await clickLocatorIfVisible(mobileLoginButton);
+        if (clickedMobile) return true;
+        return clickLocatorIfVisible(signInByRole);
       }
     ];
     for (const openAuth of openers) {
@@ -799,6 +897,7 @@ export async function loginFromUi(
   { targetSection = 'home' } = {}
 ) {
   if (await isAuthenticatedUi(page)) return;
+  await dismissCookieBannerIfPresent(page);
   let openEmailAttempts = 0;
   while (openEmailAttempts < 2) {
     try {
@@ -815,28 +914,46 @@ export async function loginFromUi(
   await expect(page.getByTestId('auth-password-input')).toBeVisible();
   await page.getByTestId('auth-email-input').fill(email);
   await page.getByTestId('auth-password-input').fill(password);
+  await dismissCookieBannerIfPresent(page);
   const submitButton = page.getByTestId('auth-submit');
-  await submitButton.click({ force: true });
-  const loggedIn = await waitForLoggedInState(page, 10000);
+  await submitAuthFormResilient(page, submitButton);
+  const loggedIn = await waitForLoggedInState(page, 15000);
   if (!loggedIn) {
     const authStillVisible = await isLocatorVisible(page.locator('.auth-email-form'));
     if (authStillVisible) {
-      await submitButton.click({ force: true }).catch(() => {});
+      await submitAuthFormResilient(page, submitButton).catch(() => {});
     }
-    let loggedInAfterRetry = await waitForLoggedInState(page, 5000);
+    let loggedInAfterRetry = await waitForLoggedInState(page, 10000);
     if (!loggedInAfterRetry) {
-      // WebKit can intermittently miss the UI submit transition in CI. Use API bootstrap as deterministic fallback.
-      await page
+      // Deterministic fallback for engines where UI submit transitions can intermittently stall.
+      // 1) Force login via mocked API
+      // 2) Reload to rehydrate app session state
+      // 3) Enter app shell via hero CTA if still on landing
+      const apiLoginOk = await page
         .evaluate(async ({ nextEmail, nextPassword }) => {
-          await fetch('/api/auth/login', {
+          const response = await fetch('/api/auth/login', {
             method: 'POST',
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email: nextEmail, password: nextPassword })
           });
+          return response.ok;
         }, { nextEmail: email, nextPassword: password })
-        .catch(() => {});
-      await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {});
+        .catch(() => false);
+      if (apiLoginOk) {
+        await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {});
+        const meOk = await page
+          .evaluate(async () => {
+            const response = await fetch('/api/auth/me', { method: 'GET', credentials: 'include' });
+            return response.ok;
+          })
+          .catch(() => false);
+        if (meOk) {
+          await enterAppShellFromLanding(page, { timeoutMs: 10000 }).catch(() => {});
+        }
+      } else {
+        await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {});
+      }
       loggedInAfterRetry = await waitForLoggedInState(page, 10000);
     }
     if (!loggedInAfterRetry) {
