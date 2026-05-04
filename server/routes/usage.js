@@ -9,7 +9,14 @@
  */
 
 import { Router } from 'express';
+import { z } from 'zod';
 import { getUsageSnapshot, getUsageSummary, getUserUsageHistory, PLANS } from '../lib/saas-db.js';
+
+const usageHistoryQuerySchema = z
+  .object({
+    limit: z.coerce.number().int().min(1).max(200).optional().default(50)
+  })
+  .strict();
 
 export function buildUsageRouter({ authGuard }) {
   const router = Router();
@@ -63,7 +70,9 @@ export function buildUsageRouter({ authGuard }) {
       if (!hasReadScope(req)) {
         return res.status(403).json({ error: 'insufficient_scope', message: 'This API key is missing scope "read".' });
       }
-      const limit = Math.min(Number(req.query.limit ?? 50), 200);
+      const parsed = usageHistoryQuerySchema.safeParse(req.query || {});
+      if (!parsed.success) return res.status(400).json({ error: 'invalid_query', message: parsed.error.issues[0]?.message || 'Invalid query.' });
+      const { limit } = parsed.data;
       const events = await getUserUsageHistory(req.user.id || req.user.sub, limit);
       return res.json({ events });
     } catch (err) {

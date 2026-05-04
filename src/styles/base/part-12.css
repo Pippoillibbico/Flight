@@ -463,8 +463,8 @@ label.ck-cat__name {
   min-width: 0;
 }
 
-.disc-feed-card-dest {
-  font-size: 0.9375rem;
+.disc-feed-card-route-main {
+  font-size: 0.95rem;
   font-weight: 700;
   color: var(--ink);
   overflow: hidden;
@@ -473,7 +473,7 @@ label.ck-cat__name {
 }
 
 .disc-feed-card-country {
-  font-size: 0.75rem;
+  font-size: 0.78rem;
   color: var(--muted);
 }
 
@@ -530,15 +530,16 @@ label.ck-cat__name {
   display: flex;
   flex-wrap: wrap;
   gap: 0.3rem;
-  margin-top: 0.1rem;
+  margin-top: 0.25rem;
 }
 
 .disc-feed-card-tag {
-  font-size: 0.6875rem;
-  background: var(--bg-deep);
-  color: var(--muted);
-  border-radius: 5px;
-  padding: 0.15em 0.45em;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--ink);
+  border-radius: 6px;
+  padding: 0.25em 0.55em;
 }
 
 .disc-feed-card-cta {

@@ -56,9 +56,9 @@ function normalizeProviderChoice(value, openaiKey, claudeKey) {
 
 function resolveModelForRoute(provider, featureKey, env) {
   if (provider === 'chatgpt') {
-    if (featureKey === 'intent') return String(env.OPENAI_MODEL_INTENT || env.OPENAI_MODEL || 'gpt-4o-mini').trim();
-    if (featureKey === 'decision') return String(env.OPENAI_MODEL_DECISION || env.OPENAI_MODEL || 'gpt-4o-mini').trim();
-    return String(env.OPENAI_MODEL || 'gpt-4o-mini').trim();
+    if (featureKey === 'intent') return String(env.OPENAI_MODEL_INTENT || env.OPENAI_MODEL || 'gpt-5-mini').trim();
+    if (featureKey === 'decision') return String(env.OPENAI_MODEL_DECISION || env.OPENAI_MODEL || 'gpt-5-mini').trim();
+    return String(env.OPENAI_MODEL || 'gpt-5-mini').trim();
   }
   if (provider === 'claude') {
     if (featureKey === 'intent') return String(env.ANTHROPIC_MODEL_INTENT || env.ANTHROPIC_MODEL || 'claude-3-5-haiku-20241022').trim();
@@ -69,7 +69,7 @@ function resolveModelForRoute(provider, featureKey, env) {
 }
 
 function getAllowedAiPlans(env) {
-  const raw = String(env.AI_ALLOWED_PLAN_TYPES || 'elite,creator').trim();
+  const raw = String(env.AI_ALLOWED_PLAN_TYPES || 'pro,elite,creator').trim();
   const isProduction = String(env.NODE_ENV || '').trim().toLowerCase() === 'production';
   const set = new Set(
     raw

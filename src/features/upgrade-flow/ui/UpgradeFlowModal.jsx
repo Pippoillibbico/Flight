@@ -19,6 +19,18 @@ const UpgradeFlowModalPropsSchema = z
     step: z.enum(['details', 'submitted']),
     content: UpgradePlanContentSchema.nullable(),
     currentPlanType: z.enum(['free', 'pro', 'elite']).optional().default('free'),
+    checkoutLoading: z.boolean().optional().default(false),
+    checkoutCart: z
+      .object({
+        planName: z.string(),
+        intervalLabel: z.string(),
+        quantity: z.number(),
+        unitAmountLabel: z.string(),
+        totalLabel: z.string()
+      })
+      .nullable()
+      .optional()
+      .default(null),
     comparisonRows: z
       .array(
         z.object({
@@ -42,7 +54,7 @@ const UpgradeFlowModalPropsSchema = z
   .passthrough();
 
 function UpgradeFlowModal(props) {
-  const { isOpen, step, content, currentPlanType, comparisonRows, closeLabel, comparePlansLabel, goToPremiumLabel, valueNoteLabel, trustLineLabel, onClose, onPrimaryAction, onOpenPremiumSection } = validateProps(
+  const { isOpen, step, content, currentPlanType, checkoutLoading, checkoutCart, comparisonRows, closeLabel, comparePlansLabel, goToPremiumLabel, valueNoteLabel, trustLineLabel, onClose, onPrimaryAction, onOpenPremiumSection } = validateProps(
     UpgradeFlowModalPropsSchema,
     props,
     'UpgradeFlowModal'
@@ -142,10 +154,29 @@ function UpgradeFlowModal(props) {
                   </p>
                 </section>
               ) : null}
+              {checkoutCart ? (
+                <section className="upgrade-flow-cart" aria-label="Checkout cart" data-testid="upgrade-flow-cart">
+                  <div className="upgrade-flow-cart-head">
+                    <p>Checkout cart</p>
+                    <span>Stripe Checkout</span>
+                  </div>
+                  <div className="upgrade-flow-cart-line">
+                    <div>
+                      <strong data-testid="upgrade-flow-cart-plan">{checkoutCart.planName}</strong>
+                      <span>{checkoutCart.intervalLabel} x {checkoutCart.quantity}</span>
+                    </div>
+                    <strong data-testid="upgrade-flow-cart-unit">{checkoutCart.unitAmountLabel}</strong>
+                  </div>
+                  <div className="upgrade-flow-cart-total">
+                    <span>Total today</span>
+                    <strong data-testid="upgrade-flow-cart-total">{checkoutCart.totalLabel}</strong>
+                  </div>
+                </section>
+              ) : null}
               <p className="upgrade-flow-trust-line">{trustLineLabel}</p>
               <div className="item-actions">
-                <button type="button" onClick={onPrimaryAction} data-testid="upgrade-flow-primary">
-                  {content.primaryCtaLabel}
+                <button type="button" onClick={onPrimaryAction} disabled={checkoutLoading} data-testid="upgrade-flow-primary">
+                  {checkoutLoading ? 'Opening Stripe Checkout...' : content.primaryCtaLabel}
                 </button>
                 <button className="ghost" type="button" onClick={onOpenPremiumSection} data-testid="upgrade-flow-secondary">
                   {comparePlansLabel}

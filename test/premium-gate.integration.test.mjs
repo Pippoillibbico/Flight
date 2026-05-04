@@ -169,7 +169,9 @@ function buildExportApp(user) {
 test('GET /user/data-export — free user → 402 premium_required with export_limit context', async () => {
   const app = buildExportApp(FREE_USER);
   await withServer(app, async (base) => {
-    const { status, body } = await get(base, '/user/data-export');
+    const { status, body } = await get(base, '/user/data-export', {
+      'x-export-reason': 'security_premium_gate_export_validation'
+    });
     assert.equal(status, 402);
     assert.equal(body.error, 'premium_required');
     assert.equal(body.upgrade_context, 'export_limit');
@@ -179,7 +181,9 @@ test('GET /user/data-export — free user → 402 premium_required with export_l
 test('GET /user/data-export — pro user → 402 premium_required with export_limit context', async () => {
   const app = buildExportApp(PRO_USER);
   await withServer(app, async (base) => {
-    const { status, body } = await get(base, '/user/data-export');
+    const { status, body } = await get(base, '/user/data-export', {
+      'x-export-reason': 'security_premium_gate_export_validation'
+    });
     assert.equal(status, 402);
     assert.equal(body.error, 'premium_required');
     assert.equal(body.upgrade_context, 'export_limit');
@@ -189,7 +193,9 @@ test('GET /user/data-export — pro user → 402 premium_required with export_li
 test('GET /user/data-export — elite user → 200 with snapshot', async () => {
   const app = buildExportApp(ELITE_USER);
   await withServer(app, async (base) => {
-    const { status, body } = await get(base, '/user/data-export');
+    const { status, body } = await get(base, '/user/data-export', {
+      'x-export-reason': 'security_premium_gate_export_validation'
+    });
     assert.equal(status, 200);
     assert.ok('exported_at' in body, 'response should contain exported_at');
     assert.ok(Array.isArray(body.search_history), 'response should contain search_history');
@@ -199,7 +205,9 @@ test('GET /user/data-export — elite user → 200 with snapshot', async () => {
 test('GET /user/data-export.csv — free user → 402', async () => {
   const app = buildExportApp(FREE_USER);
   await withServer(app, async (base) => {
-    const { status, body } = await get(base, '/user/data-export.csv');
+    const { status, body } = await get(base, '/user/data-export.csv', {
+      'x-export-reason': 'security_premium_gate_export_validation'
+    });
     assert.equal(status, 402);
     assert.equal(body.error, 'premium_required');
   });

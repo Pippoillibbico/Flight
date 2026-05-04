@@ -5,6 +5,7 @@ import { redactUrlForLogs } from '../lib/log-redaction.js';
 import { parseFlag } from '../lib/env-flags.js';
 
 export function buildAuthSessionRouter({
+  authLimiter = (_req, _res, next) => next(),
   authGuard,
   requireSessionAuth = (_req, _res, next) => next(),
   csrfGuard,
@@ -31,12 +32,35 @@ export function buildAuthSessionRouter({
   speakeasy,
   QRCode,
   mfaCodeSchema,
-  includeAccessTokenInResponse = true
+  includeAccessTokenInResponse = true,
+  mfaSetupTtlMs = 15 * 60 * 1000
 }) {
   const router = Router();
+  const saasPool = getSaasPool();
   const mockBillingUpgradesEnabled = parseFlag(process.env.ALLOW_MOCK_BILLING_UPGRADES, String(process.env.NODE_ENV || '').trim().toLowerCase() !== 'production');
   const buildSessionResponsePayload = (accessToken, payload) =>
     includeAccessTokenInResponse ? { token: accessToken, ...payload } : payload;
+  const safeMfaSetupTtlMs = Math.max(60 * 1000, Math.min(24 * 60 * 60 * 1000, Number(mfaSetupTtlMs) || 15 * 60 * 1000));
+  const consentAnonCookieName = String(process.env.CONSENT_ANON_COOKIE_NAME || 'anonId').trim() || 'anonId';
+
+  function clearAuthCookies(req, res) {
+    const accessCookieOptions = authCookieOptions(req, ACCESS_COOKIE_TTL_MS);
+    const refreshCookieOptions = authCookieOptions(req, REFRESH_COOKIE_TTL_MS);
+    res.clearCookie(ACCESS_COOKIE_NAME, {
+      httpOnly: true,
+      sameSite: accessCookieOptions.sameSite,
+      secure: accessCookieOptions.secure,
+      path: '/',
+      ...(AUTH_COOKIE_DOMAIN ? { domain: AUTH_COOKIE_DOMAIN } : {})
+    });
+    res.clearCookie(REFRESH_COOKIE_NAME, {
+      httpOnly: true,
+      sameSite: refreshCookieOptions.sameSite,
+      secure: refreshCookieOptions.secure,
+      path: '/',
+      ...(AUTH_COOKIE_DOMAIN ? { domain: AUTH_COOKIE_DOMAIN } : {})
+    });
+  }
 
   async function rejectMockBillingUpgrade(req, res, route) {
     const userId = req.user?.sub || req.user?.id || null;
@@ -162,28 +186,30 @@ export function buildAuthSessionRouter({
       try {
         const refreshPayload = verifyRefreshToken(refreshCookie);
         await revokeRefreshFamily(refreshPayload.family, 'logout');
-      } catch {}
+      } catch (error) {
+        logger.warn(
+          {
+            request_id: req.id || null,
+            code: 'AUTH_SECURITY_EVENT',
+            reason: 'logout_refresh_family_revoke_failed',
+            userId: req.user?.sub || req.user?.id || null,
+            ip: req.ip,
+            route: req.path,
+            err_code: String(error?.code || '').slice(0, 60),
+            err_message: String(error?.message || '').slice(0, 220)
+          },
+          'auth_refresh_revoke_failed'
+        );
+      }
     }
-    res.clearCookie(ACCESS_COOKIE_NAME, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: authCookieOptions(req, ACCESS_COOKIE_TTL_MS).secure,
-      path: '/',
-      ...(AUTH_COOKIE_DOMAIN ? { domain: AUTH_COOKIE_DOMAIN } : {})
-    });
-    res.clearCookie(REFRESH_COOKIE_NAME, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: authCookieOptions(req, REFRESH_COOKIE_TTL_MS).secure,
-      path: '/',
-      ...(AUTH_COOKIE_DOMAIN ? { domain: AUTH_COOKIE_DOMAIN } : {})
-    });
+    clearAuthCookies(req, res);
     return res.status(204).send();
   });
 
   router.delete('/auth/account', authGuard, requireSessionAuth, csrfGuard, async (req, res) => {
     const userId = req.user?.sub;
     if (!userId) return res.status(401).json({ error: 'Authentication required.' });
+    const anonymousConsentId = String(req.cookies?.[consentAnonCookieName] || '').trim() || null;
 
     let userEmail = '';
     await withDb(async (db) => {
@@ -217,6 +243,12 @@ export function buildAuthSessionRouter({
       db.freeAlertSignals = cleanByUser(db.freeAlertSignals);
       db.alertIntelligenceDedupe = cleanByUser(db.alertIntelligenceDedupe);
       db.revokedTokens = cleanByUser(db.revokedTokens);
+      db.userConsents = cleanByUser(db.userConsents);
+      if (anonymousConsentId) {
+        db.consentSessions = (Array.isArray(db.consentSessions) ? db.consentSessions : []).filter(
+          (item) => String(item?.anonymousId || '') !== anonymousConsentId
+        );
+      }
       return db;
     });
 
@@ -236,7 +268,8 @@ export function buildAuthSessionRouter({
         'watchlists',
         'search_events',
         'user_leads',
-        'email_delivery_log'
+        'email_delivery_log',
+        'user_consents'
       ];
       for (const tableName of tablesByUserId) {
         try {
@@ -261,22 +294,44 @@ export function buildAuthSessionRouter({
       try {
         const refreshPayload = verifyRefreshToken(refreshCookie);
         await revokeRefreshFamily(refreshPayload.family, 'account_deleted');
-      } catch {}
+      } catch (error) {
+        logger.warn(
+          {
+            request_id: req.id || null,
+            code: 'AUTH_SECURITY_EVENT',
+            reason: 'account_delete_refresh_family_revoke_failed',
+            userId: userId || null,
+            ip: req.ip,
+            route: req.path,
+            err_code: String(error?.code || '').slice(0, 60),
+            err_message: String(error?.message || '').slice(0, 220)
+          },
+          'auth_refresh_revoke_failed'
+        );
+      }
+      if (anonymousConsentId) {
+        try {
+          await pool.query('DELETE FROM consent_sessions WHERE anonymous_id = $1', [anonymousConsentId]);
+        } catch (error) {
+          logger.warn(
+            {
+              request_id: req.id || null,
+              user_id: userId,
+              table: 'consent_sessions',
+              error: error?.message || 'delete_failed'
+            },
+            'account_delete_table_skip'
+          );
+        }
+      }
     }
 
-    res.clearCookie(ACCESS_COOKIE_NAME, {
+    clearAuthCookies(req, res);
+    res.clearCookie(consentAnonCookieName, {
       httpOnly: true,
       sameSite: 'lax',
-      secure: authCookieOptions(req, ACCESS_COOKIE_TTL_MS).secure,
-      path: '/',
-      ...(AUTH_COOKIE_DOMAIN ? { domain: AUTH_COOKIE_DOMAIN } : {})
-    });
-    res.clearCookie(REFRESH_COOKIE_NAME, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: authCookieOptions(req, REFRESH_COOKIE_TTL_MS).secure,
-      path: '/',
-      ...(AUTH_COOKIE_DOMAIN ? { domain: AUTH_COOKIE_DOMAIN } : {})
+      secure: String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production',
+      path: '/'
     });
 
     await logAuthEvent({
@@ -289,26 +344,70 @@ export function buildAuthSessionRouter({
     return res.json({ ok: true });
   });
 
-  router.post('/auth/refresh', async (req, res) => {
+  router.post('/auth/refresh', authLimiter, async (req, res) => {
     const refreshToken = getRefreshTokenFromCookie(req);
-    if (!refreshToken) return res.status(401).json({ error: 'Missing refresh token.' });
+    if (!refreshToken) {
+      clearAuthCookies(req, res);
+      return res.status(401).json({ error: 'Missing refresh token.' });
+    }
 
     let payload = null;
     try {
       payload = verifyRefreshToken(refreshToken);
     } catch {
+      clearAuthCookies(req, res);
       return res.status(401).json({ error: 'Invalid refresh token.' });
     }
 
     const csrfCheck = refreshCsrfGuard(req, payload);
-    if (!csrfCheck.ok) return sendMachineError(req, res, 403, csrfCheck.code || 'csrf_failed');
+    if (!csrfCheck.ok) {
+      clearAuthCookies(req, res);
+      return sendMachineError(req, res, 403, csrfCheck.code || 'csrf_failed');
+    }
 
     let user = null;
-    await withDb(async (state) => {
-      user = state.users.find((item) => item.id === payload.sub) || null;
-      return null;
-    });
-    if (!user) return res.status(401).json({ error: 'User not found.' });
+    if (saasPool) {
+      const result = await saasPool.query(
+        `SELECT
+           id, name, email, password_hash, is_premium, plan_type, plan_status, onboarding_done,
+           mfa_enabled, mfa_secret, mfa_temp_secret, failed_login_count, lock_until, auth_channel,
+           email_verified, trial_ends_at
+         FROM users
+         WHERE id = $1
+         LIMIT 1`,
+        [payload.sub]
+      );
+      const row = result.rows[0] || null;
+      user = row
+        ? {
+            id: row.id,
+            name: row.name,
+            email: row.email,
+            passwordHash: row.password_hash || null,
+            isPremium: Boolean(row.is_premium),
+            planType: String(row.plan_type || 'free'),
+            planStatus: String(row.plan_status || 'active'),
+            onboardingDone: Boolean(row.onboarding_done),
+            mfaEnabled: Boolean(row.mfa_enabled),
+            mfaSecret: row.mfa_secret || null,
+            mfaTempSecret: row.mfa_temp_secret || null,
+            failedLoginCount: Number(row.failed_login_count || 0),
+            lockUntil: row.lock_until || null,
+            authChannel: row.auth_channel || 'direct',
+            emailVerified: Boolean(row.email_verified),
+            trialEndsAt: row.trial_ends_at || null
+          }
+        : null;
+    } else {
+      await withDb(async (state) => {
+        user = state.users.find((item) => item.id === payload.sub) || null;
+        return null;
+      });
+    }
+    if (!user) {
+      clearAuthCookies(req, res);
+      return res.status(401).json({ error: 'User not found.' });
+    }
 
     const nextRefreshToken = signRefreshToken({ sub: user.id, family: payload.family, csrf: payload.csrf });
     const nextPayload = verifyRefreshToken(nextRefreshToken);
@@ -321,6 +420,7 @@ export function buildAuthSessionRouter({
     });
     if (!rotation.ok) {
       await revokeRefreshFamily(payload.family, rotation.reason === 'reused' ? 'reuse_detected' : rotation.reason);
+      clearAuthCookies(req, res);
       logger.warn(
         {
           request_id: req.id || null,
@@ -379,7 +479,7 @@ export function buildAuthSessionRouter({
     }));
   });
 
-  router.post('/auth/mfa/setup', authGuard, requireSessionAuth, csrfGuard, async (req, res) => {
+  router.post('/auth/mfa/setup', authLimiter, authGuard, requireSessionAuth, csrfGuard, async (req, res) => {
     let user = null;
     const issuer = process.env.MFA_ISSUER || 'FlightSuite';
     const generated = speakeasy.generateSecret({
@@ -408,7 +508,7 @@ export function buildAuthSessionRouter({
     return res.json({ qrDataUrl, manualKey: tempSecret });
   });
 
-  router.post('/auth/mfa/enable', authGuard, requireSessionAuth, csrfGuard, async (req, res) => {
+  router.post('/auth/mfa/enable', authLimiter, authGuard, requireSessionAuth, csrfGuard, async (req, res) => {
     const parsed = mfaCodeSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid MFA code payload.' });
 
@@ -417,6 +517,12 @@ export function buildAuthSessionRouter({
     await withDb(async (db) => {
       user = db.users.find((item) => item.id === req.user.sub) || null;
       if (!user || !user.mfaTempSecret) return db;
+      const tempCreatedTs = new Date(user.mfaTempCreatedAt || '').getTime();
+      if (!Number.isFinite(tempCreatedTs) || Date.now() - tempCreatedTs > safeMfaSetupTtlMs) {
+        user.mfaTempSecret = null;
+        user.mfaTempCreatedAt = null;
+        return db;
+      }
       const valid = speakeasy.totp.verify({
         secret: user.mfaTempSecret,
         encoding: 'base32',
@@ -433,6 +539,10 @@ export function buildAuthSessionRouter({
     });
 
     if (!user) return res.status(404).json({ error: 'User not found.' });
+    if (!user.mfaTempSecret && !success) {
+      await logAuthEvent({ userId: user.id, email: user.email, type: 'mfa_enable_expired_setup', success: false, req });
+      return res.status(400).json({ error: 'MFA setup expired. Start setup again.' });
+    }
     if (!success) {
       await logAuthEvent({ userId: user.id, email: user.email, type: 'mfa_enable_failed', success: false, req });
       return res.status(400).json({ error: 'Invalid MFA code.' });
@@ -442,7 +552,7 @@ export function buildAuthSessionRouter({
     return res.json({ ok: true, mfaEnabled: true });
   });
 
-  router.post('/auth/mfa/disable', authGuard, requireSessionAuth, csrfGuard, async (req, res) => {
+  router.post('/auth/mfa/disable', authLimiter, authGuard, requireSessionAuth, csrfGuard, async (req, res) => {
     const parsed = mfaCodeSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid MFA code payload.' });
 

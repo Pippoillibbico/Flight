@@ -23,6 +23,9 @@ const BOOKING_BASE_URL = String(process.env.BOOKING_BASE_URL || 'https://booking
 const SITE_NAME = String(process.env.AFFILIATE_SITE_NAME || 'flightsuite').trim();
 const TRAVELPAYOUTS_MARKER = String(process.env.AFFILIATE_TRAVELPAYOUTS_MARKER || '').trim();
 const TRAVELPAYOUTS_AFFILIATE_ENABLED = parseFlag(process.env.ENABLE_TRAVELPAYOUTS_AFFILIATE, true);
+const TRAVELPAYOUTS_SHMARKER = String(process.env.AFFILIATE_TRAVELPAYOUTS_SHMARKER || '').trim();
+const TRAVELPAYOUTS_KIWI_PROMO_ID = String(process.env.AFFILIATE_TRAVELPAYOUTS_KIWI_PROMO_ID || '5000').trim();
+const KIWI_VIA_TRAVELPAYOUTS_ENABLED = parseFlag(process.env.ENABLE_KIWI_VIA_TRAVELPAYOUTS, true);
 const KIWI_AFFILIATE_ID = String(process.env.AFFILIATE_KIWI_ID || '').trim();
 const SKYSCANNER_AFFILIATE_ID = String(process.env.AFFILIATE_SKYSCANNER_ID || '').trim();
 
@@ -49,6 +52,40 @@ function safeTravellers(value) {
   const parsed = Number.parseInt(String(value ?? '').trim(), 10);
   if (!Number.isFinite(parsed)) return 1;
   return Math.max(1, Math.min(9, parsed));
+}
+
+function asHttpUrl(value) {
+  const text = String(value || '').trim();
+  if (!text) return null;
+  try {
+    const parsed = new URL(text);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
+function resolveTravelpayoutsShmarker() {
+  const raw = TRAVELPAYOUTS_SHMARKER || (TRAVELPAYOUTS_MARKER ? `${TRAVELPAYOUTS_MARKER}.${SITE_NAME}` : '');
+  const cleaned = String(raw || '').trim();
+  if (!cleaned) return null;
+  // Travelpayouts expects "partnerId.subid" (subid optional).
+  if (/^[a-zA-Z0-9_.-]+(\.[a-zA-Z0-9_.-]+)?$/.test(cleaned)) return cleaned;
+  return null;
+}
+
+function buildTravelpayoutsCustomClickLink({ customUrl, promoId = TRAVELPAYOUTS_KIWI_PROMO_ID }) {
+  const validCustomUrl = asHttpUrl(customUrl);
+  const shmarker = resolveTravelpayoutsShmarker();
+  if (!validCustomUrl || !shmarker || !TRAVELPAYOUTS_AFFILIATE_ENABLED) return null;
+  const clickUrl = new URL('https://c111.travelpayouts.com/click');
+  clickUrl.searchParams.set('shmarker', shmarker);
+  clickUrl.searchParams.set('promo_id', String(promoId || '5000'));
+  clickUrl.searchParams.set('source_type', 'customlink');
+  clickUrl.searchParams.set('type', 'click');
+  clickUrl.searchParams.set('custom_url', validCustomUrl);
+  return clickUrl.toString();
 }
 
 /**
@@ -90,7 +127,7 @@ function buildTravelpayoutsLink({ origin, destinationIata, dateFrom, dateTo, tra
  * Kiwi.com deep link.
  * Format: https://www.kiwi.com/en/search/results/{FROM}/{TO}/{DEP}/{RET}?affilid=...
  */
-function buildKiwiLink({ origin, destinationIata, dateFrom, dateTo, travellers, cabinClass }) {
+function buildKiwiLink({ origin, destinationIata, dateFrom, dateTo, travellers, cabinClass, kiwiDeepLink = null }) {
   const from = safeIata(origin);
   const to = safeIata(destinationIata);
   const dep = safeDate(dateFrom);
@@ -101,15 +138,27 @@ function buildKiwiLink({ origin, destinationIata, dateFrom, dateTo, travellers, 
   const cabin = safeCabin(cabinClass) === 'business' ? 'BUSINESS' : safeCabin(cabinClass) === 'premium' ? 'PREMIUM' : 'ECONOMY';
   const pax = safeTravellers(travellers);
 
-  const url = new URL(`https://www.kiwi.com/en/search/results/${from}/${to}/${dep}/${returnSegment}`);
-  if (KIWI_AFFILIATE_ID) url.searchParams.set('affilid', KIWI_AFFILIATE_ID);
-  url.searchParams.set('currency', 'EUR');
-  url.searchParams.set('adults', String(pax));
-  url.searchParams.set('cabinClass', cabin);
-  url.searchParams.set('utm_source', SITE_NAME);
-  url.searchParams.set('utm_medium', 'affiliate');
-  url.searchParams.set('utm_campaign', 'deal_redirect');
-  return url.toString();
+  const deepLink = asHttpUrl(kiwiDeepLink);
+  const fallbackSearchUrl = new URL(`https://www.kiwi.com/en/search/results/${from}/${to}/${dep}/${returnSegment}`);
+  if (KIWI_AFFILIATE_ID) fallbackSearchUrl.searchParams.set('affilid', KIWI_AFFILIATE_ID);
+  fallbackSearchUrl.searchParams.set('currency', 'EUR');
+  fallbackSearchUrl.searchParams.set('adults', String(pax));
+  fallbackSearchUrl.searchParams.set('cabinClass', cabin);
+  fallbackSearchUrl.searchParams.set('utm_source', SITE_NAME);
+  fallbackSearchUrl.searchParams.set('utm_medium', 'affiliate');
+  fallbackSearchUrl.searchParams.set('utm_campaign', 'deal_redirect');
+
+  // Kiwi via Travelpayouts monetization wrapper (custom_url + shmarker) from official docs.
+  // If a Tequila deep_link is available we prioritize it; otherwise we wrap the fallback search URL.
+  if (KIWI_VIA_TRAVELPAYOUTS_ENABLED) {
+    const wrapped = buildTravelpayoutsCustomClickLink({
+      customUrl: deepLink || fallbackSearchUrl.toString(),
+      promoId: TRAVELPAYOUTS_KIWI_PROMO_ID
+    });
+    if (wrapped) return wrapped;
+  }
+
+  return deepLink || fallbackSearchUrl.toString();
 }
 
 /**
@@ -172,6 +221,7 @@ export function buildAffiliateLink({
   dateTo = null,
   travellers = 1,
   cabinClass = 'economy',
+  kiwiDeepLink = null,
   partner = null
 }) {
   const selectedPartner = SUPPORTED_PARTNERS.includes(String(partner || '').trim().toLowerCase())
@@ -183,7 +233,7 @@ export function buildAffiliateLink({
   if (selectedPartner === 'travelpayouts') {
     url = buildTravelpayoutsLink({ origin, destinationIata, dateFrom, dateTo, travellers });
   } else if (selectedPartner === 'kiwi') {
-    url = buildKiwiLink({ origin, destinationIata, dateFrom, dateTo, travellers, cabinClass });
+    url = buildKiwiLink({ origin, destinationIata, dateFrom, dateTo, travellers, cabinClass, kiwiDeepLink });
   } else if (selectedPartner === 'skyscanner') {
     url = buildSkyscannerLink({ origin, destinationIata, dateFrom, dateTo, travellers });
   }
@@ -230,6 +280,8 @@ export function getAffiliateConfig() {
     bookingBaseUrl: BOOKING_BASE_URL,
     travelpayoutsEnabled: TRAVELPAYOUTS_AFFILIATE_ENABLED,
     travelpayoutsConfigured: Boolean(TRAVELPAYOUTS_MARKER && TRAVELPAYOUTS_AFFILIATE_ENABLED),
+    travelpayoutsShmarkerConfigured: Boolean(resolveTravelpayoutsShmarker() && TRAVELPAYOUTS_AFFILIATE_ENABLED),
+    kiwiViaTravelpayoutsEnabled: KIWI_VIA_TRAVELPAYOUTS_ENABLED,
     kiwiConfigured: Boolean(KIWI_AFFILIATE_ID),
     skyscannerConfigured: Boolean(SKYSCANNER_AFFILIATE_ID)
   };

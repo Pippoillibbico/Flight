@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { parseFlag } from './env-flags.js';
+import { assertLiveFlightProviderInProduction } from './live-flight-provider.js';
 
 function isStrongOutboundClickSecret(secretValue, jwtSecretValue) {
   const secret = String(secretValue || '').trim();
@@ -7,6 +8,13 @@ function isStrongOutboundClickSecret(secretValue, jwtSecretValue) {
   if (/dev_outbound_secret|changeme|replace-with|example|default|secret/i.test(secret)) return false;
   const jwtSecret = String(jwtSecretValue || '').trim();
   if (jwtSecret && secret === jwtSecret) return false;
+  return true;
+}
+
+function isStrongIpHashSalt(rawValue) {
+  const salt = String(rawValue || '').trim();
+  if (salt.length < 16) return false;
+  if (/replace-with|changeme|example|placeholder|todo|default|test/i.test(salt)) return false;
   return true;
 }
 
@@ -55,6 +63,39 @@ function resolveOutboundClickSecret({ env, nodeEnv, logger }) {
   const ephemeral = randomBytes(32).toString('hex');
   logger.warn('OUTBOUND_CLICK_SECRET missing/weak in non-production; generated ephemeral secret for this process');
   return ephemeral;
+}
+
+function enforceStripeBillingEnvInProduction({ env, nodeEnv, logger }) {
+  if (nodeEnv !== 'production') return;
+  const billingProvider = String(env.BILLING_PROVIDER || '').trim().toLowerCase();
+  if (billingProvider !== 'stripe') return;
+  const requiredStripeEnv = [
+    'STRIPE_SECRET_KEY',
+    'STRIPE_WEBHOOK_SECRET',
+    'STRIPE_PRICE_PRO'
+  ];
+  for (const key of requiredStripeEnv) {
+    if (!String(env[key] || '').trim()) {
+      logger.fatal(
+        {
+          envKey: key,
+          billingProvider
+        },
+        'startup_blocked_missing_required_stripe_runtime_config'
+      );
+      throw new Error(`[FATAL] Missing required Stripe env var in production: ${key}`);
+    }
+  }
+  if (!String(env.STRIPE_PRICE_ELITE || env.STRIPE_PRICE_CREATOR || '').trim()) {
+    logger.fatal(
+      {
+        envKey: 'STRIPE_PRICE_ELITE',
+        billingProvider
+      },
+      'startup_blocked_missing_required_stripe_runtime_config'
+    );
+    throw new Error('[FATAL] Missing required Stripe env var in production: STRIPE_PRICE_ELITE');
+  }
 }
 
 export function loadServerRuntimeConfig({ env = process.env, logger }) {
@@ -152,6 +193,7 @@ export function loadServerRuntimeConfig({ env = process.env, logger }) {
   const DERIVED_FRONTEND_ORIGIN = normalizeOriginValue(env.FRONTEND_ORIGIN || FRONTEND_URL);
   const ENV_CORS_ALLOWLIST = [
     ...splitCsvValues(env.CORS_ORIGIN),
+    ...splitCsvValues(env.CORS_ALLOWED_ORIGINS),
     ...splitCsvValues(env.FRONTEND_ORIGIN),
     ...splitCsvValues(env.CORS_ALLOWLIST),
     DERIVED_FRONTEND_ORIGIN
@@ -201,6 +243,7 @@ export function loadServerRuntimeConfig({ env = process.env, logger }) {
   const SHUTDOWN_TIMEOUT_MS = Math.max(1_000, Number(env.SHUTDOWN_TIMEOUT_MS || 12_000));
   const ALLOW_INSECURE_STARTUP_FOR_TESTS = String(env.ALLOW_INSECURE_STARTUP_FOR_TESTS || 'false').trim().toLowerCase() === 'true';
   const ALLOW_INSECURE_STARTUP_IN_PRODUCTION = String(env.ALLOW_INSECURE_STARTUP_IN_PRODUCTION || 'false').trim().toLowerCase() === 'true';
+  const ALLOW_INSECURE_STARTUP_TEST_CONTEXT = String(env.ALLOW_INSECURE_STARTUP_TEST_CONTEXT || 'false').trim().toLowerCase() === 'true';
   const INSECURE_STARTUP_BYPASS_ENABLED = ALLOW_INSECURE_STARTUP_FOR_TESTS && ALLOW_INSECURE_STARTUP_IN_PRODUCTION;
   const REQUIRE_PRIMARY_INFRA_IN_PRODUCTION = String(env.REQUIRE_PRIMARY_INFRA_IN_PRODUCTION || 'true').trim().toLowerCase() !== 'false';
   const PRIMARY_INFRA_CHECK_TIMEOUT_MS = Math.max(1_000, Number(env.PRIMARY_INFRA_CHECK_TIMEOUT_MS || 5000));
@@ -218,6 +261,45 @@ export function loadServerRuntimeConfig({ env = process.env, logger }) {
       'startup_blocked_insecure_mock_billing_flag'
     );
     throw new Error('startup_blocked_insecure_mock_billing_flag');
+  }
+  if (
+    NODE_ENV === 'production' &&
+    (ALLOW_INSECURE_STARTUP_FOR_TESTS || ALLOW_INSECURE_STARTUP_IN_PRODUCTION) &&
+    !ALLOW_INSECURE_STARTUP_TEST_CONTEXT
+  ) {
+    logger.fatal(
+      {
+        allowInsecureStartupForTests: ALLOW_INSECURE_STARTUP_FOR_TESTS,
+        allowInsecureStartupInProduction: ALLOW_INSECURE_STARTUP_IN_PRODUCTION,
+        hint: 'Disable insecure startup flags in production. If you are running controlled compliance tests, set ALLOW_INSECURE_STARTUP_TEST_CONTEXT=true explicitly.'
+      },
+      'startup_blocked_insecure_startup_flags'
+    );
+    throw new Error('startup_blocked_insecure_startup_flags');
+  }
+  if (NODE_ENV === 'production' && !isStrongIpHashSalt(env.IP_HASH_SALT)) {
+    logger.fatal(
+      {
+        envKey: 'IP_HASH_SALT',
+        hint: 'Set a strong, private IP_HASH_SALT (>=16 chars, non-placeholder) to avoid predictable hashing of client IP addresses.'
+      },
+      'startup_blocked_missing_ip_hash_salt'
+    );
+    throw new Error('startup_blocked_missing_ip_hash_salt');
+  }
+  enforceStripeBillingEnvInProduction({ env, nodeEnv: NODE_ENV, logger });
+  try {
+    assertLiveFlightProviderInProduction(env);
+  } catch (error) {
+    logger.fatal(
+      {
+        reason: 'missing_live_flight_provider',
+        supportedProviders: ['duffel'],
+        requiredFlags: ['ENABLE_PROVIDER_DUFFEL']
+      },
+      'startup_blocked_missing_live_flight_provider'
+    );
+    throw error;
   }
 
   if (NODE_ENV === 'production' && CORS_ALLOWLIST.size === 0) {
@@ -346,6 +428,7 @@ export function loadServerRuntimeConfig({ env = process.env, logger }) {
     SHUTDOWN_TIMEOUT_MS,
     ALLOW_INSECURE_STARTUP_FOR_TESTS,
     ALLOW_INSECURE_STARTUP_IN_PRODUCTION,
+    ALLOW_INSECURE_STARTUP_TEST_CONTEXT,
     INSECURE_STARTUP_BYPASS_ENABLED,
     REQUIRE_PRIMARY_INFRA_IN_PRODUCTION,
     PRIMARY_INFRA_CHECK_TIMEOUT_MS,

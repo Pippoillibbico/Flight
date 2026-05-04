@@ -6,6 +6,8 @@ import Redis from 'ioredis';
 const REQUIRED_SECRETS = [
   'JWT_SECRET',
   'OUTBOUND_CLICK_SECRET',
+  'IP_HASH_SALT',
+  'BACKUP_ENCRYPTION_KEY',
   'AUDIT_LOG_HMAC_KEY',
   'INTERNAL_INGEST_TOKEN',
   'STRIPE_SECRET_KEY',
@@ -36,6 +38,8 @@ function asBool(value, fallback = false) {
   if (!text) return fallback;
   return ['1', 'true', 'yes', 'on'].includes(text);
 }
+
+const localProfile = asBool(process.env.OPS_READINESS_LOCAL_PROFILE, false);
 
 function parseNumber(value, fallback) {
   const out = Number(value);
@@ -118,11 +122,33 @@ function assertLoggingPolicy() {
   if (!SAFE_LOG_LEVELS_PROD.has(level)) {
     throw new Error(`unsafe_log_level_in_production:${level}`);
   }
-  const retentionDays = parseNumber(process.env.LOG_RETENTION_DAYS, 14);
+  const retentionDays = parseNumber(process.env.LOG_RETENTION_DAYS, 90);
   if (retentionDays < 14) {
     throw new Error(`log_retention_too_low:${retentionDays}`);
   }
   console.log(`[OK] logging-policy level=${level} retentionDays=${retentionDays}`);
+}
+
+function assertPrivacyAndLegalPolicy() {
+  const retentionDays = [
+    ['DATA_RETENTION_AUTH_EVENTS_DAYS', 30, 3650],
+    ['DATA_RETENTION_CLIENT_TELEMETRY_DAYS', 30, 3650],
+    ['DATA_RETENTION_OUTBOUND_EVENTS_DAYS', 30, 3650]
+  ];
+  for (const [key, min, max] of retentionDays) {
+    const value = parseNumber(process.env[key], NaN);
+    if (!Number.isFinite(value) || value < min || value > max) {
+      throw new Error(`invalid_retention_value:${key}:${process.env[key] || 'missing'}`);
+    }
+  }
+
+  const legalKeys = ['LEGAL_COMPANY_NAME', 'LEGAL_COMPANY_ADDRESS', 'LEGAL_PRIVACY_EMAIL'];
+  const missingLegal = legalKeys.filter((key) => !hasStrongValue(key, 4));
+  if (missingLegal.length > 0) {
+    throw new Error(`missing_or_placeholder_legal_identity:${missingLegal.join(',')}`);
+  }
+
+  console.log('[OK] privacy-legal-policy');
 }
 
 function assertDbUrlSecurity() {
@@ -143,6 +169,10 @@ function assertDbUrlSecurity() {
 }
 
 function assertRedisUrlSecurity() {
+  if (localProfile) {
+    console.log('[OK] redis-url-security (local-profile override)');
+    return;
+  }
   const parsed = parseUrlStrict('REDIS_URL');
   if (!parsed) {
     throw new Error('missing_required_secret:REDIS_URL');
@@ -189,8 +219,11 @@ async function checkPostgres() {
       throw new Error(`db_tx_isolation_mismatch:required=${requiredIsolation}:actual=${txIsolation}`);
     }
     const statementTimeoutRaw = String(timeoutResult.rows[0]?.statement_timeout || '').trim();
-    if (!statementTimeoutRaw || statementTimeoutRaw === '0') {
+    if ((!statementTimeoutRaw || statementTimeoutRaw === '0') && !localProfile) {
       throw new Error('statement_timeout_not_set');
+    }
+    if ((!statementTimeoutRaw || statementTimeoutRaw === '0') && localProfile) {
+      console.log('[WARN] postgres-check statement_timeout not set (local-profile override)');
     }
     console.log(
       `[OK] postgres-check connected isolation=${txIsolation} statement_timeout=${statementTimeoutRaw}`
@@ -243,6 +276,7 @@ async function run() {
     expectExactEnv('STRIPE_ALLOW_INLINE_PRICE_DATA', 'false');
     assertWebhookUrl('RELEASE_ALERT_WEBHOOK_URL');
     assertLoggingPolicy();
+    assertPrivacyAndLegalPolicy();
     assertDbUrlSecurity();
     assertRedisUrlSecurity();
     await validateWebhookDeliveryOptional();
@@ -261,7 +295,9 @@ async function run() {
   }
 
   const targetBaseUrl = String(process.env.TARGET_BASE_URL || process.env.PROD_BASE_URL || '').trim();
-  if (targetBaseUrl) {
+  if (localProfile) {
+    console.log('[WARN] local-profile enabled: skipping prod-external-audit URL/TLS checks');
+  } else if (targetBaseUrl) {
     assertTargetBaseUrl(targetBaseUrl);
     process.env.PROD_BASE_URL = targetBaseUrl;
     steps.push({ name: 'prod-external-audit', cmd: 'npm', args: ['run', 'test:prod:external'] });

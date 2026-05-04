@@ -70,11 +70,33 @@
 }
 
 .radar-primary-actions > button {
-  min-width: 180px;
+  min-width: 0;
 }
 
 .opportunity-feed-panel {
-  gap: 28px;
+  gap: 24px;
+  overflow: hidden;
+}
+
+.opportunity-hero {
+  padding: clamp(20px, 3vw, 30px);
+  border: 1px solid rgba(84, 132, 206, 0.28);
+  border-radius: 18px;
+  background:
+    linear-gradient(145deg, rgba(247, 251, 255, 0.96), rgba(238, 246, 255, 0.9)),
+    radial-gradient(520px 220px at 100% 0%, rgba(22, 116, 237, 0.1), transparent 72%);
+}
+
+.opportunity-hero h2 {
+  max-width: 760px;
+  font-size: clamp(34px, 4.6vw, 58px);
+  line-height: 1.08;
+  letter-spacing: 0;
+}
+
+.opportunity-hero .hero-sub {
+  max-width: 720px;
+  color: #48627f;
 }
 
 .opportunity-hero-actions > .opportunity-discover-cta,
@@ -137,7 +159,7 @@
 }
 
 .opportunity-top-deal-actions > .opportunity-view-itinerary-cta {
-  min-width: 170px;
+  min-width: 0;
 }
 
 .opportunity-feed-panel .opportunity-view-itinerary-cta,
@@ -304,8 +326,36 @@
 }
 
 .opportunity-card-actions > .opportunity-view-itinerary-cta {
-  min-width: 168px;
+  min-width: 0;
   font-weight: 800;
+}
+
+.opportunity-top-deal-route,
+.opportunity-live-rail-route,
+.opportunity-card-route,
+.opportunity-related-route,
+.opportunity-cluster-title-row strong {
+  overflow-wrap: anywhere;
+}
+
+.opportunity-cluster-list {
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+
+.opportunity-cluster-card {
+  min-width: 0;
+}
+
+.opportunity-top-deal-card {
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 240px);
+  align-items: stretch;
+}
+
+.opportunity-top-deal-main,
+.opportunity-live-rail-item,
+.opportunity-card-main,
+.opportunity-cluster-trigger {
+  min-width: 0;
 }
 
 .opportunity-card-actions > .ghost {
@@ -317,6 +367,87 @@
   cursor: not-allowed;
   opacity: 0.64;
   filter: saturate(0.85);
+}
+
+.live-deal-smart-departure-badge {
+  display: grid;
+  gap: 6px;
+  margin: 2px 0 6px;
+}
+
+.live-deal-badge--secondary {
+  background: rgba(33, 118, 245, 0.14);
+  color: #124b93;
+  border: 1px solid rgba(33, 118, 245, 0.26);
+}
+
+.live-deal-smart-departure-hint {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: #2d5b95;
+}
+
+.live-deal-smart-departure {
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(84, 132, 206, 0.26);
+  border-radius: 12px;
+  background: rgba(237, 246, 255, 0.75);
+  padding: 11px;
+}
+
+.live-deal-smart-departure > h4 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+  color: #134f9d;
+}
+
+.live-deal-smart-departure-list {
+  display: grid;
+  gap: 8px;
+}
+
+.live-deal-smart-departure-item {
+  width: 100%;
+  border: 1px solid rgba(72, 123, 201, 0.24);
+  border-radius: 10px;
+  background: rgba(247, 252, 255, 0.9);
+  display: grid;
+  grid-template-columns: 1.1fr auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 9px 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #194d8f;
+  text-align: left;
+}
+
+.app-shell.app-dark .live-deal-badge--secondary {
+  background: rgba(77, 146, 244, 0.22);
+  color: #d2e6ff;
+  border-color: rgba(113, 162, 233, 0.45);
+}
+
+.app-shell.app-dark .live-deal-smart-departure-hint {
+  color: #b7d6ff;
+}
+
+.app-shell.app-dark .live-deal-smart-departure {
+  border-color: rgba(106, 145, 201, 0.34);
+  background: rgba(19, 34, 53, 0.7);
+}
+
+.app-shell.app-dark .live-deal-smart-departure > h4 {
+  color: #d5e8ff;
+}
+
+.app-shell.app-dark .live-deal-smart-departure-item {
+  border-color: rgba(110, 148, 201, 0.35);
+  background: rgba(16, 28, 45, 0.82);
+  color: #d4e7ff;
 }
 
 .app-shell.app-dark .radar-hero {
@@ -412,13 +543,44 @@
 }
 
 @media (max-width: 980px) {
+  .radar-primary-actions > button,
+  .opportunity-top-deal-actions > .opportunity-view-itinerary-cta,
   .opportunity-card-actions > .opportunity-view-itinerary-cta {
-    min-width: 150px;
+    width: 100%;
   }
 
   .opportunity-live-rail {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .opportunity-top-deal-card {
+    grid-template-columns: 1fr;
+  }
+}
+
+.app-shell.app-dark .opportunity-hero {
+  border-color: rgba(106, 145, 202, 0.36);
+  background:
+    linear-gradient(145deg, rgba(19, 30, 47, 0.96), rgba(13, 22, 35, 0.94)),
+    radial-gradient(540px 240px at 100% 0%, rgba(34, 111, 217, 0.18), transparent 74%);
+}
+
+.app-shell.app-dark .opportunity-hero .hero-sub {
+  color: #bdcde3;
+}
+
+.app-shell.app-dark .opportunity-hot-empty,
+.app-shell.app-dark .opportunity-retention-hook {
+  border-color: rgba(106, 145, 202, 0.36);
+  background: rgba(19, 31, 49, 0.76);
+  color: #cfddf1;
+}
+
+.app-shell:not(.app-dark) .opportunity-hot-empty,
+.app-shell:not(.app-dark) .opportunity-retention-hook {
+  border-color: rgba(84, 132, 206, 0.24);
+  background: rgba(240, 247, 255, 0.78);
+  color: #37577f;
 }
 
 @media (max-width: 780px) {
@@ -444,7 +606,9 @@
     text-align: left;
   }
 
-  .opportunity-card-actions > button {
+  .opportunity-hero-actions > .opportunity-discover-cta,
+  .opportunity-hero-actions > .opportunity-activate-radar-cta,
+  .opportunity-hero-actions > .opportunity-refresh-feed-cta {
     width: 100%;
   }
 

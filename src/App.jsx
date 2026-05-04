@@ -113,6 +113,7 @@ import {
   saveRecentItinerary,
   writeRememberedEmail
 } from './features/personal-hub/storage';
+import { TELEMETRY_EVENTS } from './shared/telemetry/events.js';
 import {
   evaluateUsageLimit,
   getPlanComparisonRows,
@@ -470,7 +471,7 @@ function App() {
     });
     const resolvedRequestMode = String(result?.meta?.requestMode || result?.meta?.mode || '').trim().toLowerCase();
     const effectiveSearchMode = resolvedRequestMode === 'multi_city' ? 'multi_city' : searchMode;
-    trackSearchEvent('results_rendered', {
+    trackSearchEvent(TELEMETRY_EVENTS.RESULTS_RENDERED, {
       searchModeOverride: effectiveSearchMode,
       resultCount: flights.length,
       extra: {
@@ -611,8 +612,8 @@ function App() {
   );
   const planEntitlements = useMemo(() => getPlanEntitlements(userPlanType), [userPlanType]);
   const planComparisonRows = useMemo(() => getPlanComparisonRows(), []);
-  const canUseRadarPlan = userPlanType === 'pro' || userPlanType === 'elite';
-  const canUseAiTravelPlan = userPlanType === 'elite';
+  const canUseRadarPlan = userPlanType === 'pro' || userPlanType === 'creator' || userPlanType === 'elite';
+  const canUseAiTravelPlan = userPlanType === 'pro' || userPlanType === 'creator' || userPlanType === 'elite';
   const isMfaChallengeActive = Boolean(authMfa.ticket);
   const isAdvancedMode = uiMode === 'advanced';
   const showAuthGateModal = false;
@@ -765,14 +766,12 @@ function App() {
     submitAuth,
     submitLoginMfa,
     loginWithGoogle,
-    loginWithApple,
     loginWithFacebook,
     setupMfa,
     resetMfaSetup,
     enableMfa,
     disableMfa,
     finishOnboarding,
-    openOnboardingSetup,
     logout,
     deleteAccount
   } = useAuthSessionActions({
@@ -814,7 +813,8 @@ function App() {
     clearLocalTravelData,
     clearConsent,
     writeRememberedEmail,
-    clearRememberedEmail
+    clearRememberedEmail,
+    sendAdminTelemetryEvent
   });
   const aiGateway = useMemo(
     () =>
@@ -1184,6 +1184,7 @@ function App() {
   const {
     upgradeFlowState,
     upgradePlanContent,
+    checkoutLoading,
     openPlanUpgradeFlow,
     closePlanUpgradeFlow,
     submitPlanUpgradeInterest,
@@ -1386,7 +1387,7 @@ function App() {
   const activateRadarFromFeedWithTelemetry = useCallback(() => {
     activateRadarFromFeedSession();
     sendAdminTelemetryEvent({
-      eventType: 'radar_activated',
+      eventType: TELEMETRY_EVENTS.RADAR_ACTIVATED,
       source: 'opportunity_feed',
       planType: userPlanType
     });
@@ -1395,7 +1396,7 @@ function App() {
   const activateRadarFromHubWithTelemetry = useCallback(() => {
     activateRadarFromFeedSession();
     sendAdminTelemetryEvent({
-      eventType: 'radar_activated',
+      eventType: TELEMETRY_EVENTS.RADAR_ACTIVATED,
       source: 'personal_hub',
       planType: userPlanType
     });
@@ -1405,7 +1406,11 @@ function App() {
     if (activeMainSection !== 'admin') return;
     if (!isAuthenticated || !isAdminUser) return;
     void loadAdminBackofficeReport();
-  }, [activeMainSection, isAuthenticated, isAdminUser, token]);
+    const intervalId = window.setInterval(() => {
+      void loadAdminBackofficeReport();
+    }, 15_000);
+    return () => window.clearInterval(intervalId);
+  }, [activeMainSection, isAuthenticated, isAdminUser, loadAdminBackofficeReport]);
 
 
   const openPremiumFromLanding = useCallback(
@@ -1486,7 +1491,6 @@ function App() {
         t={t}
         isAuthenticated={isAuthenticated}
         adminRouteRequested={adminRouteRequested}
-        openOnboardingSetup={openOnboardingSetup}
         setShowAccountPanel={setShowAccountPanel}
         setAuthMode={setAuthMode}
         setAuthView={setAuthView}
@@ -1496,8 +1500,6 @@ function App() {
         heroSubText={heroSubText}
         isLiveDataSource={isLiveDataSource}
         heroDataSourceNote={heroDataSourceNote}
-        opportunityFeedCount={opportunityFeed.length}
-        destinationClusterCount={destinationClusters.length}
         radarMatchesCount={radarMatches.length}
         radarSessionActivated={radarSessionActivated}
         userPlanType={userPlanType}
@@ -1554,7 +1556,6 @@ function App() {
         billingPricingError={billingPricingError}
         upgradeToPremium={upgradeToPremium}
         chooseElitePlan={chooseElitePlan}
-        openOnboardingSetup={openOnboardingSetup}
         setupMfa={setupMfa}
         disableMfa={disableMfa}
         resetMfaSetup={resetMfaSetup}
@@ -1568,7 +1569,6 @@ function App() {
         loginWithFacebook={loginWithFacebook}
         oauthLoading={oauthLoading}
         loginWithGoogle={loginWithGoogle}
-        loginWithApple={loginWithApple}
         submitAuth={submitAuth}
         authForm={authForm}
         setAuthForm={setAuthForm}
@@ -1589,6 +1589,7 @@ function App() {
         closePlanUpgradeFlow={closePlanUpgradeFlow}
         submitPlanUpgradeInterest={submitPlanUpgradeInterest}
         openPremiumSectionFromUpgradeFlow={openPremiumSectionFromUpgradeFlow}
+        checkoutLoading={checkoutLoading}
         searchLimitValueNote={t('searchLimitUpgradeCta')}
       />
 
@@ -1901,8 +1902,3 @@ function App() {
 }
 
 export default App;
-
-
-
-
-

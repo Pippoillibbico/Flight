@@ -1,4 +1,5 @@
 import { addDays } from 'date-fns';
+import { TELEMETRY_EVENTS, resolveTelemetryEventType } from '../../src/shared/telemetry/events.js';
 
 function csvEscape(value) {
   const raw = String(value ?? '');
@@ -22,14 +23,16 @@ export function buildOutboundReport(db, windowDays = 30) {
   const since = addDays(new Date(), -windowDays).getTime();
   const outboundEvents = outboundEventsSource.filter((event) => new Date(event?.at).getTime() >= since);
   const isRedirectSuccess = (eventName) => {
-    const normalized = String(eventName || '').trim().toLowerCase();
-    return normalized === 'outbound_redirect_succeeded' || normalized === 'booking_resolved_redirect';
+    return resolveTelemetryEventType(eventName) === TELEMETRY_EVENTS.OUTBOUND_REDIRECT_SUCCEEDED
+      || String(eventName || '').trim().toLowerCase() === 'booking_resolved_redirect';
   };
   const isRedirectFailure = (eventName) => {
-    const normalized = String(eventName || '').trim().toLowerCase();
-    return normalized === 'outbound_redirect_failed' || normalized === 'booking_redirect_failed';
+    return resolveTelemetryEventType(eventName) === TELEMETRY_EVENTS.OUTBOUND_REDIRECT_FAILED
+      || String(eventName || '').trim().toLowerCase() === 'booking_redirect_failed';
   };
-  const clicks = outboundEvents.filter((event) => String(event?.eventName || 'booking_clicked') === 'booking_clicked');
+  const clicks = outboundEvents.filter(
+    (event) => resolveTelemetryEventType(event?.eventName || TELEMETRY_EVENTS.BOOKING_CLICKED) === TELEMETRY_EVENTS.BOOKING_CLICKED
+  );
   const redirectSuccesses = outboundEvents.filter((event) => isRedirectSuccess(event?.eventName));
   const redirectFailures = outboundEvents.filter((event) => isRedirectFailure(event?.eventName));
   const searches = searchesSource.filter((s) => new Date(s?.at).getTime() >= since);

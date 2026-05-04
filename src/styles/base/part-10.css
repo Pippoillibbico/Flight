@@ -495,12 +495,14 @@
 .page {
   --unified-cta-hover-border: #8db4ff;
   --unified-cta-hover-glow: rgba(44, 88, 158, 0.22);
+  --unified-ctrl-hover-bg: rgba(15, 111, 255, 0.1);
 }
 
 .page.app-dark,
 .page.landing-shell.landing-dark {
   --unified-cta-hover-border: rgba(167, 194, 235, 0.95);
   --unified-cta-hover-glow: rgba(8, 20, 38, 0.34);
+  --unified-ctrl-hover-bg: rgba(255, 255, 255, 0.16);
 }
 
 .page button:hover:not(:disabled):not(.landing-lang-trigger):not(.account-close-btn):not(.cookie-banner-link):not(.cookie-banner-details-toggle):not(.cookie-btn),
@@ -518,6 +520,10 @@
     0 0 0 1px var(--unified-cta-hover-border),
     0 0 18px var(--unified-cta-hover-glow) !important;
   transform: none !important;
+}
+
+.page .landing-ctrl-btn:hover {
+  background: var(--unified-ctrl-hover-bg) !important;
 }
 
 /* ============================================================

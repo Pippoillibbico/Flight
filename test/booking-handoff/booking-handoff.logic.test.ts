@@ -143,6 +143,7 @@ test('booking handoff builds deterministic affiliate link and payload', () => {
   assert.match(handoff.url, /origin=MXP/);
   assert.match(handoff.url, /destinationIata=LIS/);
   assert.match(handoff.url, /surface=results/);
+  assert.doesNotMatch(handoff.url, /analyticsOptIn=/);
   assert.match(handoff.url, /itineraryId=flight-abc-1/);
   assert.match(handoff.url, /correlationId=/);
   assert.match(handoff.correlationId, /^corr_/);
@@ -225,6 +226,23 @@ test('buildBookingLink allows one-way itineraries without return date', () => {
 
   assert.match(url, /dateFrom=2026-06-10/);
   assert.doesNotMatch(url, /dateTo=/);
+});
+
+test('buildBookingLink never trusts analytics opt-in from client context', () => {
+  const url = buildBookingLink(
+    { type: 'affiliate', partner: 'tde_booking', enabled: true, priority: 10, resolvePath: '/api/outbound/resolve' },
+    {
+      origin: 'MXP',
+      destinationIata: 'LIS',
+      dateFrom: '2026-06-10',
+      dateTo: '2026-06-14',
+      travellers: 1,
+      cabinClass: 'economy'
+    },
+    { surface: 'results' }
+  );
+
+  assert.doesNotMatch(url, /analyticsOptIn=/);
 });
 
 test('buildBookingLink for direct provider uses absolute direct URL', () => {
@@ -310,5 +328,40 @@ test('booking tracker does not forward direct provider URLs to outbound API', as
     destination: 'Lisbon'
   });
 
+  assert.equal(outboundPayloads.length, 0);
+});
+
+test('booking tracker blocks dispatch and outbound API before analytics consent', async () => {
+  const dispatchedEvents: Record<string, unknown>[] = [];
+  const outboundPayloads: Record<string, unknown>[] = [];
+  const tracker = createBookingClickedTracker({
+    dispatcher: {
+      dispatchEvent: (_eventName, detail) => {
+        dispatchedEvents.push(detail as unknown as Record<string, unknown>);
+      }
+    },
+    apiClient: {
+      async outboundClick(payload) {
+        outboundPayloads.push(payload);
+        return { ok: true };
+      }
+    },
+    hasAnalyticsConsent: () => false
+  });
+
+  await tracker.track({
+    eventName: 'booking_clicked',
+    correlationId: 'corr_lx8s6xew_1_results_flight-abc-1',
+    itineraryId: 'flight-abc-1',
+    providerType: 'affiliate',
+    partner: 'tde_booking',
+    url: '/api/outbound/resolve?partner=tde_booking&surface=results&origin=MXP&destinationIata=LIS',
+    surface: 'results',
+    origin: 'MXP',
+    destinationIata: 'LIS',
+    destination: 'Lisbon'
+  });
+
+  assert.equal(dispatchedEvents.length, 0);
   assert.equal(outboundPayloads.length, 0);
 });

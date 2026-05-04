@@ -14,8 +14,9 @@ const DEFAULT_APP_CONFIG = {
 
 const DEFAULT_BILLING_PRICING = {
   free: { monthlyEur: 0 },
-  pro: { monthlyEur: 12.99 },
-  creator: { monthlyEur: 29.99 },
+  pro: { monthlyEur: 12 },
+  elite: { monthlyEur: 22 },
+  creator: { monthlyEur: 22 },
   updatedAt: null,
   lastCostCheckAt: null
 };

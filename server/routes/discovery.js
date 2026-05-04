@@ -10,6 +10,7 @@ import {
 } from '../lib/deal-engine-store.js';
 import { buildDiscoveryFeed, getDiscoveryFeedService } from '../lib/discovery-feed-service.js';
 import { getCacheClient } from '../lib/free-cache.js';
+import { isLiveFlightProviderEnabled } from '../lib/live-flight-provider.js';
 import { detectPriceAnomaly } from '../lib/anomaly-detector.js';
 import { decideTrips } from '../lib/flight-engine.js';
 import { getHistoricalPrices, getRouteStats } from '../lib/price-history-store.js';
@@ -62,6 +63,7 @@ import {
 
 export function buildDiscoveryRouter({ authGuard, csrfGuard, quotaGuard, requireApiScope }) {
   const router = express.Router();
+  const isProduction = String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
   const cache = getCacheClient();
   const feedService = getDiscoveryFeedService();
   const priceAlertsStore = getPriceAlertsStore();
@@ -103,6 +105,9 @@ export function buildDiscoveryRouter({ authGuard, csrfGuard, quotaGuard, require
     const parsed = discoveryFeedQuerySchema.safeParse(req.query);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid query.' });
     try {
+      if (isProduction && !isLiveFlightProviderEnabled(process.env)) {
+        return res.status(503).json({ error: 'live_flight_provider_required_in_production' });
+      }
       const maxPrice = parsed.data.max_price ?? parsed.data.budget_max ?? null;
       let payload = await getFeedCached({
         origin: parsed.data.origin,
@@ -113,6 +118,9 @@ export function buildDiscoveryRouter({ authGuard, csrfGuard, quotaGuard, require
 
       // Heuristic fallback: enrich sparse DB feeds so the feed is never empty
       if (countFeedItems(payload) < MIN_DB_FEED_ITEMS) {
+        if (isProduction) {
+          return res.status(503).json({ error: 'synthetic_discovery_feed_not_allowed_in_production' });
+        }
         const month = new Date().getUTCMonth() + 1;
         const heuristic = buildOpportunityFeed({
           origin: parsed.data.origin || DEFAULT_ORIGIN_IATA,
@@ -151,6 +159,9 @@ export function buildDiscoveryRouter({ authGuard, csrfGuard, quotaGuard, require
     const parsed = opportunitiesFeedQuerySchema.safeParse(req.query);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid query.' });
     try {
+      if (isProduction) {
+        return res.status(503).json({ error: 'synthetic_opportunities_feed_not_allowed_in_production' });
+      }
       const origin = parsed.data.origin || DEFAULT_ORIGIN_IATA;
       const month = parsed.data.month || (new Date().getUTCMonth() + 1);
       const limit = parsed.data.limit;
@@ -585,6 +596,9 @@ export function buildDiscoveryRouter({ authGuard, csrfGuard, quotaGuard, require
     const parsed = autoTripSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid payload.' });
     try {
+      if (isProduction) {
+        return res.status(503).json({ error: 'synthetic_trip_generator_not_allowed_in_production' });
+      }
       const periodFrom = parsed.data.period_from;
       const periodTo = parsed.data.period_to || format(addDays(new Date(`${periodFrom}T00:00:00Z`), parsed.data.duration), 'yyyy-MM-dd');
       const decision = decideTrips({

@@ -28,7 +28,7 @@
  *   BACKOFFICE_PORT              — default 3001
  */
 
-import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -36,10 +36,13 @@ import express from 'express';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { SignJWT, jwtVerify } from 'jose';
+import speakeasy from 'speakeasy';
 import pino from 'pino';
 import { buildAdminBackofficeReport } from './lib/admin-backoffice-report.js';
+import { appendImmutableAudit } from './lib/audit-log.js';
 import { readDb } from './lib/db.js';
 import { parseCookieHeader } from './lib/http-cookies.js';
+import { anonymizeIpForLogs, hashValueForLogs } from './lib/log-redaction.js';
 import { getFollowSignalsSummary } from './lib/opportunity-store.js';
 import { getCostCapMonitoringSnapshot } from './lib/cost-cap-monitor.js';
 
@@ -67,6 +70,11 @@ const BACKOFFICE_TRUST_PROXY_RAW = String(process.env.BACKOFFICE_TRUST_PROXY || 
 const BACKOFFICE_ALLOW_SHARED_PASSWORD_IN_PRODUCTION = String(process.env.BACKOFFICE_ALLOW_SHARED_PASSWORD_IN_PRODUCTION || 'false')
   .trim()
   .toLowerCase() === 'true';
+const BACKOFFICE_REQUIRE_MFA = String(process.env.BACKOFFICE_REQUIRE_MFA || (IS_PRODUCTION ? 'true' : 'false'))
+  .trim()
+  .toLowerCase() !== 'false';
+const BACKOFFICE_REPORT_WINDOW_MS = Math.max(30_000, Number(process.env.BACKOFFICE_REPORT_WINDOW_MS || 60_000));
+const BACKOFFICE_REPORT_MAX_PER_WINDOW = Math.max(5, Number(process.env.BACKOFFICE_REPORT_MAX_PER_WINDOW || 30));
 
 function parseBackofficeCredentials(rawValue) {
   const map = new Map();
@@ -87,6 +95,7 @@ function parseBackofficeCredentials(rawValue) {
 }
 
 const BACKOFFICE_PER_USER_CREDENTIALS = parseBackofficeCredentials(process.env.BACKOFFICE_ADMIN_CREDENTIALS);
+const BACKOFFICE_TOTP_SECRETS = parseBackofficeCredentials(process.env.BACKOFFICE_ADMIN_TOTP_SECRETS);
 
 function isStrongJwtSecret(value) {
   const secret = String(value || '').trim();
@@ -100,6 +109,13 @@ function isStrongSharedBackofficePassword(value) {
   const secret = String(value || '').trim();
   if (secret.length < 16) return false;
   if (/replace-with|example|changeme|default|secret/i.test(secret)) return false;
+  return true;
+}
+
+function isLikelyValidTotpSecret(value) {
+  const normalized = String(value || '').replace(/\s+/g, '').toUpperCase();
+  if (normalized.length < 16) return false;
+  if (!/^[A-Z2-7]+=*$/.test(normalized)) return false;
   return true;
 }
 
@@ -194,8 +210,60 @@ if (IS_PRODUCTION && BACKOFFICE_PER_USER_CREDENTIALS.size > 0 && ALLOWED_EMAILS.
   }
 }
 
+if (IS_PRODUCTION && BACKOFFICE_REQUIRE_MFA) {
+  const missingMfaSecrets = [...ALLOWED_EMAILS].filter((email) => !isLikelyValidTotpSecret(BACKOFFICE_TOTP_SECRETS.get(email) || ''));
+  if (missingMfaSecrets.length > 0) {
+    logger.fatal(
+      {
+        missingMfaSecrets,
+        hint: 'Set BACKOFFICE_ADMIN_TOTP_SECRETS with email=base32secret for every allowlisted admin.'
+      },
+      'backoffice_startup_blocked_missing_mfa_secrets'
+    );
+    process.exit(1);
+  }
+}
+
 function clientIp(req) {
   return String(req.ip || req.socket?.remoteAddress || 'unknown').trim() || 'unknown';
+}
+
+function redactAdminIp(ipValue) {
+  const raw = String(ipValue || '').trim();
+  if (!raw) return 'unknown';
+  if (raw.includes(':')) {
+    const chunks = raw.split(':').filter(Boolean);
+    if (chunks.length <= 2) return `${raw.slice(0, 4)}::`;
+    return `${chunks.slice(0, 2).join(':')}::`;
+  }
+  const parts = raw.split('.');
+  if (parts.length === 4) return `${parts[0]}.${parts[1]}.x.x`;
+  return raw.slice(0, 6);
+}
+
+function hashAdminEmail(emailValue) {
+  const normalized = String(emailValue || '').trim().toLowerCase();
+  if (!normalized) return '';
+  return createHash('sha256').update(normalized).digest('hex').slice(0, 24);
+}
+
+async function writeBackofficeAudit(req, action, { actorId = null, outcome = 'success', detail = null } = {}) {
+  try {
+    const normalizedActor = String(actorId || req?.adminEmail || '').trim().toLowerCase();
+    const actorAdminId = normalizedActor ? `adm_${hashAdminEmail(normalizedActor)}` : null;
+    await appendImmutableAudit({
+      actorAdminId,
+      action: String(action || '').trim() || 'backoffice_event',
+      targetType: 'backoffice',
+      targetId: null,
+      timestamp: new Date().toISOString(),
+      ipHash: anonymizeIpForLogs(clientIp(req)),
+      userAgentHash: hashValueForLogs(String(req?.headers?.['user-agent'] || ''), { label: 'ua', length: 24 }),
+      correlationId: String(req?.id || '').trim() || null,
+      outcome: String(outcome || 'success').trim(),
+      detail: String(detail || '').trim() || null
+    });
+  } catch {}
 }
 
 function loginFailureKey(email, ip) {
@@ -270,7 +338,7 @@ function clearSessionCookie(res) {
 }
 
 async function issueToken(email) {
-  return new SignJWT({ sub: email, role: 'admin' })
+  return new SignJWT({ sub: email, role: 'admin', amr: BACKOFFICE_REQUIRE_MFA ? ['pwd', 'otp'] : ['pwd'] })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime(`${SESSION_TTL_SECONDS}s`)
@@ -281,6 +349,10 @@ async function verifyToken(token) {
   try {
     const { payload } = await jwtVerify(token, JWT_SECRET_KEY);
     if (payload?.role !== 'admin') return null;
+    if (BACKOFFICE_REQUIRE_MFA) {
+      const amr = Array.isArray(payload?.amr) ? payload.amr.map((item) => String(item || '').toLowerCase()) : [];
+      if (!amr.includes('otp')) return null;
+    }
     return payload;
   } catch {
     return null;
@@ -293,6 +365,18 @@ async function requireAdminPage(req, res, next) {
   const payload = await verifyToken(token);
   if (!payload) return res.redirect('/login');
   req.adminEmail = payload.sub;
+  logger.info(
+    {
+      adminEmail: payload.sub,
+      ip: redactAdminIp(clientIp(req)),
+      path: req.path
+    },
+    'backoffice_admin_page_accessed'
+  );
+  void writeBackofficeAudit(req, 'backoffice_page_accessed', {
+    outcome: 'success',
+    detail: `path=${req.path}`
+  });
   return next();
 }
 
@@ -302,6 +386,19 @@ async function requireAdminApi(req, res, next) {
   const payload = await verifyToken(token);
   if (!payload) return res.status(401).json({ ok: false, error: 'unauthorized' });
   req.adminEmail = payload.sub;
+  logger.info(
+    {
+      adminEmail: payload.sub,
+      ip: redactAdminIp(clientIp(req)),
+      path: req.path,
+      method: req.method
+    },
+    'backoffice_admin_api_accessed'
+  );
+  void writeBackofficeAudit(req, 'backoffice_api_accessed', {
+    outcome: 'success',
+    detail: `path=${req.path};method=${req.method}`
+  });
   return next();
 }
 
@@ -441,6 +538,10 @@ function renderLoginPage({ showError = false } = {}) {
         <label id="passwordLabel" for="password">Password</label>
         <input id="password" name="password" type="password" required autocomplete="current-password" />
       </div>
+      <div class="row">
+        <label id="otpLabel" for="otp">Codice OTP</label>
+        <input id="otp" name="otp" type="text" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" required autocomplete="one-time-code" />
+      </div>
       <button id="submitBtn" type="submit">Accedi</button>
     </form>
     <p id="hint" class="hint">Solo email in allowlist possono entrare.</p>
@@ -456,6 +557,7 @@ function renderLoginPage({ showError = false } = {}) {
           subtitle: 'Flight Suite - accesso riservato',
           email: 'Email',
           password: 'Password',
+          otp: 'Codice OTP',
           submit: 'Accedi',
           hint: 'Solo email in allowlist possono entrare.',
           err: 'Email o password non validi.',
@@ -467,6 +569,7 @@ function renderLoginPage({ showError = false } = {}) {
           subtitle: 'Flight Suite - restricted access',
           email: 'Email',
           password: 'Password',
+          otp: 'OTP code',
           submit: 'Sign in',
           hint: 'Only allowlisted emails can sign in.',
           err: 'Invalid email or password.',
@@ -487,6 +590,7 @@ function renderLoginPage({ showError = false } = {}) {
         byId('subtitle').textContent = p.subtitle;
         byId('emailLabel').textContent = p.email;
         byId('passwordLabel').textContent = p.password;
+        byId('otpLabel').textContent = p.otp;
         byId('submitBtn').textContent = p.submit;
         byId('hint').textContent = p.hint;
         var e = byId('errorMsg');
@@ -550,6 +654,21 @@ const loginRateLimiter = rateLimit({
   }
 });
 
+const reportRateLimiter = rateLimit({
+  windowMs: BACKOFFICE_REPORT_WINDOW_MS,
+  max: BACKOFFICE_REPORT_MAX_PER_WINDOW,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `backoffice-report:${String(req.adminEmail || 'unknown').toLowerCase()}|${clientIp(req)}`,
+  handler: (req, res) => {
+    logger.warn(
+      { adminEmail: String(req.adminEmail || ''), ip: redactAdminIp(clientIp(req)) },
+      'backoffice_report_rate_limited'
+    );
+    return res.status(429).json({ ok: false, error: 'rate_limited' });
+  }
+});
+
 app.get('/healthz', (_req, res) => {
   res.status(200).json({ ok: true });
 });
@@ -568,11 +687,17 @@ app.get('/login', (req, res) => {
 app.post('/login', loginRateLimiter, async (req, res) => {
   const email = String(req.body?.email || '').trim().toLowerCase();
   const password = String(req.body?.password || '');
+  const otp = String(req.body?.otp || '').trim();
   const ip = clientIp(req);
   const attempts = getLoginFailureState(email, ip);
   if (attempts && Number(attempts.count || 0) >= LOGIN_MAX_ATTEMPTS) {
     const retryAfterSec = Math.max(1, Math.ceil((Number(attempts.resetAt || Date.now()) - Date.now()) / 1000));
-    logger.warn({ email, ip, retryAfterSec }, 'backoffice_login_temporarily_blocked');
+    logger.warn({ emailHash: hashAdminEmail(email), ip: redactAdminIp(ip), retryAfterSec }, 'backoffice_login_temporarily_blocked');
+    void writeBackofficeAudit(req, 'backoffice_login_blocked', {
+      actorId: email || null,
+      outcome: 'blocked',
+      detail: `reason=too_many_attempts;retry_after=${retryAfterSec}`
+    });
     clearSessionCookie(res);
     res.setHeader('Retry-After', String(retryAfterSec));
     return res.status(429).redirect('/login?error=1');
@@ -586,10 +711,35 @@ app.post('/login', loginRateLimiter, async (req, res) => {
     (BACKOFFICE_PER_USER_CREDENTIALS.size === 0 || !IS_PRODUCTION || BACKOFFICE_ALLOW_SHARED_PASSWORD_IN_PRODUCTION);
   const passwordMatchesShared = canFallbackToSharedPassword && safeEqual(password, SHARED_SECRET_RAW);
   const passwordMatches = passwordMatchesPerUser || passwordMatchesShared;
+  const requiresMfaForUser = BACKOFFICE_REQUIRE_MFA && emailAllowed;
+  const userTotpSecret = String(BACKOFFICE_TOTP_SECRETS.get(email) || '').replace(/\s+/g, '').toUpperCase();
+  const otpIsValid =
+    !requiresMfaForUser ||
+    (isLikelyValidTotpSecret(userTotpSecret) &&
+      speakeasy.totp.verify({
+        secret: userTotpSecret,
+        encoding: 'base32',
+        token: otp,
+        window: 1
+      }));
 
-  if (!emailAllowed || !passwordMatches) {
+  if (!emailAllowed || !passwordMatches || !otpIsValid) {
     const failedState = registerLoginFailure(email, ip);
-    logger.warn({ email, ip, attempts: failedState.count, resetAt: new Date(failedState.resetAt).toISOString() }, 'backoffice_login_failed');
+    logger.warn(
+      {
+        emailHash: hashAdminEmail(email),
+        ip: redactAdminIp(ip),
+        reason: !emailAllowed ? 'email_not_allowlisted' : !passwordMatches ? 'invalid_password' : 'invalid_otp',
+        attempts: failedState.count,
+        resetAt: new Date(failedState.resetAt).toISOString()
+      },
+      'backoffice_login_failed'
+    );
+    void writeBackofficeAudit(req, 'backoffice_login_failed', {
+      actorId: email || null,
+      outcome: 'denied',
+      detail: !emailAllowed ? 'reason=email_not_allowlisted' : !passwordMatches ? 'reason=invalid_password' : 'reason=invalid_otp'
+    });
     clearSessionCookie(res);
     return res.redirect('/login?error=1');
   }
@@ -597,16 +747,23 @@ app.post('/login', loginRateLimiter, async (req, res) => {
   clearLoginFailures(email, ip);
   const token = await issueToken(email);
   setSessionCookie(res, token);
-  logger.info({ email, ip }, 'backoffice_login_success');
+  logger.info({ emailHash: hashAdminEmail(email), ip: redactAdminIp(ip) }, 'backoffice_login_success');
+  void writeBackofficeAudit(req, 'backoffice_login_success', {
+    actorId: email,
+    outcome: 'success'
+  });
   return res.redirect('/');
 });
 
-app.post('/logout', (_req, res) => {
+app.post('/logout', (req, res) => {
+  void writeBackofficeAudit(req, 'backoffice_logout', {
+    outcome: 'success'
+  });
   clearSessionCookie(res);
   return res.redirect('/login');
 });
 
-app.get('/api/report', requireAdminApi, async (_req, res) => {
+app.get('/api/report', requireAdminApi, reportRateLimiter, async (_req, res) => {
   try {
     const db = await readDb();
     const followSignals = await getFollowSignalsSummary({ limit: 10 }).catch(() => ({ total: 0, topRoutes: [] }));
@@ -619,9 +776,25 @@ app.get('/api/report', requireAdminApi, async (_req, res) => {
       costMonitoring
     });
     res.setHeader('Cache-Control', 'no-store');
+    logger.info(
+      {
+        adminEmail: _req.adminEmail,
+        ip: redactAdminIp(clientIp(_req)),
+        reportWindowDays: 30
+      },
+      'backoffice_report_accessed'
+    );
+    void writeBackofficeAudit(_req, 'backoffice_report_accessed', {
+      outcome: 'success',
+      detail: 'window_days=30'
+    });
     return res.status(200).json({ ok: true, report });
   } catch (error) {
     logger.error({ err: error }, 'backoffice_report_error');
+    void writeBackofficeAudit(_req, 'backoffice_report_accessed', {
+      outcome: 'failed',
+      detail: 'report_build_failed'
+    });
     return res.status(500).json({ ok: false, error: 'Failed to build report' });
   }
 });

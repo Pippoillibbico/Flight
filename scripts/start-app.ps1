@@ -52,27 +52,15 @@ if (Test-AppReady) {
 }
 
 if (-not (Test-DockerReady)) {
-  Write-Host 'Docker daemon non disponibile. Avvio Docker Desktop...'
-  try {
-    Start-Process 'C:\Program Files\Docker\Docker\Docker Desktop.exe' | Out-Null
-  } catch {
-    throw 'Docker Desktop non trovato. Installa Docker Desktop o avvialo manualmente.'
-  }
+  throw @'
+Docker daemon non disponibile.
+Avvia un Docker Engine raggiungibile da terminale, poi riesegui il comando.
+Questo script non avvia Docker Desktop automaticamente.
 
-  $maxWaitSec = 300
-  $elapsed = 0
-  while (-not (Test-DockerReady)) {
-    Start-Sleep -Seconds 3
-    $elapsed += 3
-    if (Test-AppReady) {
-      Write-Host "App pronta: $frontendUrl" -ForegroundColor Green
-      Open-AppUrl
-      exit 0
-    }
-    if ($elapsed -ge $maxWaitSec) {
-      throw 'Docker daemon non raggiungibile entro 300s.'
-    }
-  }
+Esempi:
+- Linux/WSL: avvia il servizio Docker Engine nella distro e lancia lo script da quel terminale.
+- Engine remoto: esporta DOCKER_HOST prima di eseguire lo script.
+'@
 }
 
 $composeArgs = @('compose', 'up', '-d')

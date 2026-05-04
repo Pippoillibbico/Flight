@@ -9,7 +9,6 @@ export default function AppHeroHeader({
   t,
   isAuthenticated,
   adminRouteRequested,
-  openOnboardingSetup,
   setShowAccountPanel,
   setAuthMode,
   setAuthView,
@@ -19,14 +18,23 @@ export default function AppHeroHeader({
   heroSubText,
   isLiveDataSource,
   heroDataSourceNote,
-  opportunityFeedCount,
-  destinationClusterCount,
   radarMatchesCount,
   radarSessionActivated,
   userPlanType,
   activeMainSection,
   setActiveMainSection
 }) {
+  const heroLabels = {
+    radarSnapshots: t('heroRadarSnapshots'),
+    sessionActive: t('heroSessionActive'),
+    activateRadar: t('heroActivateRadarHint'),
+    currentPlan: t('heroCurrentPlan'),
+    upgradeHint: t('heroUpgradeHint')
+  };
+
+  const radarMatchCount = Number(radarMatchesCount) || 0;
+  const shouldShowRadarPreview = isAuthenticated || radarMatchCount > 0 || radarSessionActivated;
+
   return (
     <header className="hero">
       <div className="hero-top-row">
@@ -61,7 +69,7 @@ export default function AppHeroHeader({
           </svg>
         </span>
         <nav className="landing-nav hero-controls">
-          <button type="button" className="landing-ctrl-btn landing-theme-btn" onClick={() => setDarkMode((prev) => !prev)}>
+          <button type="button" className="landing-ctrl-btn landing-theme-btn app-header-control-btn" onClick={() => setDarkMode((prev) => !prev)}>
             {darkMode ? (
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
@@ -79,14 +87,9 @@ export default function AppHeroHeader({
                 <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
               </svg>
             )}
-            <span className="landing-ctrl-label">{darkMode ? 'Dark' : 'Light'}</span>
+            <span className="landing-ctrl-label">{darkMode ? t('themeDark') : t('themeLight')}</span>
           </button>
           <LanguageMenu language={language} setLanguage={setLanguage} options={LANGUAGE_OPTIONS} title={t('language')} />
-          {isAuthenticated && !adminRouteRequested ? (
-            <button type="button" className="landing-ctrl-btn landing-onboarding-cta" onClick={openOnboardingSetup}>
-              {t('onboardingReopenCta')}
-            </button>
-          ) : null}
           <button
             type="button"
             className="landing-accedi-btn"
@@ -135,13 +138,6 @@ export default function AppHeroHeader({
       {!adminRouteRequested ? (
         <div className="app-hero-cinematic-row">
           <div className="app-hero-cinematic-main">
-            <div className="app-hero-pill-row">
-              <span className={`app-hero-pill${isLiveDataSource ? ' app-hero-pill-live' : ''}`}>
-                {isLiveDataSource ? 'Live providers connected' : 'Historical intelligence mode'}
-              </span>
-              <span className="app-hero-pill">{opportunityFeedCount} feed opportunities</span>
-              <span className="app-hero-pill">{destinationClusterCount} destination clusters</span>
-            </div>
             <div className="item-actions app-hero-direct-actions">
               <button type="button" onClick={() => setActiveMainSection('explore')}>
                 {t('landingHeroCta')}
@@ -152,15 +148,17 @@ export default function AppHeroHeader({
             </div>
           </div>
           <div className="app-hero-preview-grid">
-            <article className="app-hero-preview-card">
-              <p className="app-hero-preview-label">Radar snapshots</p>
-              <strong className="app-hero-preview-value">{radarMatchesCount}</strong>
-              <p className="app-hero-preview-copy">{radarSessionActivated ? 'Session active' : 'Activate radar to monitor routes'}</p>
-            </article>
+            {shouldShowRadarPreview ? (
+              <article className="app-hero-preview-card">
+                <p className="app-hero-preview-label">{heroLabels.radarSnapshots}</p>
+                <strong className="app-hero-preview-value">{radarMatchCount}</strong>
+                <p className="app-hero-preview-copy">{radarSessionActivated ? heroLabels.sessionActive : heroLabels.activateRadar}</p>
+              </article>
+            ) : null}
             <article className="app-hero-preview-card app-hero-preview-card-accent">
-              <p className="app-hero-preview-label">Current plan</p>
+              <p className="app-hero-preview-label">{heroLabels.currentPlan}</p>
               <strong className="app-hero-preview-value">{String(userPlanType || 'free').toUpperCase()}</strong>
-              <p className="app-hero-preview-copy">Upgrade when you need deeper intelligence and automation.</p>
+              <p className="app-hero-preview-copy">{heroLabels.upgradeHint}</p>
             </article>
           </div>
         </div>
@@ -173,7 +171,7 @@ export default function AppHeroHeader({
             onClick={() => setActiveMainSection('home')}
             data-testid="app-nav-home"
           >
-            Home
+            {t('navHome')}
           </button>
           <button
             type="button"
@@ -181,7 +179,7 @@ export default function AppHeroHeader({
             onClick={() => setActiveMainSection('explore')}
             data-testid="app-nav-explore"
           >
-            Explore
+            {t('navExplore')}
           </button>
           <button
             type="button"
@@ -189,7 +187,7 @@ export default function AppHeroHeader({
             onClick={() => setActiveMainSection('radar')}
             data-testid="app-nav-radar"
           >
-            Radar
+            {t('navRadar')}
           </button>
           <button
             type="button"
@@ -197,7 +195,7 @@ export default function AppHeroHeader({
             onClick={() => setActiveMainSection('ai-travel')}
             data-testid="app-nav-ai-travel"
           >
-            AI Travel
+            {t('navAiTravel')}
           </button>
           <button
             type="button"
@@ -205,11 +203,10 @@ export default function AppHeroHeader({
             onClick={() => setActiveMainSection('premium')}
             data-testid="app-nav-premium"
           >
-            Premium
+            {t('navPremium')}
           </button>
         </div>
       ) : null}
     </header>
   );
 }
-

@@ -1,4 +1,149 @@
-/* Landing pricing refresh: centered layout, billing toggle, higher-contrast cards */
+/*
+  Landing pricing styles.
+  Consolidated tokens and interaction states for:
+  - billing cycle toggle
+  - pricing cards
+  - plan CTAs
+  - responsive behavior
+*/
+
+/* 1) Design tokens: light defaults */
+
+:root {
+  /* Billing cycle toggle: inactive button */
+  --cycle-inactive-color:          #3d5882;
+  --cycle-inactive-hover-bg:       rgba(77, 132, 221, 0.08);
+  --cycle-inactive-hover-border:   rgba(100, 153, 233, 0.30);
+  --cycle-inactive-hover-color:    #235193;
+
+  /* Billing cycle toggle: active button */
+  --cycle-active-bg:               linear-gradient(130deg, #257dff, #20b8ff);
+  --cycle-active-border:           rgba(153, 218, 255, 0.62);
+  --cycle-active-color:            #ffffff;
+  --cycle-active-shadow:
+    0 8px 20px rgba(33, 144, 255, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+
+  /* Cycle toggle wrapper */
+  --cycle-wrap-bg:                 rgba(236, 245, 255, 0.90);
+  --cycle-wrap-border:             rgba(103, 143, 215, 0.34);
+  --cycle-wrap-shadow:             inset 0 0 0 1px rgba(255, 255, 255, 0.65);
+
+  /* Cycle note */
+  --cycle-note-color:              #55749d;
+  --cycle-note-annual-color:       #1762cc;
+
+  /* Pricing card */
+  --card-border:                   #cfe3ff;
+  --card-bg:
+    radial-gradient(440px 160px at 96% -10%, rgba(70, 161, 255, 0.12), transparent 70%),
+    linear-gradient(165deg, #ffffff 0%, #f4f8ff 48%, #eff5ff 100%);
+  --card-shadow:
+    0 20px 42px rgba(17, 55, 114, 0.11),
+    inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  --card-hover-border:             #a8cbff;
+  --card-hover-shadow:
+    0 28px 56px rgba(17, 55, 114, 0.17),
+    inset 0 1px 0 rgba(255, 255, 255, 0.90);
+
+  /* Plan CTA — secondary (white/ghost style) */
+  --plan-cta-sec-bg:               linear-gradient(180deg, #ffffff, #f3f8ff);
+  --plan-cta-sec-border:           rgba(166, 196, 238, 0.86);
+  --plan-cta-sec-color:            #11305c;
+  --plan-cta-sec-shadow:
+    0 8px 18px rgba(29, 77, 148, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.92);
+
+  --plan-cta-sec-hover-bg:         linear-gradient(180deg, #f8fbff, #e9f2ff);
+  --plan-cta-sec-hover-border:     rgba(141, 182, 238, 0.94);
+  --plan-cta-sec-hover-color:      #0f2a51;
+  --plan-cta-sec-hover-shadow:
+    0 0 0 2px rgba(112, 164, 239, 0.14),
+    0 12px 26px rgba(22, 70, 142, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.82);
+
+  --plan-cta-sec-active-bg:        linear-gradient(180deg, #edf5ff, #deebff);
+  --plan-cta-sec-active-border:    rgba(126, 172, 235, 0.95);
+  --plan-cta-sec-active-color:     #0d2445;
+  --plan-cta-sec-active-shadow:
+    0 0 0 2px rgba(112, 164, 239, 0.10),
+    0 7px 16px rgba(22, 70, 142, 0.13),
+    inset 0 2px 5px rgba(14, 50, 112, 0.10);
+
+  --plan-cta-sec-focus-ring:       0 0 0 3px rgba(126, 173, 240, 0.28);
+}
+
+
+/* ─── 2. DESIGN TOKENS — dark overrides ─────────────────────────────────── */
+
+.landing-shell.landing-dark {
+  /* Cycle toggle wrapper */
+  --cycle-wrap-bg:    rgba(7, 20, 41, 0.88);
+  --cycle-wrap-border: rgba(116, 169, 247, 0.36);
+  --cycle-wrap-shadow:
+    inset 0 0 0 1px rgba(167, 214, 255, 0.10),
+    0 10px 20px rgba(0, 0, 0, 0.28);
+
+  /* Cycle toggle — inactive button */
+  --cycle-inactive-color:        #8ab2dc;
+  --cycle-inactive-hover-bg:     rgba(83, 134, 204, 0.16);
+  --cycle-inactive-hover-border: rgba(129, 188, 255, 0.42);
+  --cycle-inactive-hover-color:  #c9e3ff;
+
+  /* Cycle toggle — active button */
+  --cycle-active-bg:     linear-gradient(130deg, #2b86ff, #4ca7ff);
+  --cycle-active-border: rgba(147, 218, 255, 0.58);
+  --cycle-active-color:  #f7fcff;
+  --cycle-active-shadow:
+    0 8px 20px rgba(25, 122, 224, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+
+  /* Cycle note */
+  --cycle-note-color:        #8cb2d9;
+  --cycle-note-annual-color: #9ed5ff;
+
+  /* Pricing card */
+  --card-border:  rgba(130, 173, 238, 0.24);
+  --card-bg:
+    radial-gradient(420px 170px at 92% -10%, rgba(56, 172, 255, 0.16), transparent 72%),
+    linear-gradient(164deg, rgba(7, 20, 43, 0.96) 0%, rgba(5, 15, 34, 0.97) 60%, rgba(3, 11, 26, 0.98) 100%);
+  --card-shadow:
+    0 24px 52px rgba(0, 7, 22, 0.58),
+    inset 0 1px 0 rgba(184, 220, 255, 0.11);
+  --card-hover-border: rgba(172, 210, 255, 0.42);
+  --card-hover-shadow:
+    0 30px 62px rgba(0, 7, 22, 0.70),
+    inset 0 1px 0 rgba(184, 220, 255, 0.18);
+
+  /* Plan CTA — secondary */
+  --plan-cta-sec-bg:     linear-gradient(180deg, rgba(18, 43, 76, 0.86), rgba(10, 29, 55, 0.92));
+  --plan-cta-sec-border: rgba(116, 169, 247, 0.42);
+  --plan-cta-sec-color:  #e8f3ff;
+  --plan-cta-sec-shadow:
+    0 10px 22px rgba(0, 7, 20, 0.36),
+    inset 0 1px 0 rgba(184, 220, 255, 0.12);
+
+  --plan-cta-sec-hover-bg:     linear-gradient(180deg, rgba(33, 86, 143, 0.90), rgba(17, 54, 103, 0.96));
+  --plan-cta-sec-hover-border: rgba(152, 207, 255, 0.68);
+  --plan-cta-sec-hover-color:  #ffffff;
+  --plan-cta-sec-hover-shadow:
+    0 0 0 2px rgba(117, 184, 255, 0.16),
+    0 14px 30px rgba(0, 10, 31, 0.50),
+    inset 0 1px 0 rgba(218, 239, 255, 0.18);
+
+  --plan-cta-sec-active-bg:     linear-gradient(180deg, rgba(19, 63, 122, 0.94), rgba(10, 39, 82, 0.98));
+  --plan-cta-sec-active-border: rgba(133, 190, 250, 0.58);
+  --plan-cta-sec-active-color:  #eef7ff;
+  --plan-cta-sec-active-shadow:
+    0 0 0 2px rgba(117, 184, 255, 0.10),
+    0 8px 18px rgba(0, 10, 31, 0.40),
+    inset 0 2px 6px rgba(0, 9, 25, 0.28);
+
+  --plan-cta-sec-focus-ring: 0 0 0 3px rgba(120, 188, 255, 0.30);
+}
+
+
+/* ─── 3. SHELL & SECTION LAYOUT ──────────────────────────────────────────── */
 
 .landing-shell,
 .landing-shell.landing-dark {
@@ -15,6 +160,9 @@
   margin-inline: auto;
   padding-inline: clamp(12px, 2vw, 24px);
 }
+
+
+/* ─── 4. PRICING HEAD & CYCLE TOGGLE ────────────────────────────────────── */
 
 .landing-shell .landing-pricing-head {
   display: grid;
@@ -42,9 +190,9 @@
   gap: 6px;
   border-radius: 999px;
   padding: 6px;
-  border: 1px solid rgba(103, 143, 215, 0.34);
-  background: rgba(236, 245, 255, 0.9);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.65);
+  border: 1px solid var(--cycle-wrap-border);
+  background: var(--cycle-wrap-bg);
+  box-shadow: var(--cycle-wrap-shadow);
   overflow: hidden;
 }
 
@@ -54,7 +202,7 @@
   border: 1px solid transparent;
   border-radius: 999px;
   background: transparent;
-  color: #3d5882;
+  color: var(--cycle-inactive-color);
   font-size: 14px;
   font-weight: 800;
   letter-spacing: 0.01em;
@@ -67,48 +215,59 @@
   text-overflow: ellipsis;
   overflow: hidden;
   cursor: pointer;
-  transition: color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
-}
-
-/* Hover su bottone INATTIVO: ghost leggero, chiaramente diverso dall'attivo */
-.landing-shell .landing-pricing-cycle-btn:not(.is-active):hover,
-.landing-shell .landing-pricing-cycle-btn:not(.is-active):focus-visible {
-  background: rgba(80, 130, 220, 0.12) !important;
-  border-color: rgba(90, 150, 230, 0.3) !important;
-  color: #1a4080 !important;
-  box-shadow: none !important;
-}
-
-/* Hover sul bottone ATTIVO: nessun cambiamento — è già scelto */
-.landing-shell .landing-pricing-cycle-btn.is-active:hover,
-.landing-shell .landing-pricing-cycle-btn.is-active:focus-visible {
-  background: linear-gradient(130deg, #257dff, #20b8ff) !important;
-  border-color: rgba(153, 218, 255, 0.62) !important;
-  box-shadow:
-    0 8px 20px rgba(33, 144, 255, 0.28),
-    inset 0 1px 0 rgba(255, 255, 255, 0.25) !important;
-  cursor: default;
-}
-
-.landing-shell .landing-pricing-cycle-btn.is-active {
-  color: #ffffff;
-  border-color: rgba(153, 218, 255, 0.62);
-  background: linear-gradient(130deg, #257dff, #20b8ff);
-  box-shadow:
-    0 8px 20px rgba(33, 144, 255, 0.28),
-    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  transition:
+    color          0.16s ease,
+    background     0.16s ease,
+    box-shadow     0.16s ease,
+    border-color   0.16s ease;
 }
 
 .landing-shell .landing-pricing-cycle-note {
   margin: 0;
-  color: #55749d;
+  color: var(--cycle-note-color);
   font-size: 12px;
   font-weight: 700;
 }
 
 .landing-shell .landing-pricing-cycle-note.is-annual {
-  color: #1762cc;
+  color: var(--cycle-note-annual-color);
 }
+
+
+/* ─── 5. CYCLE BUTTON STATES ─────────────────────────────────────────────── */
+
+/* INACTIVE — hover & focus */
+.landing-shell .landing-pricing-cycle-btn:not(.is-active):hover,
+.landing-shell .landing-pricing-cycle-btn:not(.is-active):focus-visible {
+  background:   var(--cycle-inactive-hover-bg) !important;
+  border-color: var(--cycle-inactive-hover-border) !important;
+  color:        var(--cycle-inactive-hover-color) !important;
+  box-shadow:   none !important;
+  outline:      none;
+}
+
+/* ACTIVE — default (already chosen, no pointer events needed) */
+.landing-shell .landing-pricing-cycle-btn.is-active {
+  background:   var(--cycle-active-bg);
+  border-color: var(--cycle-active-border);
+  color:        var(--cycle-active-color);
+  box-shadow:   var(--cycle-active-shadow);
+  cursor:       default;
+}
+
+/* ACTIVE — hover & focus (no visual change — state is already selected) */
+.landing-shell .landing-pricing-cycle-btn.is-active:hover,
+.landing-shell .landing-pricing-cycle-btn.is-active:focus-visible {
+  background:   var(--cycle-active-bg) !important;
+  border-color: var(--cycle-active-border) !important;
+  color:        var(--cycle-active-color) !important;
+  box-shadow:   var(--cycle-active-shadow) !important;
+  outline:      none;
+  cursor:       default;
+}
+
+
+/* ─── 6. PRICING GRID & CARDS ────────────────────────────────────────────── */
 
 .landing-shell .landing-pricing-grid {
   width: min(1180px, 100%);
@@ -126,56 +285,83 @@
   position: relative;
   overflow: visible;
   border-radius: 26px;
-  border: 1px solid #cfe3ff;
-  background:
-    radial-gradient(440px 160px at 96% -10%, rgba(70, 161, 255, 0.12), transparent 70%),
-    linear-gradient(165deg, #ffffff 0%, #f4f8ff 48%, #eff5ff 100%);
-  box-shadow:
-    0 20px 42px rgba(17, 55, 114, 0.11),
-    inset 0 1px 0 rgba(255, 255, 255, 0.85);
-  transition: transform 0.24s ease, box-shadow 0.24s ease, border-color 0.24s ease;
+  border: 1px solid var(--card-border);
+  background: var(--card-bg);
+  box-shadow: var(--card-shadow);
+  transition:
+    transform      0.24s ease,
+    box-shadow     0.24s ease,
+    border-color   0.24s ease;
   animation: landingPricingCardIn 0.5s ease both;
 }
 
-.landing-shell .landing-pricing-card:nth-child(2) {
-  animation-delay: 0.07s;
-}
+.landing-shell .landing-pricing-card:nth-child(2) { animation-delay: 0.07s; }
+.landing-shell .landing-pricing-card:nth-child(3) { animation-delay: 0.14s; }
 
-.landing-shell .landing-pricing-card:nth-child(3) {
-  animation-delay: 0.14s;
-}
-
+/* Accent line revealed on card hover */
 .landing-shell .landing-pricing-card::after {
   content: '';
   position: absolute;
   inset: auto 0 0 0;
   height: 2px;
-  background: linear-gradient(90deg, transparent, rgba(35, 131, 255, 0.7), transparent);
+  background: linear-gradient(90deg, transparent, rgba(35, 131, 255, 0.70), transparent);
   opacity: 0;
   transition: opacity 0.24s ease;
 }
 
 .landing-shell .landing-pricing-card:hover {
-  transform: translateY(-8px);
-  border-color: #a8cbff;
-  box-shadow:
-    0 28px 56px rgba(17, 55, 114, 0.17),
-    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  transform:    translateY(-8px);
+  border-color: var(--card-hover-border);
+  box-shadow:   var(--card-hover-shadow);
 }
 
 .landing-shell .landing-pricing-card:hover::after {
   opacity: 1;
 }
 
+/* Dark-mode card text */
+.landing-shell.landing-dark .landing-plan-name,
+.landing-shell.landing-dark .landing-plan-amount {
+  color: #f4f9ff;
+}
+
+.landing-shell.landing-dark .landing-plan-currency,
+.landing-shell.landing-dark .landing-plan-period {
+  color: rgba(200, 227, 255, 0.70);
+}
+
+.landing-shell.landing-dark .landing-plan-desc {
+  color: rgba(189, 216, 247, 0.82);
+}
+
+.landing-shell.landing-dark .landing-plan-billing-note {
+  color: rgba(151, 186, 224, 0.90);
+}
+
+.landing-shell.landing-dark .landing-plan-features li {
+  border-color: rgba(122, 167, 228, 0.35);
+  background:   rgba(15, 33, 58, 0.72);
+  color:        rgba(228, 241, 255, 0.95);
+}
+
+.landing-shell.landing-dark .landing-plan-discount-tag {
+  color:        #d9f2ff;
+  border-color: rgba(129, 225, 255, 0.58);
+  background:   rgba(22, 71, 140, 0.34);
+}
+
+
+/* ─── 7. CARD — FEATURED VARIANT ─────────────────────────────────────────── */
+
 .landing-shell .landing-pricing-card-featured {
-  transform: translateY(-6px) scale(1.01);
+  transform:    translateY(-6px) scale(1.01);
   border-color: rgba(56, 164, 255, 0.66);
   background:
     radial-gradient(430px 170px at 90% -8%, rgba(72, 178, 255, 0.24), transparent 72%),
     linear-gradient(160deg, #0f5ce0 0%, #0e77ff 52%, #1586ff 100%);
   box-shadow:
     0 32px 70px rgba(15, 111, 255, 0.34),
-    0 0 0 1px rgba(255, 255, 255, 0.14) inset;
+    inset 0 0 0 1px rgba(255, 255, 255, 0.14);
 }
 
 .landing-shell .landing-pricing-card-featured:hover {
@@ -189,6 +375,40 @@
   box-shadow: 0 12px 24px rgba(255, 191, 72, 0.32);
 }
 
+/* Featured card typography */
+.landing-shell .landing-pricing-card-featured .landing-plan-name,
+.landing-shell .landing-pricing-card-featured .landing-plan-currency,
+.landing-shell .landing-pricing-card-featured .landing-plan-amount,
+.landing-shell .landing-pricing-card-featured .landing-plan-period,
+.landing-shell .landing-pricing-card-featured .landing-plan-desc,
+.landing-shell .landing-pricing-card-featured .landing-plan-billing-note,
+.landing-shell .landing-pricing-card-featured .landing-plan-features li {
+  color: #ffffff;
+}
+
+.landing-shell .landing-pricing-card-featured .landing-plan-discount-tag {
+  color:        #f3fbff;
+  border-color: rgba(179, 236, 255, 0.66);
+  background:   rgba(9, 28, 54, 0.34);
+}
+
+.landing-shell .landing-pricing-card-featured .landing-plan-amount-old {
+  color: rgba(221, 240, 255, 0.70);
+}
+
+.landing-shell .landing-pricing-card-featured .landing-plan-features li {
+  border-color: rgba(170, 221, 255, 0.38);
+  background:   rgba(10, 48, 108, 0.34);
+}
+
+.landing-shell .landing-pricing-card-featured .landing-plan-check-icon {
+  color: #94f4c8;
+}
+
+
+/* ─── 8. PLAN CTA BUTTONS ────────────────────────────────────────────────── */
+
+/* Shared base */
 .landing-shell .landing-pricing-card-head {
   display: grid;
   gap: 8px;
@@ -209,7 +429,7 @@
   justify-content: center;
   padding: 4px 10px;
   border-radius: 999px;
-  border: 1px solid rgba(52, 172, 255, 0.5);
+  border: 1px solid rgba(52, 172, 255, 0.50);
   background: rgba(26, 110, 222, 0.14);
   color: #105fcd;
   font-size: 11px;
@@ -234,13 +454,8 @@
   text-decoration-thickness: 2px;
 }
 
-.landing-shell .landing-plan-amount {
-  font-size: clamp(38px, 4.4vw, 54px);
-}
-
-.landing-shell .landing-plan-amount--text {
-  font-size: clamp(44px, 4.7vw, 62px);
-}
+.landing-shell .landing-plan-amount       { font-size: clamp(38px, 4.4vw, 54px); }
+.landing-shell .landing-plan-amount--text { font-size: clamp(44px, 4.7vw, 62px); }
 
 .landing-shell .landing-plan-billing-note {
   margin: 0;
@@ -249,180 +464,182 @@
   font-weight: 700;
 }
 
-.landing-shell .landing-plan-features {
-  gap: 11px;
-}
+.landing-shell .landing-plan-features { gap: 11px; }
 
 .landing-shell .landing-plan-features li {
   padding: 8px 10px;
   border-radius: 12px;
   border: 1px solid rgba(152, 189, 245, 0.42);
   background: rgba(255, 255, 255, 0.64);
+  /* Non è un elemento interattivo — blocca qualsiasi regola hover/focus globale */
+  pointer-events: none;
+  cursor: default;
+  user-select: none;
+  transition: none !important;
 }
 
-.landing-shell .landing-plan-features li::before {
-  content: none !important;
+/* Annulla esplicitamente ogni stato hover/active/focus ereditato da regole globali */
+.landing-shell .landing-plan-features li:is(:hover, :active, :focus, :focus-visible) {
+  background:   rgba(255, 255, 255, 0.64) !important;
+  border-color: rgba(152, 189, 245, 0.42) !important;
+  box-shadow:   none !important;
+  outline:      none !important;
+  transform:    none !important;
+  color:        inherit !important;
+  filter:       none !important;
 }
+
+/* Stessa protezione per la card featured */
+.landing-shell .landing-pricing-card-featured .landing-plan-features li:is(:hover, :active, :focus, :focus-visible) {
+  background:   rgba(10, 48, 108, 0.34) !important;
+  border-color: rgba(170, 221, 255, 0.38) !important;
+  box-shadow:   none !important;
+  outline:      none !important;
+  transform:    none !important;
+  color:        #ffffff !important;
+  filter:       none !important;
+}
+
+/* Dark mode */
+.landing-shell.landing-dark .landing-plan-features li:is(:hover, :active, :focus, :focus-visible) {
+  background:   rgba(15, 33, 58, 0.72) !important;
+  border-color: rgba(122, 167, 228, 0.35) !important;
+  box-shadow:   none !important;
+  outline:      none !important;
+  transform:    none !important;
+  color:        rgba(228, 241, 255, 0.95) !important;
+  filter:       none !important;
+}
+
+.landing-shell .landing-plan-features li::before { content: none !important; }
 
 .landing-shell .landing-plan-check-icon {
   margin-top: 2px;
   color: #11865c;
 }
 
+/* CTA base */
 .landing-shell .landing-plan-cta {
   min-height: 52px;
   border-radius: 14px;
   font-weight: 800;
   letter-spacing: 0.01em;
-  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.22s ease, filter 0.18s ease, background 0.18s ease;
+  transition:
+    transform      0.18s ease,
+    box-shadow     0.18s ease,
+    background     0.18s ease,
+    border-color   0.18s ease,
+    color          0.18s ease;
 }
 
-.landing-shell .landing-plan-cta:hover:not(:disabled) {
-  transform: translateY(-4px) scale(1.012) !important;
-  filter: brightness(1.06);
+/* No transform/filter on any CTA state */
+.landing-shell .landing-plan-cta:is(:hover, :active):not(:disabled) {
+  transform: none !important;
+  filter:    none;
 }
 
-.landing-shell .landing-plan-cta:active:not(:disabled) {
-  transform: translateY(-1px) scale(1.005) !important;
-  filter: brightness(0.98);
-}
-
+/* PRIMARY CTA — elevated shadow only (colors handled by cta-states.css) */
 .landing-shell .landing-plan-cta.landing-plan-cta-primary {
   box-shadow: 0 16px 30px rgba(7, 18, 40, 0.22);
 }
 
-.landing-shell .landing-plan-cta.landing-plan-cta-primary:hover:not(:disabled) {
-  box-shadow: 0 22px 44px rgba(7, 18, 40, 0.32);
-}
-
-.landing-shell .landing-pricing-card:not(.landing-pricing-card-featured) .landing-plan-cta:hover:not(:disabled) {
-  box-shadow: 0 14px 32px rgba(25, 80, 175, 0.22);
-}
-
-.landing-shell .landing-pricing-card-featured .landing-plan-name,
-.landing-shell .landing-pricing-card-featured .landing-plan-currency,
-.landing-shell .landing-pricing-card-featured .landing-plan-amount,
-.landing-shell .landing-pricing-card-featured .landing-plan-period,
-.landing-shell .landing-pricing-card-featured .landing-plan-desc,
-.landing-shell .landing-pricing-card-featured .landing-plan-billing-note,
-.landing-shell .landing-pricing-card-featured .landing-plan-features li {
-  color: #ffffff;
-}
-
-.landing-shell .landing-pricing-card-featured .landing-plan-discount-tag {
-  color: #f3fbff;
-  border-color: rgba(179, 236, 255, 0.66);
-  background: rgba(9, 28, 54, 0.34);
-}
-
-.landing-shell .landing-pricing-card-featured .landing-plan-amount-old {
-  color: rgba(221, 240, 255, 0.7);
-}
-
-.landing-shell .landing-pricing-card-featured .landing-plan-features li {
-  border-color: rgba(170, 221, 255, 0.38);
-  background: rgba(10, 48, 108, 0.34);
-}
-
-.landing-shell .landing-pricing-card-featured .landing-plan-check-icon {
-  color: #94f4c8;
-}
-
-.landing-shell.landing-dark .landing-pricing-cycle {
-  border-color: rgba(116, 169, 247, 0.36);
-  background: rgba(7, 20, 41, 0.88);
+#landing-pricing .landing-plan-cta.landing-plan-cta-primary:not(:disabled):hover,
+#landing-pricing .landing-plan-cta.landing-plan-cta-primary:not(:disabled):focus-visible {
+  background: linear-gradient(180deg, #2c8cff 0%, #1769dc 100%) !important;
+  border-color: rgba(213, 238, 255, 0.94) !important;
+  color: #ffffff !important;
   box-shadow:
-    inset 0 0 0 1px rgba(167, 214, 255, 0.1),
-    0 10px 20px rgba(0, 0, 0, 0.28);
+    0 0 0 2px rgba(255, 255, 255, 0.20),
+    0 18px 38px rgba(4, 27, 78, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.20) !important;
+  outline: none !important;
 }
 
-.landing-shell.landing-dark .landing-pricing-cycle-btn {
-  color: #8ab2dc;
-}
-
-/* Hover su bottone INATTIVO dark: ghost appena percettibile */
-.landing-shell.landing-dark .landing-pricing-cycle-btn:not(.is-active):hover,
-.landing-shell.landing-dark .landing-pricing-cycle-btn:not(.is-active):focus-visible {
-  background: rgba(90, 155, 240, 0.14) !important;
-  border-color: rgba(100, 165, 255, 0.28) !important;
-  color: #bcd8ff !important;
-  box-shadow: none !important;
-}
-
-/* Hover sul bottone ATTIVO dark: invariato */
-.landing-shell.landing-dark .landing-pricing-cycle-btn.is-active:hover,
-.landing-shell.landing-dark .landing-pricing-cycle-btn.is-active:focus-visible {
-  background: linear-gradient(130deg, #2b86ff, #4ca7ff) !important;
-  border-color: rgba(147, 218, 255, 0.58) !important;
+#landing-pricing .landing-plan-cta.landing-plan-cta-primary:not(:disabled):active {
+  background: linear-gradient(180deg, #186cdc 0%, #1457bd 100%) !important;
+  border-color: rgba(199, 229, 255, 0.88) !important;
+  color: #ffffff !important;
   box-shadow:
-    0 8px 20px rgba(25, 122, 224, 0.42),
-    inset 0 1px 0 rgba(255, 255, 255, 0.18) !important;
-  cursor: default;
+    0 0 0 2px rgba(255, 255, 255, 0.14),
+    0 10px 22px rgba(4, 27, 78, 0.26),
+    inset 0 2px 6px rgba(3, 22, 62, 0.20) !important;
 }
 
-.landing-shell.landing-dark .landing-pricing-cycle-btn.is-active {
-  color: #f7fcff;
-  border-color: rgba(147, 218, 255, 0.58);
-  background: linear-gradient(130deg, #2b86ff, #4ca7ff);
+/* Featured plan CTA: stable contrast and distinct visual hierarchy */
+.landing-shell .landing-pricing-card-featured .landing-plan-cta.landing-plan-cta-primary:not(:disabled) {
+  background: linear-gradient(180deg, #ffffff 0%, #eaf3ff 100%) !important;
+  border-color: rgba(255, 255, 255, 0.92) !important;
+  color: #0d2b56 !important;
   box-shadow:
-    0 8px 20px rgba(25, 122, 224, 0.42),
-    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+    0 14px 28px rgba(4, 28, 85, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.88) !important;
 }
 
-.landing-shell.landing-dark .landing-pricing-cycle-note {
-  color: #8cb2d9;
-}
-
-.landing-shell.landing-dark .landing-pricing-cycle-note.is-annual {
-  color: #9ed5ff;
-}
-
-.landing-shell.landing-dark .landing-pricing-card {
-  border-color: rgba(130, 173, 238, 0.24);
-  background:
-    radial-gradient(420px 170px at 92% -10%, rgba(56, 172, 255, 0.16), transparent 72%),
-    linear-gradient(164deg, rgba(7, 20, 43, 0.96) 0%, rgba(5, 15, 34, 0.97) 60%, rgba(3, 11, 26, 0.98) 100%);
+#landing-pricing .landing-pricing-card-featured .landing-plan-cta.landing-plan-cta-primary:not(:disabled):hover {
+  background: linear-gradient(180deg, #f8fbff 0%, #dcecff 100%) !important;
+  border-color: rgba(255, 255, 255, 0.98) !important;
+  color: #09264d !important;
   box-shadow:
-    0 24px 52px rgba(0, 7, 22, 0.58),
-    inset 0 1px 0 rgba(184, 220, 255, 0.11);
+    0 0 0 2px rgba(255, 255, 255, 0.24),
+    0 18px 36px rgba(4, 28, 85, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.82) !important;
 }
 
-.landing-shell.landing-dark .landing-pricing-card:hover {
-  border-color: rgba(172, 210, 255, 0.42);
+#landing-pricing .landing-pricing-card-featured .landing-plan-cta.landing-plan-cta-primary:not(:disabled):focus-visible {
+  background: linear-gradient(180deg, #f8fbff 0%, #dcecff 100%) !important;
+  border-color: rgba(255, 255, 255, 0.98) !important;
+  color: #09264d !important;
   box-shadow:
-    0 30px 62px rgba(0, 7, 22, 0.7),
-    inset 0 1px 0 rgba(184, 220, 255, 0.18);
+    0 0 0 3px rgba(228, 244, 255, 0.46),
+    0 18px 36px rgba(4, 28, 85, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.82) !important;
+  outline: none !important;
 }
 
-.landing-shell.landing-dark .landing-plan-name,
-.landing-shell.landing-dark .landing-plan-amount {
-  color: #f4f9ff;
+#landing-pricing .landing-pricing-card-featured .landing-plan-cta.landing-plan-cta-primary:not(:disabled):active {
+  background: linear-gradient(180deg, #dcecff 0%, #c9e1ff 100%) !important;
+  border-color: rgba(240, 248, 255, 0.96) !important;
+  color: #09264d !important;
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.16),
+    0 10px 22px rgba(4, 28, 85, 0.24),
+    inset 0 2px 6px rgba(26, 78, 154, 0.15) !important;
 }
 
-.landing-shell.landing-dark .landing-plan-currency,
-.landing-shell.landing-dark .landing-plan-period {
-  color: rgba(200, 227, 255, 0.7);
+/* SECONDARY CTA — base */
+#landing-pricing .landing-pricing-card .landing-plan-cta:not(.landing-plan-cta-primary):not(:disabled) {
+  background:   var(--plan-cta-sec-bg)     !important;
+  border-color: var(--plan-cta-sec-border) !important;
+  color:        var(--plan-cta-sec-color)  !important;
+  box-shadow:   var(--plan-cta-sec-shadow) !important;
 }
 
-.landing-shell.landing-dark .landing-plan-desc {
-  color: rgba(189, 216, 247, 0.82);
+/* SECONDARY CTA — hover */
+#landing-pricing .landing-pricing-card .landing-plan-cta:not(.landing-plan-cta-primary):not(:disabled):hover {
+  background:   var(--plan-cta-sec-hover-bg)     !important;
+  border-color: var(--plan-cta-sec-hover-border) !important;
+  color:        var(--plan-cta-sec-hover-color)  !important;
+  box-shadow:   var(--plan-cta-sec-hover-shadow) !important;
 }
 
-.landing-shell.landing-dark .landing-plan-billing-note {
-  color: rgba(151, 186, 224, 0.9);
+/* SECONDARY CTA — active */
+#landing-pricing .landing-pricing-card .landing-plan-cta:not(.landing-plan-cta-primary):not(:disabled):active {
+  background:   var(--plan-cta-sec-active-bg)     !important;
+  border-color: var(--plan-cta-sec-active-border) !important;
+  color:        var(--plan-cta-sec-active-color)  !important;
+  box-shadow:   var(--plan-cta-sec-active-shadow) !important;
 }
 
-.landing-shell.landing-dark .landing-plan-features li {
-  border-color: rgba(122, 167, 228, 0.35);
-  background: rgba(15, 33, 58, 0.72);
-  color: rgba(228, 241, 255, 0.95);
+/* SECONDARY CTA — focus-visible */
+#landing-pricing .landing-pricing-card .landing-plan-cta:not(.landing-plan-cta-primary):focus-visible {
+  outline:    none !important;
+  box-shadow:
+    var(--plan-cta-sec-focus-ring),
+    var(--plan-cta-sec-hover-shadow) !important;
 }
 
-.landing-shell.landing-dark .landing-plan-discount-tag {
-  color: #d9f2ff;
-  border-color: rgba(129, 225, 255, 0.58);
-  background: rgba(22, 71, 140, 0.34);
-}
+
+/* ─── 10. RESPONSIVE BREAKPOINTS ─────────────────────────────────────────── */
 
 @media (max-width: 980px) {
   .landing-shell .landing-pricing-grid {
@@ -437,6 +654,7 @@
     padding-top: 14px;
   }
 
+  /* Disable card lift on touch viewports */
   .landing-shell .landing-pricing-card,
   .landing-shell .landing-pricing-card:hover,
   .landing-shell .landing-pricing-card-featured,
@@ -447,7 +665,6 @@
   .landing-shell .landing-pricing-cycle-wrap {
     width: 100%;
   }
-
 }
 
 @media (max-width: 560px) {
@@ -467,22 +684,152 @@
   }
 }
 
+
+/* ─── 11. REDUCED MOTION ─────────────────────────────────────────────────── */
+
 @media (prefers-reduced-motion: reduce) {
   .landing-shell .landing-pricing-card,
   .landing-shell .landing-plan-cta,
   .landing-shell .landing-pricing-cycle-btn {
-    animation: none !important;
+    animation:  none !important;
     transition: none !important;
   }
 }
 
+
+/* ─── 12. KEYFRAMES ──────────────────────────────────────────────────────── */
+
 @keyframes landingPricingCardIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0);    }
 }
+
+/* Header controls: one hover contract for Dark/Light and Language. */
+:is(.landing-shell, .page.app-shell) .landing-nav .landing-lang-btn,
+:is(.landing-shell, .page.app-shell) .landing-nav .landing-lang-btn:hover,
+:is(.landing-shell, .page.app-shell) .landing-nav .landing-lang-btn.open {
+  display: inline-flex !important;
+  align-items: stretch !important;
+  justify-content: center !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  outline: 0 !important;
+  transform: none !important;
+}
+
+:is(.landing-shell, .page.app-shell) .landing-nav .app-header-control-btn {
+  width: var(--landing-header-cta-w) !important;
+  min-width: var(--landing-header-cta-w) !important;
+  max-width: var(--landing-header-cta-w) !important;
+  height: var(--landing-header-cta-h) !important;
+  min-height: var(--landing-header-cta-h) !important;
+  max-height: var(--landing-header-cta-h) !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 10px !important;
+  padding: 0 14px !important;
+  border-radius: 10px !important;
+  box-sizing: border-box !important;
+  font: inherit !important;
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  line-height: 1 !important;
+  cursor: pointer !important;
+  color: inherit !important;
+  transform: none !important;
+  transition: background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease !important;
+}
+
+:is(.landing-shell, .page.app-shell) .landing-nav .app-header-control-btn :is(.landing-ctrl-label, svg) {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex: 0 0 auto !important;
+  line-height: 1 !important;
+  padding: 0 !important;
+}
+
+:is(.landing-shell, .page.app-shell) .landing-nav .app-header-control-btn .landing-ctrl-caret {
+  margin-left: 0 !important;
+}
+
+:is(.landing-shell, .page.app-shell) .landing-nav .app-header-control-btn {
+  border: 1px solid rgba(15, 111, 255, 0.16) !important;
+  background: rgba(15, 111, 255, 0.05) !important;
+  box-shadow: none !important;
+}
+
+:is(.landing-shell.landing-dark, .page.app-shell.app-dark) .landing-nav .app-header-control-btn {
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: rgb(245, 249, 255) !important;
+  box-shadow:
+    0 8px 20px rgba(0, 0, 0, 0.28),
+    0 0 0 1px rgba(255, 255, 255, 0.05) inset !important;
+}
+
+:is(.landing-shell.landing-dark, .page.app-shell.app-dark) .landing-nav .app-header-control-btn :is(.landing-ctrl-label, svg) {
+  color: rgb(245, 249, 255) !important;
+}
+
+:is(.landing-shell, .page.app-shell) .landing-nav .app-header-control-btn:hover,
+:is(.landing-shell, .page.app-shell) .landing-nav .landing-lang-btn.open .app-header-control-btn {
+  border-color: rgb(255, 255, 255) !important;
+  background: rgba(118, 164, 229, 0.16) !important;
+  box-shadow:
+    rgb(255, 255, 255) 0 0 0 1px,
+    rgba(255, 255, 255, 0.28) 0 0 18px 0 !important;
+  color: rgb(245, 249, 255) !important;
+  transform: none !important;
+  filter: none !important;
+}
+
+:is(.landing-shell, .page.app-shell) .landing-nav .app-header-control-btn:focus-visible {
+  outline: none !important;
+  border-color: rgb(255, 255, 255) !important;
+  box-shadow:
+    rgb(255, 255, 255) 0 0 0 1px,
+    rgba(255, 255, 255, 0.28) 0 0 18px 0 !important;
+}
+
+:is(.landing-shell, .page.app-shell) .landing-nav .app-header-control-btn:active {
+  border-color: rgb(255, 255, 255) !important;
+  background: rgba(118, 164, 229, 0.16) !important;
+  box-shadow:
+    rgb(255, 255, 255) 0 0 0 1px,
+    rgba(255, 255, 255, 0.28) 0 0 18px 0 !important;
+  transform: none !important;
+}
+
+:is(.landing-shell, .page.app-shell) .landing-nav .landing-ctrl-btn.landing-theme-btn.app-header-control-btn:not(:disabled):not([aria-disabled="true"]):is(:hover, :focus-visible, :active),
+:is(.landing-shell, .page.app-shell) .landing-nav .landing-lang-trigger.landing-ctrl-btn.landing-theme-btn.app-header-control-btn:not(:disabled):not([aria-disabled="true"]):is(:hover, :focus-visible, :active),
+:is(.landing-shell, .page.app-shell) .landing-nav .landing-lang-btn.open .landing-lang-trigger.landing-ctrl-btn.landing-theme-btn.app-header-control-btn {
+  border-color: rgb(255, 255, 255) !important;
+  background: rgba(118, 164, 229, 0.16) !important;
+  box-shadow:
+    rgb(255, 255, 255) 0 0 0 1px,
+    rgba(255, 255, 255, 0.28) 0 0 18px 0 !important;
+  color: rgb(245, 249, 255) !important;
+  opacity: 1 !important;
+  transform: none !important;
+  filter: none !important;
+}
+
+:is(.landing-shell:not(.landing-dark), .page.app-shell:not(.app-dark)) .landing-nav .landing-ctrl-btn.landing-theme-btn.app-header-control-btn:not(:disabled):not([aria-disabled="true"]):is(:hover, :focus-visible, :active),
+:is(.landing-shell:not(.landing-dark), .page.app-shell:not(.app-dark)) .landing-nav .landing-lang-trigger.landing-ctrl-btn.landing-theme-btn.app-header-control-btn:not(:disabled):not([aria-disabled="true"]):is(:hover, :focus-visible, :active),
+:is(.landing-shell:not(.landing-dark), .page.app-shell:not(.app-dark)) .landing-nav .landing-lang-btn.open .landing-lang-trigger.landing-ctrl-btn.landing-theme-btn.app-header-control-btn {
+  border-color: rgba(15, 111, 255, 0.65) !important;
+  background: rgba(118, 164, 229, 0.16) !important;
+  box-shadow:
+    rgba(15, 111, 255, 0.65) 0 0 0 1px,
+    rgba(15, 111, 255, 0.22) 0 0 18px 0 !important;
+  color: rgb(245, 249, 255) !important;
+  opacity: 1 !important;
+  transform: none !important;
+  filter: none !important;
+}
+

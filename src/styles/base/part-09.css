@@ -56,9 +56,8 @@
   transform: none !important;
 }
 
-.landing-shell:not(.landing-dark) .landing-theme-btn:hover,
-.landing-shell:not(.landing-dark) .landing-lang-btn:hover,
-.landing-shell:not(.landing-dark) .landing-lang-btn:has(.landing-lang-trigger:hover) {
+.landing-shell:not(.landing-dark) .landing-lang-trigger:hover {
+  border: 1px solid rgba(15, 111, 255, 0.34) !important;
   background: rgba(15, 111, 255, 0.1) !important;
   border-color: rgba(15, 111, 255, 0.34) !important;
   box-shadow: 0 10px 24px rgba(44, 88, 158, 0.18) !important;
@@ -72,9 +71,7 @@
   transform: none !important;
 }
 
-.app-shell .hero-controls .landing-theme-btn:hover,
-.app-shell .hero-controls .landing-lang-btn:hover,
-.app-shell .hero-controls .landing-lang-btn:has(.landing-lang-trigger:hover) {
+.app-shell .hero-controls .landing-lang-trigger:hover {
   background: rgba(255, 255, 255, 0.16) !important;
   border-color: rgba(255, 255, 255, 0.34) !important;
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22) !important;

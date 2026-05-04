@@ -23,7 +23,6 @@ export default function OnboardingModal({
             </button>
           </div>
           <p className="muted">{t('onboardingSub')}</p>
-          <p className="api-usage-note onboarding-tip">{t('aiApiDescriptionShort')}</p>
           <label>
             {t('onboardingIntent')}
             <select value={onboardingDraft.intent} onChange={(e) => setOnboardingDraft((prev) => ({ ...prev, intent: e.target.value }))}>
@@ -72,4 +71,3 @@ export default function OnboardingModal({
     </div>
   );
 }
-

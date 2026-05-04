@@ -313,18 +313,6 @@ body.app-scroll-lock {
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.24);
 }
 
-.hero-controls .landing-theme-btn:hover,
-.hero-controls .landing-lang-btn:hover {
-  border-color: var(--hover-gold) !important;
-  box-shadow:
-    0 0 0 1px var(--hover-gold),
-    0 0 18px var(--hover-gold-glow) !important;
-}
-
-.hero-controls .landing-lang-btn .landing-lang-trigger:hover {
-  border-radius: 10px;
-  box-shadow: none !important;
-}
 
 .app-shell.app-dark .landing-lang-popover {
   border-color: #4a596d;

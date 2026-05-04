@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { api } from '../api';
 import { validateProps } from '../utils/validateProps';
@@ -6,6 +6,8 @@ import { validateProps } from '../utils/validateProps';
 const RETURN_STATE_KEY = 'live_deals_last_redirect_v1';
 const SAVED_ROUTES_KEY = 'live_deals_saved_routes_v1';
 const RETURN_STATE_TTL_MS = 24 * 60 * 60 * 1000;
+const DETAIL_VIEWS_KEY = 'live_deals_detail_views_v1';
+const DETAIL_VIEWS_LOGIN_TRIGGER = 2;
 
 const LiveDealsRadarSectionPropsSchema = z
   .object({
@@ -53,6 +55,51 @@ function dealBadgeLabel(type) {
 
 function toRouteSlug(origin, destination) {
   return `${String(origin || '').trim().toUpperCase()}-${String(destination || '').trim().toUpperCase()}`;
+}
+
+function normalizeSmartDeparture(raw, fallbackCurrency = 'EUR') {
+  if (!raw || typeof raw !== 'object') return { alternatives: [], best: null, summary: null };
+  const alternativesRaw = Array.isArray(raw.alternatives) ? raw.alternatives : [];
+  const bestRaw = raw.bestAlternative && typeof raw.bestAlternative === 'object' ? raw.bestAlternative : null;
+  const alternatives = alternativesRaw
+    .map((item) => {
+      const origin = String(item?.originIata || item?.origin || '').trim().toUpperCase();
+      const destination = String(item?.destinationIata || item?.destination || '').trim().toUpperCase();
+      const price = toFiniteNumber(item?.price);
+      const savingAbs = toFiniteNumber(item?.savingAbs);
+      const savingPct = toFiniteNumber(item?.savingPct);
+      if (!origin || !destination || price === null || savingAbs === null || savingAbs <= 0) return null;
+      return {
+        originIata: origin,
+        destinationIata: destination,
+        origin,
+        destination,
+        price,
+        savingAbs,
+        savingPct: savingPct || 0,
+        label: String(item?.label || 'Smart departure').trim(),
+        currency: String(item?.currency || fallbackCurrency || 'EUR').trim().toUpperCase()
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 3);
+  const bestFromPayload = bestRaw
+    ? {
+        origin: String(bestRaw.originIata || bestRaw.origin || '').trim().toUpperCase(),
+        destination: String(bestRaw.destinationIata || bestRaw.destination || '').trim().toUpperCase(),
+        price: toFiniteNumber(bestRaw.price),
+        savingAbs: toFiniteNumber(bestRaw.savingAbs),
+        savingPct: toFiniteNumber(bestRaw.savingPct) || 0
+      }
+    : null;
+  const best = alternatives[0] || (bestFromPayload?.origin && bestFromPayload?.price != null ? bestFromPayload : null);
+  return {
+    alternatives,
+    best,
+    summary:
+      String(raw.summaryMessage || raw.summary || '').trim() ||
+      (best ? `Da ${best.origin} risparmi ~${Math.round(best.savingAbs)}€` : null)
+  };
 }
 
 function relativeDetectedAt(value, language = 'it') {
@@ -112,7 +159,8 @@ function normalizeDeal(rawDeal) {
     detectedAt: String(rawDeal.detected_at || ''),
     badge: dealBadgeLabel(rawDeal.deal_type),
     freshnessTs: new Date(String(rawDeal.detected_at || 0)).getTime() || 0,
-    rankingScore: dealConfidence * 2 + (savingsPct || 0) + relevanceBoost
+    rankingScore: dealConfidence * 2 + (savingsPct || 0) + relevanceBoost,
+    smartDeparture: normalizeSmartDeparture(rawDeal.smartDeparture, rawDeal.currency || 'EUR')
   };
 }
 
@@ -169,6 +217,17 @@ function getLiveDealsSessionId() {
   return next;
 }
 
+function readDetailViewsCount() {
+  if (typeof window === 'undefined') return 0;
+  const raw = Number(window.sessionStorage.getItem(DETAIL_VIEWS_KEY) || 0);
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 0;
+}
+
+function writeDetailViewsCount(next) {
+  if (typeof window === 'undefined') return;
+  window.sessionStorage.setItem(DETAIL_VIEWS_KEY, String(Math.max(0, Math.floor(Number(next) || 0))));
+}
+
 export default function LiveDealsRadarSection(props) {
   const {
     t,
@@ -192,7 +251,10 @@ export default function LiveDealsRadarSection(props) {
   const [actionMessage, setActionMessage] = useState('');
   const [savedRoutes, setSavedRoutes] = useState(() => readSavedRoutes());
   const [busyRouteSlug, setBusyRouteSlug] = useState('');
+  const [feedMeta, setFeedMeta] = useState(() => ({ reason: 'ok', accessTier: 'paid' }));
+  const [detailViewsCount, setDetailViewsCount] = useState(() => readDetailViewsCount());
   const sessionId = useMemo(() => getLiveDealsSessionId(), []);
+  const noDealsTelemetrySentRef = useRef(false);
 
   const isEnglish = String(language || 'it').toLowerCase().startsWith('en');
   const tt = (key, fallback) => {
@@ -229,6 +291,21 @@ export default function LiveDealsRadarSection(props) {
     });
   }
 
+  function trackCoreEvent(eventType, deal = null, extra = {}) {
+    if (typeof sendAdminTelemetryEvent !== 'function') return;
+    sendAdminTelemetryEvent({
+      eventType,
+      at: new Date().toISOString(),
+      sourceContext: 'web_app',
+      source: 'live_deals_funnel',
+      surface: String(extra?.surface || 'live_deals_radar'),
+      dealId: String(deal?.fingerprint || deal?.observation_id || deal?.routeSlug || '').trim() || undefined,
+      routeSlug: String(deal?.routeSlug || extra?.routeSlug || '').trim() || undefined,
+      price: toFiniteNumber(deal?.price ?? extra?.price) || undefined,
+      sessionId
+    });
+  }
+
   useEffect(() => {
     let mounted = true;
     async function load() {
@@ -241,14 +318,22 @@ export default function LiveDealsRadarSection(props) {
           ? payload.deals.map(normalizeDeal).filter(Boolean)
           : [];
         setDeals(normalized);
+        setFeedMeta({
+          reason: String(payload?.meta?.reason || 'ok'),
+          accessTier: String(payload?.meta?.accessTier || 'paid')
+        });
         trackLiveDealEvent('live_deal_feed_view', normalized[0] || null, {
           surface: 'live_deals_feed',
           action: 'feed_view',
           price: normalized[0]?.price || null
         });
+        if (normalized.length > 0 && (!isAuthenticated || String(payload?.meta?.accessTier || '') !== 'paid')) {
+          trackCoreEvent('teaser_deal_viewed', normalized[0], { surface: 'live_deals_feed' });
+        }
       } catch (loadError) {
         if (!mounted) return;
         setDeals([]);
+        setFeedMeta({ reason: 'no_data', accessTier: isAuthenticated ? 'paid' : 'anonymous_teaser' });
         setError(String(loadError?.message || 'Impossibile caricare i deal live in questo momento.'));
       } finally {
         if (mounted) setLoading(false);
@@ -267,7 +352,7 @@ export default function LiveDealsRadarSection(props) {
       window.clearInterval(interval);
       window.removeEventListener('pageshow', onPageShow);
     };
-  }, []);
+  }, [isAuthenticated]);
 
   const sortedDeals = useMemo(() => {
     const normalizedPreferredOrigin = String(preferredOrigin || '').trim().toUpperCase();
@@ -301,11 +386,20 @@ export default function LiveDealsRadarSection(props) {
 
   const similarDeals = useMemo(() => pickSimilarDeals(sortedDeals, selectedDeal || preRedirectDeal), [sortedDeals, selectedDeal, preRedirectDeal]);
   const topDeals = sortedDeals.slice(0, 24);
+  const isFreeLike = isAuthenticated && !canUseRadarPlan;
+  const isAnonymous = !isAuthenticated;
+  const detailLevel = isAnonymous ? 'teaser' : isFreeLike ? 'reduced' : 'full';
 
   async function saveRoute(deal, source = 'live_deals') {
     if (!deal) return;
     if (!isAuthenticated || !token) {
+      trackCoreEvent('signup_started', deal, { surface: source });
       requireSectionLogin('radar');
+      return;
+    }
+    if (isFreeLike && (source === 'detail_alert' || source === 'preredirect')) {
+      trackCoreEvent('upgrade_started', deal, { surface: source });
+      onUpgradePro?.('advanced_alerts');
       return;
     }
     const routeSlug = deal.routeSlug;
@@ -352,6 +446,14 @@ export default function LiveDealsRadarSection(props) {
   function openDetail(deal) {
     const identifier = String(deal?.fingerprint || deal?.observation_id || deal?.routeSlug || '');
     if (!identifier) return;
+    const nextDetailViews = detailViewsCount + 1;
+    if (!isAuthenticated && nextDetailViews >= DETAIL_VIEWS_LOGIN_TRIGGER) {
+      trackCoreEvent('signup_started', deal, { surface: 'live_deal_detail_gate' });
+      requireSectionLogin('radar');
+      return;
+    }
+    setDetailViewsCount(nextDetailViews);
+    writeDetailViewsCount(nextDetailViews);
     trackLiveDealEvent('live_deal_card_click', deal, {
       surface: 'live_deal_card',
       action: 'view_detail'
@@ -379,14 +481,35 @@ export default function LiveDealsRadarSection(props) {
     setSelectedDealId(identifier);
   }
 
-  function continueToBooking() {
+  async function continueToBooking() {
     if (!preRedirectDeal?.bookingUrl) return;
+    const bookingUrlWithConsent = String(preRedirectDeal.bookingUrl || '').trim();
+    const separator = bookingUrlWithConsent.includes('?') ? '&' : '?';
+    const previewUrl = `${bookingUrlWithConsent}${separator}preview=1`;
+    try {
+      const previewResponse = await fetch(previewUrl, {
+        method: 'GET',
+        credentials: 'include'
+      });
+      if (previewResponse.status === 401) {
+        trackCoreEvent('signup_started', preRedirectDeal, { surface: 'live_deal_pre_redirect_gate' });
+        requireSectionLogin('radar');
+        return;
+      }
+      if (previewResponse.status === 402) {
+        trackCoreEvent('upgrade_started', preRedirectDeal, { surface: 'live_deal_pre_redirect_gate' });
+        onUpgradePro?.('more_deals');
+        return;
+      }
+    } catch {
+      // Keep default behavior and let redirect endpoint handle tracking/redirect.
+    }
     trackLiveDealEvent('live_deal_redirect_confirm', preRedirectDeal, {
       surface: 'live_deal_pre_redirect',
       action: 'confirm_redirect'
     });
     saveReturnState(preRedirectDeal);
-    window.location.assign(preRedirectDeal.bookingUrl);
+    window.location.assign(bookingUrlWithConsent);
   }
 
   const returnDeal = useMemo(() => {
@@ -405,6 +528,51 @@ export default function LiveDealsRadarSection(props) {
       price: toFiniteNumber(returnState?.price)
     });
   }, [returnState, returnDeal]);
+
+  useEffect(() => {
+    if (loading || error) return;
+    if (topDeals.length > 0) {
+      noDealsTelemetrySentRef.current = false;
+      return;
+    }
+    if (noDealsTelemetrySentRef.current) return;
+    noDealsTelemetrySentRef.current = true;
+    trackCoreEvent('no_deals_viewed', null, {
+      surface: 'live_deals_feed',
+      action: String(feedMeta?.reason || 'no_data')
+    });
+  }, [loading, error, topDeals.length, feedMeta?.reason]);
+
+  useEffect(() => {
+    if (loading || error || topDeals.length === 0) return;
+    const firstWithAlternative = topDeals.find((deal) => deal?.smartDeparture?.alternatives?.length > 0) || null;
+    if (!firstWithAlternative) return;
+    trackLiveDealEvent('alternative_departure_viewed', firstWithAlternative, {
+      surface: 'live_deals_feed',
+      action: 'smart_departure_view'
+    });
+    trackLiveDealEvent('savings_hint_viewed', firstWithAlternative, {
+      surface: 'live_deals_feed',
+      action: 'smart_departure_savings_hint'
+    });
+  }, [loading, error, topDeals]);
+
+  useEffect(() => {
+    if (!selectedDeal || !selectedDeal?.smartDeparture?.alternatives?.length) return;
+    trackLiveDealEvent('alternative_departure_expanded', selectedDeal, {
+      surface: 'live_deal_detail',
+      action: 'smart_departure_expanded'
+    });
+  }, [selectedDeal]);
+
+  function onSmartDepartureClick(parentDeal, alternative, surface = 'live_deal_detail') {
+    if (!parentDeal || !alternative) return;
+    trackLiveDealEvent('alternative_departure_clicked', parentDeal, {
+      surface,
+      action: `smart_departure_click_${String(alternative.origin || '').toUpperCase()}`,
+      price: alternative.price
+    });
+  }
 
   return (
     <section className="panel live-deals-panel" data-testid="live-deals-panel">
@@ -480,9 +648,13 @@ export default function LiveDealsRadarSection(props) {
 
       {!loading && !error && topDeals.length === 0 ? (
         <p className="muted">
-          {isEnglish
-            ? 'No live deals available right now. Keep this page open, new opportunities can appear quickly.'
-            : 'Nessun deal live disponibile ora. Tieni aperta la pagina, nuove opportunita possono apparire rapidamente.'}
+          {String(feedMeta?.reason || '') === 'provider_unavailable'
+            ? (isEnglish
+              ? 'Live feed is currently unavailable. Please try again shortly.'
+              : 'Il feed live non e disponibile in questo momento. Riprova tra poco.')
+            : (isEnglish
+              ? 'No strong opportunities right now. Come back later or enable an alert.'
+              : 'Nessuna opportunita forte ora. Torna piu tardi o attiva un alert.')}
         </p>
       ) : null}
 
@@ -503,6 +675,16 @@ export default function LiveDealsRadarSection(props) {
                 <span className="live-deal-badge">{deal.badge}</span>
                 <span className="live-deal-detected">{relativeDetectedAt(deal.detectedAt, language)}</span>
               </div>
+              {deal?.smartDeparture?.best ? (
+                <div className="live-deal-smart-departure-badge" data-testid={`smart-departure-badge-${identifier}`}>
+                  <span className="live-deal-badge live-deal-badge--secondary">Smart Departure</span>
+                  <span className="live-deal-smart-departure-hint">
+                    {isEnglish
+                      ? `From ${deal.smartDeparture.best.origin} save ~${formatPrice(deal.smartDeparture.best.savingAbs, deal.currency)}`
+                      : `Da ${deal.smartDeparture.best.origin} risparmi ~${formatPrice(deal.smartDeparture.best.savingAbs, deal.currency)}`}
+                  </span>
+                </div>
+              ) : null}
               <h3 className="live-deal-route">{deal.origin} {'->'} {deal.destination}</h3>
               <p className="live-deal-price">{formatPrice(deal.price, deal.currency)}</p>
               <div className="live-deal-metrics">
@@ -514,14 +696,10 @@ export default function LiveDealsRadarSection(props) {
                   <span>{tt('liveDealsSaving', 'Risparmio')}</span>
                   <strong>{savingLabel}</strong>
                 </p>
-                <p>
-                  <span>{tt('liveDealsConfidence', 'Score')}</span>
-                  <strong>{Math.round(deal.dealConfidence)}</strong>
-                </p>
               </div>
               <div className="item-actions live-deal-actions">
                 <button type="button" className="live-deals-primary-cta" onClick={() => openPreRedirect(deal)}>
-                  {tt('liveDealsBookCta', 'Blocca questo prezzo')}
+                  {tt('liveDealsBookCta', 'Vai al deal')}
                 </button>
                 <button type="button" className="ghost" onClick={() => openDetail(deal)}>
                   {tt('liveDealsDetailCta', 'Vedi dettagli')}
@@ -529,10 +707,10 @@ export default function LiveDealsRadarSection(props) {
                 <button
                   type="button"
                   className="ghost"
-                  onClick={() => saveRoute(deal, 'live_card')}
+                  onClick={() => saveRoute(deal, 'detail_alert')}
                   disabled={busyRouteSlug === deal.routeSlug}
                 >
-                  {saved ? tt('liveDealsSavedRouteCta', 'Rotta salvata') : tt('liveDealsSaveRouteCta', 'Salva rotta')}
+                  {saved ? tt('liveDealsSavedRouteCta', 'Alert attivo') : tt('liveDealsSaveRouteCta', 'Attiva alert')}
                 </button>
               </div>
             </article>
@@ -551,12 +729,18 @@ export default function LiveDealsRadarSection(props) {
           <div className="live-deal-detail-grid">
             <p><strong>{tt('liveDealsDetailRoute', 'Tratta')}</strong><span>{selectedDeal.origin} {'->'} {selectedDeal.destination}</span></p>
             <p><strong>{tt('liveDealsDetailCurrentPrice', 'Prezzo attuale')}</strong><span>{formatPrice(selectedDeal.price, selectedDeal.currency)}</span></p>
-            <p><strong>{tt('liveDealsDetailNormalPrice', 'Prezzo normale')}</strong><span>{selectedDeal.baselinePrice ? formatPrice(selectedDeal.baselinePrice, selectedDeal.currency) : '-'}</span></p>
             <p><strong>{tt('liveDealsDetailSaving', 'Risparmio')}</strong><span>{selectedDeal.savingsPct > 0 ? `${Math.round(selectedDeal.savingsPct)}%` : formatPrice(selectedDeal.savingsAmount, selectedDeal.currency)}</span></p>
             <p><strong>{tt('liveDealsDetailType', 'Tipo deal')}</strong><span>{selectedDeal.badge}</span></p>
             <p><strong>{tt('liveDealsDetailDetectedAt', 'Ultimo rilevamento')}</strong><span>{relativeDetectedAt(selectedDeal.detectedAt, language)}</span></p>
-            <p><strong>{tt('liveDealsDetailDates', 'Date')}</strong><span>{selectedDeal.departure_date || '-'} {selectedDeal.return_date ? `- ${selectedDeal.return_date}` : ''}</span></p>
-            <p><strong>{tt('liveDealsDetailCabin', 'Cabina')}</strong><span>{String(selectedDeal.cabin_class || 'economy')}</span></p>
+            {detailLevel !== 'teaser' ? (
+              <p><strong>{tt('liveDealsDetailNormalPrice', 'Prezzo normale')}</strong><span>{selectedDeal.baselinePrice ? formatPrice(selectedDeal.baselinePrice, selectedDeal.currency) : '-'}</span></p>
+            ) : null}
+            {detailLevel === 'full' ? (
+              <>
+                <p><strong>{tt('liveDealsDetailDates', 'Date')}</strong><span>{selectedDeal.departure_date || '-'} {selectedDeal.return_date ? `- ${selectedDeal.return_date}` : ''}</span></p>
+                <p><strong>{tt('liveDealsDetailCabin', 'Cabina')}</strong><span>{String(selectedDeal.cabin_class || 'economy')}</span></p>
+              </>
+            ) : null}
           </div>
           <div className="live-deal-trust-box">
             {tt(
@@ -564,6 +748,34 @@ export default function LiveDealsRadarSection(props) {
               'Questo prezzo e stato rilevato dal nostro motore confrontandolo con lo storico della tratta.'
             )}
           </div>
+          {selectedDeal?.smartDeparture?.alternatives?.length > 0 ? (
+            <section className="live-deal-smart-departure" data-testid="live-deal-smart-departure">
+              <h4>{isEnglish ? 'Smart departure' : 'Partenza intelligente'}</h4>
+              <p className="muted">
+                {isEnglish
+                  ? 'Same destination, better starting airport when convenient.'
+                  : 'Stessa destinazione, aeroporto di partenza migliore quando conviene.'}
+              </p>
+              <div className="live-deal-smart-departure-list">
+                {selectedDeal.smartDeparture.alternatives.map((alt) => (
+                  <button
+                    type="button"
+                    key={`smart_departure_${selectedDeal.routeSlug}_${alt.origin}`}
+                    className="live-deal-smart-departure-item"
+                    onClick={() => onSmartDepartureClick(selectedDeal, alt)}
+                  >
+                    <span>{alt.origin} {'->'} {selectedDeal.destination}</span>
+                    <span>{formatPrice(alt.price, selectedDeal.currency)}</span>
+                    <span>
+                      {isEnglish
+                        ? `Save ${formatPrice(alt.savingAbs, selectedDeal.currency)}`
+                        : `Risparmi ${formatPrice(alt.savingAbs, selectedDeal.currency)}`}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          ) : null}
           <div className="item-actions">
             <button type="button" className="live-deals-primary-cta" onClick={() => openPreRedirect(selectedDeal)}>
               {tt('liveDealsGoBookingCta', 'Vai alla prenotazione')}
@@ -571,9 +783,23 @@ export default function LiveDealsRadarSection(props) {
             <button type="button" className="ghost" onClick={() => saveRoute(selectedDeal, 'detail_alert')}>
               {tt('liveDealsAlertCta', 'Attiva alert')}
             </button>
-            <button type="button" className="ghost" onClick={() => saveRoute(selectedDeal, 'detail_save_route')}>
-              {tt('liveDealsSaveRouteCta', 'Salva questa rotta')}
-            </button>
+            {detailLevel === 'full' ? (
+              <button type="button" className="ghost" onClick={() => saveRoute(selectedDeal, 'detail_save_route')}>
+                {tt('liveDealsSaveRouteCta', 'Salva questa rotta')}
+              </button>
+            ) : null}
+            {detailLevel !== 'full' ? (
+              <button
+                type="button"
+                className="ghost"
+                onClick={() => {
+                  trackCoreEvent('upgrade_started', selectedDeal, { surface: 'live_deal_detail' });
+                  onUpgradePro?.('more_deals');
+                }}
+              >
+                {tt('liveDealsUpgradeCta', 'Sblocca piu deal')}
+              </button>
+            ) : null}
           </div>
           {similarDeals.length > 0 ? (
             <div className="live-deals-similar-wrap">

@@ -98,7 +98,7 @@ test('runtime config audit blocks production when Stripe publishable key and pri
   assert.equal(audit.ok, false);
   assert.ok(audit.blockingFailedKeys.includes('STRIPE_PUBLISHABLE_KEY'));
   assert.ok(audit.blockingFailedKeys.includes('STRIPE_PRICE_PRO'));
-  assert.ok(audit.blockingFailedKeys.includes('STRIPE_PRICE_CREATOR'));
+  assert.ok(audit.blockingFailedKeys.includes('STRIPE_PRICE_ELITE'));
 });
 
 test('runtime config audit blocks production when STRIPE_SECRET_KEY is missing with billing provider stripe', () => {

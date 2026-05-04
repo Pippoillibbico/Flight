@@ -15,6 +15,7 @@ export function getErrorCode(err, status) {
   if (raw === 'registration_disabled') return 'registration_disabled';
   if (raw === 'service_unavailable') return 'service_unavailable';
   if (raw === 'premium_required') return 'premium_required';
+  if (raw === 'upgrade_required') return 'upgrade_required';
   if (raw === 'rate_limited' || raw === 'limit_exceeded') return 'rate_limited';
   if (raw === 'unauthorized' || raw === 'auth_required' || raw === 'auth_invalid' || raw === 'token_revoked') return 'unauthorized';
   if (raw === 'forbidden' || raw === 'request_forbidden' || raw === 'csrf_failed' || raw === 'insufficient_scope') return 'forbidden';
@@ -38,6 +39,7 @@ export function getHumanErrorMessage(code, fallbackMessage) {
   if (code === 'registration_disabled') return 'Registration is currently unavailable.';
   if (code === 'service_unavailable') return 'Service temporarily unavailable. Please try again shortly.';
   if (code === 'premium_required') return 'This feature requires a higher plan.';
+  if (code === 'upgrade_required') return 'Upgrade required to access this feature.';
   if (code === 'rate_limited') return 'Too many requests. Wait a moment and try again.';
   if (code === 'unauthorized') return 'Session expired. Please sign in again.';
   if (code === 'forbidden') return 'You do not have permission for this action.';

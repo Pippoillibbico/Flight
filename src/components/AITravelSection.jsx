@@ -81,7 +81,7 @@ function AITravelSection(props) {
         <p className="muted">{tt('aiTravelPageHelper', 'AI interprets your request and filters real opportunities only, without inventing flights or prices.')}</p>
         {planType === 'free' ? (
           <p className="muted ai-travel-plan-note" data-testid="ai-travel-plan-note">
-            FREE shows the top 3 AI suggestions. Upgrade to see more AI-generated itineraries.
+            Free plan does not include AI travel generation. Upgrade to Pro or Elite to use AI.
           </p>
         ) : null}
         <div className="item-actions ai-travel-actions">
@@ -92,7 +92,7 @@ function AITravelSection(props) {
       </section>
 
       {!canUseAiTravel ? (
-        <p className="error">{tt('aiTravelEliteOnly', 'AI Travel is available only on the ELITE plan.')}</p>
+        <p className="error">{tt('aiTravelEliteOnly', 'AI Travel is available on Pro and Elite plans.')}</p>
       ) : null}
       {error ? <p className="error">{error}</p> : null}
       {result?.summary ? (

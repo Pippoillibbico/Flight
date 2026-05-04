@@ -268,7 +268,22 @@ export function buildSystemRouter({
   });
 
   router.get('/api/health/security', authGuard, requireSessionAuth, adminGuard, async (_req, res) => {
-    const db = await readDb();
+    let db = null;
+    try {
+      db = await readDb();
+    } catch {
+      db = { revokedTokens: [], refreshSessions: [], oauthSessions: [] };
+      if (pgPool) {
+        const [revokedCount, refreshCount, oauthCount] = await Promise.all([
+          pgPool.query('SELECT COUNT(*)::int AS value FROM revoked_tokens').catch(() => ({ rows: [{ value: 0 }] })),
+          pgPool.query('SELECT COUNT(*)::int AS value FROM refresh_sessions').catch(() => ({ rows: [{ value: 0 }] })),
+          pgPool.query('SELECT COUNT(*)::int AS value FROM oauth_sessions').catch(() => ({ rows: [{ value: 0 }] }))
+        ]);
+        db.revokedTokens = new Array(Number(revokedCount.rows?.[0]?.value || 0));
+        db.refreshSessions = new Array(Number(refreshCount.rows?.[0]?.value || 0));
+        db.oauthSessions = new Array(Number(oauthCount.rows?.[0]?.value || 0));
+      }
+    }
     const auditChain = await verifyImmutableAudit();
     const runtimeAudit = getRuntimeConfigAudit();
     const startupReadiness = evaluateStartupReadiness();

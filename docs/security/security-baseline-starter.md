@@ -31,3 +31,7 @@ Status: Practical hardening baseline, not an absolute security guarantee.
 - Continuous SAST/DAST and dependency vulnerability gating in CI.
 - Formal threat model and penetration testing cycle.
 
+Approved by: Stefano Giustini
+Role: Founder
+Date: 2026-04-30
+

@@ -44,6 +44,19 @@ async function findProductByMetadata(stripe, planId) {
 }
 
 async function ensureProduct(stripe, { planId, name }) {
+  const envProductId =
+    planId === 'pro'
+      ? String(process.env.STRIPE_PRODUCT_PRO || '').trim()
+      : String(process.env.STRIPE_PRODUCT_ELITE || process.env.STRIPE_PRODUCT_CREATOR || '').trim();
+  if (envProductId.startsWith('prod_')) {
+    try {
+      const product = await stripe.products.retrieve(envProductId);
+      if (product?.id && !product.deleted) return product;
+    } catch {
+      // Fall through to metadata lookup/create below.
+    }
+  }
+
   const existing = await findProductByMetadata(stripe, planId);
   if (existing?.id) return existing;
 
@@ -108,16 +121,16 @@ async function run() {
   const stripe = new Stripe(secretKey, { apiVersion: STRIPE_API_VERSION });
   const currency = normalizeCurrency(process.env.STRIPE_PRICE_CURRENCY || 'EUR');
   const lookupKeyPro = String(process.env.STRIPE_PRICE_LOOKUP_KEY_PRO || 'flight_pro_monthly').trim();
-  const lookupKeyCreator = String(process.env.STRIPE_PRICE_LOOKUP_KEY_CREATOR || 'flight_creator_monthly').trim();
+  const lookupKeyElite = String(process.env.STRIPE_PRICE_LOOKUP_KEY_ELITE || process.env.STRIPE_PRICE_LOOKUP_KEY_CREATOR || 'flight_elite_monthly').trim();
 
   const proAmount = toMinorUnits(PLANS.pro?.priceEur);
-  const creatorAmount = toMinorUnits(PLANS.creator?.priceEur);
-  if (!proAmount || !creatorAmount) fail('Invalid PLANS.pro/PLANS.creator price values.');
+  const eliteAmount = toMinorUnits(PLANS.elite?.priceEur ?? PLANS.creator?.priceEur);
+  if (!proAmount || !eliteAmount) fail('Invalid PLANS.pro/PLANS.elite price values.');
 
   console.log('[stripe-sync-plans] Sync started...');
 
   const productPro = await ensureProduct(stripe, { planId: 'pro', name: 'Flight Suite Pro' });
-  const productCreator = await ensureProduct(stripe, { planId: 'creator', name: 'Flight Suite Creator' });
+  const productElite = await ensureProduct(stripe, { planId: 'elite', name: 'Flight Suite Elite' });
 
   const pricePro = await ensurePrice(stripe, {
     productId: productPro.id,
@@ -126,27 +139,27 @@ async function run() {
     unitAmount: proAmount,
     planId: 'pro'
   });
-  const priceCreator = await ensurePrice(stripe, {
-    productId: productCreator.id,
-    lookupKey: lookupKeyCreator,
+  const priceElite = await ensurePrice(stripe, {
+    productId: productElite.id,
+    lookupKey: lookupKeyElite,
     currency,
-    unitAmount: creatorAmount,
-    planId: 'creator'
+    unitAmount: eliteAmount,
+    planId: 'elite'
   });
 
   console.log('[stripe-sync-plans] Sync completed.');
   console.log('');
   console.log('Set these values in your .env:');
   console.log(`STRIPE_PRICE_PRO=${pricePro.id}`);
-  console.log(`STRIPE_PRICE_CREATOR=${priceCreator.id}`);
+  console.log(`STRIPE_PRICE_ELITE=${priceElite.id}`);
   console.log('');
   console.log('Optional lookup keys used by this script:');
   console.log(`STRIPE_PRICE_LOOKUP_KEY_PRO=${lookupKeyPro}`);
-  console.log(`STRIPE_PRICE_LOOKUP_KEY_CREATOR=${lookupKeyCreator}`);
+  console.log(`STRIPE_PRICE_LOOKUP_KEY_ELITE=${lookupKeyElite}`);
   console.log('');
   console.log('Products:');
   console.log(`PRO: ${productPro.id}`);
-  console.log(`CREATOR: ${productCreator.id}`);
+  console.log(`ELITE: ${productElite.id}`);
 }
 
 run().catch((error) => {

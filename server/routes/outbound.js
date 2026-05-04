@@ -4,6 +4,7 @@ import { format, parseISO } from 'date-fns';
 import { nanoid } from 'nanoid';
 import { z } from 'zod';
 import { buildOutboundReport, outboundReportToCsv } from '../lib/outbound-report.js';
+import { buildExportAuditEvent, createExportRateLimiter, requireExportPagination, requireExportReason } from '../lib/export-security.js';
 
 const CABIN_ENUM = ['economy', 'premium', 'business'];
 const CONNECTION_ENUM = ['all', 'direct', 'with_stops'];
@@ -179,6 +180,17 @@ function appendOutboundClick(db, payload) {
   db.outboundClicks = db.outboundClicks.slice(-5000);
 }
 
+function sanitizeTrackedUrl(rawUrl) {
+  const normalized = String(rawUrl || '').trim();
+  if (!normalized) return '';
+  try {
+    const parsed = new URL(normalized);
+    return `${parsed.origin}${parsed.pathname}`;
+  } catch {
+    return normalized.slice(0, 512);
+  }
+}
+
 export function buildOutboundRouter({
   authGuard = (_req, _res, next) => next(),
   requireSessionAuth = (_req, _res, next) => next(),
@@ -186,7 +198,12 @@ export function buildOutboundRouter({
   requireApiScope = () => (_req, _res, next) => next(),
   quotaGuard = () => (_req, _res, next) => next(),
   optionalAuth = () => null,
+  attachUserConsent = (_req, _res, next) => next(),
+  canTrack = () => false,
   withDb,
+  outboundRepo = null,
+  appendImmutableAudit = null,
+  logger = console,
   sendMachineError,
   resolveOutboundPartnerUrl,
   ensureAllowedOutboundUrl,
@@ -199,15 +216,79 @@ export function buildOutboundRouter({
   const partnerSchema = buildPartnerSchema(allowedPartners);
   const outboundClickSchema = buildOutboundClickSchema(partnerSchema);
   const outboundResolveSchema = buildOutboundResolveSchema(partnerSchema);
+  const isProduction = String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
+  const hasOutboundRepo = Boolean(outboundRepo && typeof outboundRepo.isAvailable === 'function' && outboundRepo.isAvailable());
+  const exportRateLimiter = createExportRateLimiter({ windowMs: 60_000, max: 10 });
 
-  async function recordOutboundClickEvent(payload) {
-    await withDb(async (db) => {
-      appendOutboundClick(db, payload);
-      return db;
-    });
+  async function insertOutboundRepoClick(payload, { redirectStatus = 'pending' } = {}) {
+    if (!hasOutboundRepo) return;
+    const destinationUrl = sanitizeTrackedUrl(payload?.url);
+    if (!destinationUrl) return;
+    try {
+      await outboundRepo.insertClick({
+        userId: payload?.userId || null,
+        provider: payload?.partner || payload?.provider || null,
+        itineraryId: payload?.itineraryId || payload?.clickId || null,
+        destinationUrl,
+        correlationId: payload?.correlationId || payload?.clickId || null,
+        redirectStatus
+      });
+    } catch (error) {
+      logger.warn({ err: error, payload }, 'outbound_repo_insert_click_failed');
+    }
   }
 
-  router.get('/api/outbound/resolve', async (req, res) => {
+  async function markOutboundRepoRedirectStatus(correlationId, status, failureReason = null) {
+    if (!hasOutboundRepo) return;
+    const correlation = String(correlationId || '').trim();
+    if (!correlation) return;
+    try {
+      if (status === 'succeeded') {
+        await outboundRepo.markRedirectSucceeded(correlation);
+        return;
+      }
+      await outboundRepo.markRedirectFailed(correlation, failureReason || 'unknown_failure');
+    } catch (error) {
+      logger.warn(
+        { err: error, correlationId: correlation, status, failureReason: failureReason || null },
+        'outbound_repo_mark_redirect_status_failed'
+      );
+    }
+  }
+
+  async function recordOutboundClickEvent(payload) {
+    const safePayload = payload && typeof payload === 'object'
+      ? {
+          ...payload,
+          url: sanitizeTrackedUrl(payload.url)
+        }
+      : payload;
+    if (isProduction && !hasOutboundRepo) {
+      logger.error({ payload: safePayload }, 'outbound_repo_missing_in_production');
+      return;
+    }
+    if (!isProduction) {
+      await withDb(async (db) => {
+        appendOutboundClick(db, safePayload);
+        return db;
+      });
+    }
+    const eventName = String(safePayload?.eventName || '').trim().toLowerCase();
+    if (eventName === 'booking_clicked') {
+      await insertOutboundRepoClick(safePayload, { redirectStatus: 'pending' });
+      return;
+    }
+    const correlation = safePayload?.correlationId || safePayload?.clickId || null;
+    if (eventName === 'outbound_redirect_succeeded') {
+      await markOutboundRepoRedirectStatus(correlation, 'succeeded');
+      return;
+    }
+    if (eventName === 'outbound_redirect_failed') {
+      await markOutboundRepoRedirectStatus(correlation, 'failed', safePayload?.failureReason || 'unknown_failure');
+    }
+  }
+
+  router.get('/api/outbound/resolve', attachUserConsent, async (req, res) => {
     const rawQueryLength = String(req.originalUrl || '').length;
     if (rawQueryLength > outboundMaxQueryChars) {
       return sendMachineError(req, res, 413, 'payload_too_large');
@@ -220,6 +301,7 @@ export function buildOutboundRouter({
     }
 
     const payload = parsed.data;
+    const analyticsOptIn = canTrack(req, 'analytics');
     let resolvedUrl;
     try {
       resolvedUrl = resolveOutboundPartnerUrl(payload);
@@ -240,42 +322,60 @@ export function buildOutboundRouter({
         issuedAt,
         expiresAt,
         clickToken,
-        userId: auth?.sub || null,
+        userId: analyticsOptIn ? auth?.sub || null : null,
         partner: payload.partner,
         url: resolvedUrl,
         surface: payload.surface,
-        correlationId: payload.correlationId,
-        itineraryId: payload.itineraryId,
+        correlationId: analyticsOptIn ? payload.correlationId : null,
+        itineraryId: analyticsOptIn ? payload.itineraryId : null,
         origin: payload.origin,
         destinationIata: payload.destinationIata,
         dateFrom: payload.dateFrom,
         dateTo: payload.dateTo || null,
         travellers: payload.travellers,
         cabinClass: payload.cabinClass,
-        destination: payload.destination || payload.destinationIata,
-        stopCount: payload.stopCount,
-        comfortScore: payload.comfortScore,
-        connectionType: payload.connectionType,
-        travelTime: payload.travelTime,
-        utmSource: payload.utmSource,
-        utmMedium: payload.utmMedium,
-        utmCampaign: payload.utmCampaign
+        destination: analyticsOptIn ? payload.destination || payload.destinationIata : payload.destinationIata,
+        stopCount: analyticsOptIn ? payload.stopCount : undefined,
+        comfortScore: analyticsOptIn ? payload.comfortScore : undefined,
+        connectionType: analyticsOptIn ? payload.connectionType : undefined,
+        travelTime: analyticsOptIn ? payload.travelTime : undefined,
+        utmSource: analyticsOptIn ? payload.utmSource : undefined,
+        utmMedium: analyticsOptIn ? payload.utmMedium : undefined,
+        utmCampaign: analyticsOptIn ? payload.utmCampaign : undefined,
+        analyticsOptIn
       });
       db.outboundRedirects = db.outboundRedirects
         .filter((entry) => new Date(entry.expiresAt).getTime() > Date.now())
         .slice(-10000);
       return db;
     });
+    if (analyticsOptIn) {
+      await insertOutboundRepoClick(
+        {
+          userId: auth?.sub || null,
+          partner: payload.partner,
+          itineraryId: payload.itineraryId || clickId,
+          url: resolvedUrl,
+          correlationId: payload.correlationId || clickId
+        },
+        { redirectStatus: 'pending' }
+      );
+    }
 
     res.setHeader('Cache-Control', 'no-store');
     return res.redirect(302, `/go/${clickId}`);
   });
 
-  router.get('/go/:clickId', async (req, res) => {
+  router.get('/go/:clickId', attachUserConsent, async (req, res) => {
     const clickId = String(req.params.clickId || '').trim();
     const auth = optionalAuth(req);
+    const analyticsAllowed = canTrack(req, 'analytics');
+    const recordIfAllowed = async (payload) => {
+      if (!analyticsAllowed) return;
+      await recordOutboundClickEvent(payload);
+    };
     if (!/^[A-Za-z0-9_-]{8,40}$/.test(clickId)) {
-      await recordOutboundClickEvent({
+      await recordIfAllowed({
         eventName: 'outbound_redirect_failed',
         clickId,
         userId: auth?.sub || null,
@@ -306,7 +406,7 @@ export function buildOutboundRouter({
     };
 
     if (!redirectEntry) {
-      await recordOutboundClickEvent({
+      await recordIfAllowed({
         eventName: 'outbound_redirect_failed',
         ...failureBase,
         failureReason: 'missing_redirect_entry'
@@ -322,7 +422,7 @@ export function buildOutboundRouter({
         outboundClickSecret
       })
     ) {
-      await recordOutboundClickEvent({
+      await recordIfAllowed({
         eventName: 'outbound_redirect_failed',
         ...failureBase,
         failureReason: 'invalid_click_token'
@@ -330,7 +430,7 @@ export function buildOutboundRouter({
       return sendMachineError(req, res, 400, 'request_failed', { message: 'Unable to verify the outbound link.' });
     }
     if (new Date(redirectEntry.expiresAt).getTime() <= Date.now()) {
-      await recordOutboundClickEvent({
+      await recordIfAllowed({
         eventName: 'outbound_redirect_failed',
         ...failureBase,
         failureReason: 'redirect_expired'
@@ -340,7 +440,7 @@ export function buildOutboundRouter({
     try {
       ensureAllowedOutboundUrl(redirectEntry.url);
     } catch {
-      await recordOutboundClickEvent({
+      await recordIfAllowed({
         eventName: 'outbound_redirect_failed',
         ...failureBase,
         failureReason: 'redirect_url_not_allowed'
@@ -348,33 +448,35 @@ export function buildOutboundRouter({
       return sendMachineError(req, res, 400, 'request_failed', { message: 'Partner destination not allowed.' });
     }
 
-    await recordOutboundClickEvent({
-      eventName: 'outbound_redirect_succeeded',
-      providerType: 'affiliate',
-      clickId: redirectEntry.clickId,
-      correlationId: redirectEntry.correlationId,
-      itineraryId: redirectEntry.itineraryId,
-      userId: redirectEntry.userId || auth?.sub || null,
-      partner: redirectEntry.partner,
-      url: redirectEntry.url,
-      surface: redirectEntry.surface,
-      origin: redirectEntry.origin,
-      destinationIata: redirectEntry.destinationIata,
-      destination: redirectEntry.destination,
-      stopCount: redirectEntry.stopCount,
-      comfortScore: redirectEntry.comfortScore,
-      connectionType: redirectEntry.connectionType,
-      travelTime: redirectEntry.travelTime,
-      utmSource: redirectEntry.utmSource,
-      utmMedium: redirectEntry.utmMedium,
-      utmCampaign: redirectEntry.utmCampaign
-    });
+    if (redirectEntry.analyticsOptIn !== false) {
+      await recordIfAllowed({
+        eventName: 'outbound_redirect_succeeded',
+        providerType: 'affiliate',
+        clickId: redirectEntry.clickId,
+        correlationId: redirectEntry.correlationId,
+        itineraryId: redirectEntry.itineraryId,
+        userId: redirectEntry.userId || auth?.sub || null,
+        partner: redirectEntry.partner,
+        url: redirectEntry.url,
+        surface: redirectEntry.surface,
+        origin: redirectEntry.origin,
+        destinationIata: redirectEntry.destinationIata,
+        destination: redirectEntry.destination,
+        stopCount: redirectEntry.stopCount,
+        comfortScore: redirectEntry.comfortScore,
+        connectionType: redirectEntry.connectionType,
+        travelTime: redirectEntry.travelTime,
+        utmSource: redirectEntry.utmSource,
+        utmMedium: redirectEntry.utmMedium,
+        utmCampaign: redirectEntry.utmCampaign
+      });
+    }
 
     res.setHeader('Cache-Control', 'no-store');
     return res.redirect(302, redirectEntry.url);
   });
 
-  router.post('/api/outbound/click', async (req, res) => {
+  router.post('/api/outbound/click', attachUserConsent, async (req, res) => {
     const parsed = outboundClickSchema.safeParse(req.body);
     if (!parsed.success) {
       return sendMachineError(req, res, 400, 'invalid_payload', {
@@ -383,6 +485,7 @@ export function buildOutboundRouter({
     }
 
     const auth = optionalAuth(req);
+    if (!canTrack(req, 'analytics')) return res.status(204).send();
     const payload = parsed.data;
     let resolvePayload = null;
     let resolvedUrl = '';
@@ -443,7 +546,19 @@ export function buildOutboundRouter({
       });
     }
 
+    if (matchedRedirect.analyticsOptIn === false) return res.status(204).send();
+
     if (deduped) return res.status(202).json({ ok: true, deduped: true });
+    await insertOutboundRepoClick(
+      {
+        userId: matchedRedirect.userId || null,
+        partner: matchedRedirect.partner,
+        itineraryId: matchedRedirect.itineraryId || matchedRedirect.clickId || null,
+        url: matchedRedirect.url,
+        correlationId: matchedRedirect.correlationId || matchedRedirect.clickId || null
+      },
+      { redirectStatus: 'pending' }
+    );
     return res.status(201).json({ ok: true, deduped: false });
   });
 
@@ -453,13 +568,24 @@ export function buildOutboundRouter({
     requireSessionAuth,
     adminGuard,
     requireApiScope('read'),
+    requireExportReason({ enforcePrefix: true }),
+    requireExportPagination,
+    exportRateLimiter,
     quotaGuard({ counter: 'read', amount: 1 }),
-    async (_req, res) => {
+    async (req, res) => {
       let report = null;
       await withDb(async (db) => {
         report = buildOutboundReport(db, 30);
         return null;
       });
+      if (typeof appendImmutableAudit === 'function') {
+        await appendImmutableAudit(buildExportAuditEvent(req, {
+          action: 'export',
+          targetType: 'outbound_report_json',
+          targetId: `outbound-report-json-${req.exportPagination?.page || 1}`,
+          outcome: 'success'
+        })).catch(() => {});
+      }
       return res.json(report);
     }
   );
@@ -470,8 +596,11 @@ export function buildOutboundRouter({
     requireSessionAuth,
     adminGuard,
     requireApiScope('export'),
+    requireExportReason({ enforcePrefix: true }),
+    requireExportPagination,
+    exportRateLimiter,
     quotaGuard({ counter: 'export', amount: 1 }),
-    async (_req, res) => {
+    async (req, res) => {
       let report = null;
       await withDb(async (db) => {
         report = buildOutboundReport(db, 30);
@@ -480,6 +609,14 @@ export function buildOutboundRouter({
       const csv = outboundReportToCsv(report);
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       res.setHeader('Content-Disposition', `attachment; filename="outbound-report-${format(new Date(), 'yyyyMMdd-HHmm')}.csv"`);
+      if (typeof appendImmutableAudit === 'function') {
+        await appendImmutableAudit(buildExportAuditEvent(req, {
+          action: 'export',
+          targetType: 'outbound_report_csv',
+          targetId: `outbound-report-csv-${req.exportPagination?.page || 1}`,
+          outcome: 'success'
+        })).catch(() => {});
+      }
       return res.status(200).send(csv);
     }
   );

@@ -1,31 +1,43 @@
 import type { AdminTelemetryEventPayload, AdminTelemetryEventType } from '../types/index.ts';
+import {
+  TELEMETRY_EVENTS,
+  TELEMETRY_EVENT_LEGACY_ALIASES,
+  resolveTelemetryEventType
+} from '../../../shared/telemetry/events.js';
 
 const TELEMETRY_EVENT_TYPES: AdminTelemetryEventType[] = [
-  'result_interaction_clicked',
-  'itinerary_opened',
-  'booking_clicked',
-  'live_deal_feed_view',
-  'live_deal_card_click',
-  'live_deal_detail_open',
-  'live_deal_pre_redirect_open',
-  'live_deal_redirect_confirm',
-  'live_deal_return_view',
-  'live_deal_save_route_click',
-  'live_deal_alert_click',
-  'upgrade_cta_shown',
-  'upgrade_cta_clicked',
-  'elite_cta_clicked',
-  'upgrade_modal_opened',
-  'elite_modal_opened',
-  'upgrade_primary_cta_clicked',
-  'checkout_started',
-  'checkout_completed',
-  'radar_activated',
-  'trial_banner_shown',
-  'trial_upgrade_clicked',
-  'upgrade_prompt_shown',
-  'upgrade_prompt_dismissed'
-];
+  ...new Set([
+    ...Object.values(TELEMETRY_EVENTS),
+    ...Object.keys(TELEMETRY_EVENT_LEGACY_ALIASES),
+    'homepage_viewed',
+    'teaser_deal_viewed',
+    'signup_started',
+    'signup_completed',
+    'paywall_viewed',
+    'no_deals_viewed',
+    'result_interaction_clicked',
+    'live_deal_feed_view',
+    'live_deal_card_click',
+    'live_deal_detail_open',
+    'live_deal_pre_redirect_open',
+    'live_deal_redirect_confirm',
+    'live_deal_return_view',
+    'live_deal_save_route_click',
+    'live_deal_alert_click',
+    'upgrade_cta_shown',
+    'upgrade_modal_opened',
+    'elite_modal_opened',
+    'upgrade_primary_cta_clicked',
+    'trial_banner_shown',
+    'trial_upgrade_clicked',
+    'upgrade_prompt_shown',
+    'upgrade_prompt_dismissed',
+    'alternative_departure_viewed',
+    'alternative_departure_expanded',
+    'alternative_departure_clicked',
+    'savings_hint_viewed'
+  ])
+] as AdminTelemetryEventType[];
 
 function normalizeText(value: unknown, maxLength: number): string {
   const text = String(value || '')
@@ -38,7 +50,7 @@ function normalizeText(value: unknown, maxLength: number): string {
 }
 
 function normalizeEventType(value: unknown): AdminTelemetryEventType | null {
-  const text = normalizeText(value, 80).toLowerCase() as AdminTelemetryEventType;
+  const text = resolveTelemetryEventType(normalizeText(value, 80).toLowerCase()) as AdminTelemetryEventType;
   return TELEMETRY_EVENT_TYPES.includes(text) ? text : null;
 }
 

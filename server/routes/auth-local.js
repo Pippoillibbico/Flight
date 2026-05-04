@@ -1,4 +1,12 @@
 import { Router } from 'express';
+import { z } from 'zod';
+import { getSaasPool } from '../lib/saas-db.js';
+
+const resendVerifyEmailSchema = z
+  .object({
+    email: z.string().trim().email()
+  })
+  .strict();
 
 export function buildAuthLocalRouter({
   authLimiter,
@@ -37,12 +45,19 @@ export function buildAuthLocalRouter({
   checkAndExpireTrial = async () => false
 }) {
   const router = Router();
+  const saasPool = getSaasPool();
 
   router.post('/auth/register', authLimiter, async (req, res) => {
     if (!registrationEnabled) return sendMachineError(req, res, 403, 'registration_disabled');
 
     const parsed = registerSchema.safeParse(req.body);
     if (!parsed.success) return sendMachineError(req, res, 400, 'invalid_payload');
+    const isProduction = String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
+    const smtpConfigured = Boolean(String(process.env.SMTP_HOST || '').trim() && String(process.env.SMTP_USER || '').trim());
+    if (isProduction && !smtpConfigured) {
+      logger.error({ request_id: req.id || null }, '[FATAL] SMTP must be configured in production to register users safely');
+      return sendMachineError(req, res, 503, 'smtp_required_in_production');
+    }
 
     const { name, email, password } = parsed.data;
     const normalizedEmail = email.toLowerCase();
@@ -65,31 +80,77 @@ export function buildAuthLocalRouter({
 
     let createdUser = null;
     try {
-      await withDb(async (db) => {
-        const exists = db.users.some((u) => u.email === normalizedEmail);
-        if (exists) return db;
+      if (saasPool) {
+        const existsRow = await saasPool.query(
+          'SELECT id FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1',
+          [normalizedEmail]
+        );
+        if (existsRow.rows[0]?.id) {
+          createdUser = null;
+        } else {
+          const userId = nanoid(10);
+          const inserted = await saasPool.query(
+            `INSERT INTO users (
+               id, name, email, password_hash, is_premium, plan_type, plan_status, onboarding_done,
+               mfa_enabled, mfa_secret, mfa_temp_secret, failed_login_count, lock_until,
+               auth_channel, email_verified, created_at, updated_at
+             )
+             VALUES (
+               $1, $2, $3, $4, false, 'free', 'active', false,
+               false, NULL, NULL, 0, NULL, 'email_password', false, NOW(), NOW()
+             )
+             RETURNING id, name, email, is_premium, plan_type, plan_status, onboarding_done,
+                       mfa_enabled, mfa_secret, mfa_temp_secret, failed_login_count, lock_until,
+                       auth_channel, email_verified, created_at`,
+            [userId, name, normalizedEmail, hashed]
+          );
+          const row = inserted.rows[0];
+          createdUser = {
+            id: row.id,
+            name: row.name,
+            email: row.email,
+            passwordHash: hashed,
+            isPremium: Boolean(row.is_premium),
+            planType: String(row.plan_type || 'free'),
+            planStatus: String(row.plan_status || 'active'),
+            onboardingDone: Boolean(row.onboarding_done),
+            mfaEnabled: Boolean(row.mfa_enabled),
+            mfaSecret: row.mfa_secret || null,
+            mfaTempSecret: row.mfa_temp_secret || null,
+            failedLoginCount: Number(row.failed_login_count || 0),
+            lockUntil: row.lock_until || null,
+            authChannel: String(row.auth_channel || 'email_password'),
+            emailVerified: Boolean(row.email_verified),
+            createdAt: row.created_at || new Date().toISOString()
+          };
+        }
+      } else {
+        await withDb(async (db) => {
+          const exists = db.users.some((u) => u.email === normalizedEmail);
+          if (exists) return db;
 
-        createdUser = {
-          id: nanoid(10),
-          name,
-          email: normalizedEmail,
-          passwordHash: hashed,
-          isPremium: false,
-          planType: 'free',
-          planStatus: 'active',
-          onboardingDone: false,
-          mfaEnabled: false,
-          mfaSecret: null,
-          mfaTempSecret: null,
-          failedLoginCount: 0,
-          lockUntil: null,
-          authChannel: 'email_password',
-          emailVerified: false,
-          createdAt: new Date().toISOString()
-        };
-        db.users.push(createdUser);
-        return db;
-      });
+          createdUser = {
+            id: nanoid(10),
+            name,
+            email: normalizedEmail,
+            passwordHash: hashed,
+            isPremium: false,
+            planType: 'free',
+            planStatus: 'active',
+            onboardingDone: false,
+            mfaEnabled: false,
+            mfaSecret: null,
+            mfaTempSecret: null,
+            failedLoginCount: 0,
+            lockUntil: null,
+            authChannel: 'email_password',
+            emailVerified: false,
+            createdAt: new Date().toISOString()
+          };
+          db.users.push(createdUser);
+          return db;
+        });
+      }
     } catch (error) {
       logger.error(
         {
@@ -124,7 +185,7 @@ export function buildAuthLocalRouter({
       return sendMachineError(req, res, 409, 'email_already_exists');
     }
 
-    // Email verification: send token if SMTP is configured; auto-verify otherwise.
+    // Email verification: production requires SMTP; dev/test can auto-verify when SMTP is not configured.
     const emailVerifyRawToken = randomBytes(32).toString('hex');
     const emailVerifyTokenHash = hashEmailVerifyToken(emailVerifyRawToken);
     const emailVerifyExpiry = addDays(new Date(), 3).toISOString();
@@ -134,33 +195,83 @@ export function buildAuthLocalRouter({
       subject: 'Please verify your email address',
       text: `Welcome to Flight Suite! Verify your email: ${buildEmailVerifyUrl(emailVerifyRawToken)}`,
       html: `<p>Welcome to Flight Suite!</p><p>Please verify your email address:</p><p><a href="${buildEmailVerifyUrl(emailVerifyRawToken)}">Verify email</a></p><p>This link expires in 3 days.</p>`
-    }).catch(() => ({ sent: false, skipped: true, reason: 'smtp_error' }));
+    }).catch((error) => {
+      logger.warn(
+        {
+          request_id: req.id || null,
+          user_id: createdUser.id,
+          code: 'AUTH_SECURITY_EVENT',
+          reason: 'email_verification_send_failed',
+          route: req.path,
+          err_code: String(error?.code || '').slice(0, 60),
+          err_message: String(error?.message || '').slice(0, 220)
+        },
+        'auth_email_send_failed'
+      );
+      return { sent: false, skipped: true, reason: 'smtp_error' };
+    });
 
     if (!mailResult.sent && mailResult.skipped) {
-      // SMTP not configured or unavailable — auto-verify so the app stays usable.
-      if (mailResult.reason === 'smtp_not_configured') {
+      // Dev/test fallback only. In production this path is blocked by the guard above.
+      if (mailResult.reason === 'smtp_not_configured' && !isProduction) {
         logger.warn({ userId: createdUser.id }, 'email_verification_auto_verified_smtp_not_configured');
+        const markVerifiedPromise = saasPool
+          ? saasPool.query('UPDATE users SET email_verified = true, updated_at = NOW() WHERE id = $1', [createdUser.id])
+          : withDb(async (db) => {
+              const u = db.users.find((item) => item.id === createdUser.id);
+              if (u) u.emailVerified = true;
+              return db;
+            });
+        await markVerifiedPromise.catch((error) => {
+          logger.warn(
+            {
+              request_id: req.id || null,
+              user_id: createdUser.id,
+              code: 'AUTH_SECURITY_EVENT',
+              reason: 'email_verification_autoverify_update_failed',
+              route: req.path,
+              err_code: String(error?.code || '').slice(0, 60),
+              err_message: String(error?.message || '').slice(0, 220)
+            },
+            'auth_email_verification_autoverify_update_failed'
+          );
+        });
       }
-      await withDb(async (db) => {
-        const u = db.users.find((item) => item.id === createdUser.id);
-        if (u) u.emailVerified = true;
-        return db;
-      }).catch(() => {});
     } else {
       // Store verification token for later confirmation.
-      await withDb(async (db) => {
-        db.emailVerificationTokens = db.emailVerificationTokens || [];
-        db.emailVerificationTokens.push({
-          id: nanoid(12),
-          userId: createdUser.id,
-          tokenHash: emailVerifyTokenHash,
-          expiresAt: emailVerifyExpiry,
-          usedAt: null,
-          createdAt: new Date().toISOString()
-        });
-        db.emailVerificationTokens = db.emailVerificationTokens.slice(-10000);
-        return db;
-      }).catch(() => {});
+      const persistTokenPromise = saasPool
+        ? saasPool.query(
+            `INSERT INTO email_verification_tokens (id, user_id, token_hash, expires_at, used_at, created_at)
+             VALUES ($1, $2, $3, $4::timestamptz, NULL, NOW())`,
+            [nanoid(12), createdUser.id, emailVerifyTokenHash, emailVerifyExpiry]
+          )
+        : withDb(async (db) => {
+            db.emailVerificationTokens = db.emailVerificationTokens || [];
+            db.emailVerificationTokens.push({
+              id: nanoid(12),
+              userId: createdUser.id,
+              tokenHash: emailVerifyTokenHash,
+              expiresAt: emailVerifyExpiry,
+              usedAt: null,
+              createdAt: new Date().toISOString()
+            });
+            db.emailVerificationTokens = db.emailVerificationTokens.slice(-10000);
+            return db;
+          });
+      await persistTokenPromise.catch((error) => {
+        logger.warn(
+          {
+            request_id: req.id || null,
+            user_id: createdUser.id,
+            code: 'AUTH_SECURITY_EVENT',
+            reason: 'email_verification_token_store_failed',
+            route: req.path,
+            err_code: String(error?.code || '').slice(0, 60),
+            err_message: String(error?.message || '').slice(0, 220)
+          },
+          'auth_email_verification_token_store_failed'
+        );
+      });
     }
 
     // Grant a time-limited premium trial to the new user (non-blocking).
@@ -214,7 +325,20 @@ export function buildAuthLocalRouter({
         success: false,
         req,
         detail: 'Session issuance failed.'
-      }).catch(() => {});
+      }).catch((error) => {
+        logger.warn(
+          {
+            request_id: req.id || null,
+            user_id: createdUser.id,
+            code: 'AUTH_SECURITY_EVENT',
+            reason: 'register_session_issue_audit_write_failed',
+            route: req.path,
+            err_code: String(error?.code || '').slice(0, 60),
+            err_message: String(error?.message || '').slice(0, 220)
+          },
+          'auth_register_session_issue_audit_write_failed'
+        );
+      });
       return sendMachineError(req, res, 503, 'service_unavailable');
     }
 
@@ -520,7 +644,20 @@ export function buildAuthLocalRouter({
         subject: 'Password reset request',
         text: `Use this secure link to reset your password: ${resetUrl}`,
         html: `<p>Use this secure link to reset your password:</p><p><a href="${resetUrl}">${resetUrl}</a></p>`
-      }).catch(() => {});
+      }).catch((error) => {
+        logger.warn(
+          {
+            request_id: req.id || null,
+            user_id: user.id,
+            code: 'AUTH_SECURITY_EVENT',
+            reason: 'password_reset_email_send_failed',
+            route: req.path,
+            err_code: String(error?.code || '').slice(0, 60),
+            err_message: String(error?.message || '').slice(0, 220)
+          },
+          'auth_password_reset_email_send_failed'
+        );
+      });
 
       await logAuthEvent({
         userId: user.id,
@@ -614,14 +751,28 @@ export function buildAuthLocalRouter({
       return res.status(400).json({ error: 'invalid_or_expired_token', message: 'Invalid or expired verification token.' });
     }
 
-    await logAuthEvent({ userId: verifiedUser.id, email: verifiedUser.email, type: 'email_verified', success: true, req }).catch(() => {});
+    await logAuthEvent({ userId: verifiedUser.id, email: verifiedUser.email, type: 'email_verified', success: true, req }).catch((error) => {
+      logger.warn(
+        {
+          request_id: req.id || null,
+          user_id: verifiedUser.id,
+          code: 'AUTH_SECURITY_EVENT',
+          reason: 'email_verified_audit_write_failed',
+          route: req.path,
+          err_code: String(error?.code || '').slice(0, 60),
+          err_message: String(error?.message || '').slice(0, 220)
+        },
+        'auth_email_verified_audit_write_failed'
+      );
+    });
     return res.json({ ok: true });
   });
 
   router.post('/auth/verify-email/resend', authLimiter, async (req, res) => {
     // Accepts { email } for unauthenticated resend (e.g. post-register before session expires).
-    const rawEmail = String(req.body?.email || '').toLowerCase().trim();
-    if (!rawEmail) return sendMachineError(req, res, 400, 'invalid_payload');
+    const parsed = resendVerifyEmailSchema.safeParse(req.body || {});
+    if (!parsed.success) return sendMachineError(req, res, 400, 'invalid_payload');
+    const rawEmail = parsed.data.email.toLowerCase();
 
     let targetUser = null;
     await withDb(async (db) => {
@@ -653,7 +804,20 @@ export function buildAuthLocalRouter({
       subject: 'Verify your email address',
       text: `Verify your email: ${buildEmailVerifyUrl(rawToken)}`,
       html: `<p>Please verify your email address:</p><p><a href="${buildEmailVerifyUrl(rawToken)}">Verify email</a></p><p>This link expires in 3 days.</p>`
-    }).catch(() => {});
+    }).catch((error) => {
+      logger.warn(
+        {
+          request_id: req.id || null,
+          user_id: targetUser.id,
+          code: 'AUTH_SECURITY_EVENT',
+          reason: 'email_verification_resend_send_failed',
+          route: req.path,
+          err_code: String(error?.code || '').slice(0, 60),
+          err_message: String(error?.message || '').slice(0, 220)
+        },
+        'auth_email_verification_resend_send_failed'
+      );
+    });
 
     return res.json({ ok: true });
   });

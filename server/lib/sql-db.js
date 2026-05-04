@@ -2,6 +2,7 @@ import { mkdir, readdir, readFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
+import { hashValueForLogs, sanitizeHeaderLikeValue } from './log-redaction.js';
 
 let sqliteDb = null;
 let pgPool = null;
@@ -19,6 +20,41 @@ const MIGRATIONS_DIR = fileURLToPath(new URL('../migrations', import.meta.url));
 function toNumber(value) {
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
+}
+
+function normalizeEmailValue(rawValue) {
+  const normalized = String(rawValue || '')
+    .trim()
+    .toLowerCase();
+  return normalized || '';
+}
+
+function maskEmailValue(rawValue) {
+  const email = normalizeEmailValue(rawValue);
+  if (!email || !email.includes('@')) return 'masked_email';
+  const [localRaw, domainRaw] = email.split('@');
+  const local = String(localRaw || '');
+  const domain = String(domainRaw || '');
+  const prefix = local.length <= 2 ? `${local.slice(0, 1)}*` : `${local.slice(0, 2)}***`;
+  const suffix = domain || 'masked.invalid';
+  return `${prefix}@${suffix}`;
+}
+
+function normalizeEmailForDb(rawValue) {
+  const normalized = normalizeEmailValue(rawValue);
+  if (!normalized) return { masked: 'masked_email', hash: null };
+  return {
+    masked: maskEmailValue(normalized),
+    hash: hashValueForLogs(normalized, { label: 'email', length: 24 }) || null
+  };
+}
+
+function sanitizeProviderErrorMessage(rawValue) {
+  const trimmed = sanitizeHeaderLikeValue(rawValue, { maxLength: 320 });
+  if (!trimmed) return null;
+  return trimmed
+    .replace(/bearer\s+[a-z0-9\-._~+/]+=*/gi, 'bearer [REDACTED]')
+    .replace(/\b(api[_-]?key|token|secret|password|authorization)\b\s*[:=]\s*[^,\s;]+/gi, '$1=[REDACTED]');
 }
 
 async function runPgMigrations() {
@@ -147,10 +183,16 @@ function ensureSqliteColumn(tableName, columnName, definition) {
 }
 
 export async function initSqlDb() {
-  if (process.env.DATABASE_URL) {
+  const databaseUrl = String(process.env.DATABASE_URL || '').trim();
+  const isProduction = String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
+
+  if (databaseUrl) {
     mode = 'postgres';
     await ensurePg();
     return;
+  }
+  if (isProduction) {
+    throw new Error('[FATAL] DATABASE_URL required in production. SQLite fallback is not allowed.');
   }
   mode = 'sqlite';
   await ensureSqlite();
@@ -192,11 +234,17 @@ export async function insertSearchEvent({ userId, channel = 'unknown', origin, r
 }
 
 export async function insertEmailDeliveryLog({ userId, email, subject, status, providerMessageId = null, errorMessage = null }) {
+  const normalizedEmail = normalizeEmailForDb(email);
+  const safeErrorMessage = sanitizeProviderErrorMessage(errorMessage);
+  const safeProviderMessageId = providerMessageId ? sanitizeHeaderLikeValue(providerMessageId, { maxLength: 120 }) : null;
+  const safeStatus = sanitizeHeaderLikeValue(status, { maxLength: 32 }) || 'unknown';
+  const safeSubject = sanitizeHeaderLikeValue(subject, { maxLength: 180 }) || '(empty)';
+  const emailFieldValue = normalizedEmail.hash ? `${normalizedEmail.masked}|h:${normalizedEmail.hash}` : normalizedEmail.masked;
   if (mode === 'postgres') {
     await pgPool.query(
       `INSERT INTO email_delivery_log (user_id, email, subject, status, provider_message_id, error_message, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-      [userId || null, email, subject, status, providerMessageId, errorMessage]
+      [userId || null, emailFieldValue, safeSubject, safeStatus, safeProviderMessageId, safeErrorMessage]
     );
     return;
   }
@@ -205,7 +253,7 @@ export async function insertEmailDeliveryLog({ userId, email, subject, status, p
       `INSERT INTO email_delivery_log (user_id, email, subject, status, provider_message_id, error_message, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(userId || null, email, subject, status, providerMessageId, errorMessage, new Date().toISOString());
+    .run(userId || null, emailFieldValue, safeSubject, safeStatus, safeProviderMessageId, safeErrorMessage, new Date().toISOString());
 }
 
 function toNullableText(value) {

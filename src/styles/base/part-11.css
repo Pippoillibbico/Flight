@@ -23,11 +23,15 @@
   display: none;
   flex-direction: column;
   justify-content: center;
+  align-items: center;
   gap: 5px;
   background: none;
   border: none;
-  padding: 6px;
+  padding: 8px;
   cursor: pointer;
+  min-width: 40px;
+  min-height: 40px;
+  border-radius: 10px;
   min-height: unset !important;
   box-shadow: none !important;
 }
@@ -88,7 +92,8 @@
 
 .landing-mobile-signin {
   margin-top: 4px;
-  align-self: flex-start;
+  align-self: stretch;
+  width: 100%;
 }
 
 /* Trust badges below hero CTA */
@@ -197,7 +202,7 @@
 }
 
 /* Responsive — show hamburger, hide desktop nav on mobile */
-@media (max-width: 700px) {
+@media (max-width: 1180px) {
   .landing-nav {
     display: none;
   }
@@ -226,6 +231,30 @@
   .landing-footer-inner {
     flex-direction: column;
     align-items: flex-start;
+  }
+}
+
+@media (max-width: 480px) {
+  .landing-header {
+    padding: 10px 12px;
+    gap: 10px;
+  }
+
+  .landing-brand-logo svg,
+  .hero-brand-logo svg {
+    height: 36px;
+  }
+
+  .landing-mobile-nav {
+    margin-inline: 12px;
+    padding: 10px 12px;
+  }
+}
+
+@media (max-width: 360px) {
+  .landing-brand-logo svg,
+  .hero-brand-logo svg {
+    height: 32px;
   }
 }
 

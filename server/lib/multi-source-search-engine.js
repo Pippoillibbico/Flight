@@ -171,7 +171,8 @@ function enrichOffer(offer) {
     price:          offer.totalPrice,
     cabin_class:    offer.cabinClass,
     trip_type:      offer.tripType,
-    travellers:     1
+    travellers:     1,
+    metadata:       offer.metadata || {}
   });
 
   return {

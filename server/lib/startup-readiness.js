@@ -1,7 +1,7 @@
 import { getRuntimeConfigAudit } from './runtime-config.js';
 
 function parseCorsOrigins(env) {
-  return [env.CORS_ORIGIN, env.FRONTEND_ORIGIN, env.CORS_ALLOWLIST]
+  return [env.CORS_ORIGIN, env.CORS_ALLOWED_ORIGINS, env.FRONTEND_ORIGIN, env.CORS_ALLOWLIST]
     .filter((value) => String(value || '').trim().length > 0)
     .join(',')
     .split(',')

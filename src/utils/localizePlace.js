@@ -191,15 +191,31 @@ const COUNTRY_FALLBACK_TRANSLATIONS = {
 
 const CITY_FALLBACK_TRANSLATIONS = {
   it: {
+    ajaccio: 'Ajaccio',
     lisbon: 'Lisbona',
     barcelona: 'Barcellona',
     athens: 'Atene',
     berlin: 'Berlino',
+    bilbao: 'Bilbao',
+    edinburgh: 'Edimburgo',
+    faro: 'Faro',
+    fuerteventura: 'Fuerteventura',
+    ibiza: 'Ibiza',
+    innsbruck: 'Innsbruck',
+    jersey: 'Jersey',
+    karachi: 'Karachi',
     london: 'Londra',
+    madrid: 'Madrid',
+    milan: 'Milano',
+    'new york': 'New York',
+    nantes: 'Nantes',
     paris: 'Parigi',
+    porto: 'Porto',
     munich: 'Monaco di Baviera',
     cologne: 'Colonia',
-    vienna: 'Vienna'
+    vienna: 'Vienna',
+    warsaw: 'Varsavia',
+    zurich: 'Zurigo'
   },
   de: {
     lisbon: 'Lissabon',
@@ -217,6 +233,41 @@ const CITY_FALLBACK_TRANSLATIONS = {
   pt: {
     lisbon: 'Lisboa'
   }
+};
+
+const AIRPORT_CITY_FALLBACKS = {
+  ATH: 'Athens',
+  BCN: 'Barcelona',
+  BGY: 'Milan',
+  CIA: 'Rome',
+  FCO: 'Rome',
+  LIN: 'Milan',
+  LIS: 'Lisbon',
+  MXP: 'Milan',
+  ORY: 'Paris',
+  CDG: 'Paris',
+  STN: 'London',
+
+  // Demo/internal feed codes. Surface readable city names in the UI instead of
+  // leaking synthetic airport-like identifiers.
+  AXJ: 'Ajaccio',
+  ENR: 'Edinburgh',
+  EPG: 'Porto',
+  FMI: 'Milan',
+  FMZ: 'Fuerteventura',
+  FNL: 'Faro',
+  FOA: 'Faro',
+  IEU: 'Ibiza',
+  IFX: 'Innsbruck',
+  JBX: 'Bilbao',
+  JEH: 'Milan',
+  JEY: 'Jersey',
+  JFK: 'New York',
+  KHI: 'Karachi',
+  NWT: 'Nantes',
+  WXX: 'Warsaw',
+  XDA: 'Madrid',
+  ZCQ: 'Zurich'
 };
 
 function normalizeLanguage(language) {
@@ -356,6 +407,40 @@ function normalizeAirportCode(value) {
   return /^[A-Z]{3}$/.test(code) ? code : '';
 }
 
+export function resolveAirportCityName(value, language) {
+  const airport = normalizeAirportCode(value);
+  if (!airport) return localizeCityName(value, language);
+  const cityName = AIRPORT_CITY_FALLBACKS[airport];
+  return cityName ? localizeCityName(cityName, language) : airport;
+}
+
+export function resolvePlaceDisplayName(place, language) {
+  if (!place || typeof place !== 'object') return resolveAirportCityName(place, language);
+  const cityName = String(place.city || place.city_name || '').trim();
+  if (cityName) return localizeCityName(cityName, language);
+  return resolveAirportCityName(place.airport || place.airport_code || place.fallback, language);
+}
+
+export function formatRouteDisplayName(item, language) {
+  const origin = resolvePlaceDisplayName(
+    {
+      city: item?.origin_city,
+      airport: item?.origin_airport,
+      fallback: item?.origin
+    },
+    language
+  );
+  const destination = resolvePlaceDisplayName(
+    {
+      city: item?.destination_city,
+      airport: item?.destination_airport,
+      fallback: item?.destination
+    },
+    language
+  );
+  return `${origin || 'Origin'} -> ${destination || 'Destination'}`;
+}
+
 function getClusterRepresentativeAirport(cluster) {
   if (!cluster || typeof cluster !== 'object') return '';
   return (
@@ -374,6 +459,12 @@ export function localizeClusterDisplayName(clusterOrName, language) {
 
   const airport = getClusterRepresentativeAirport(clusterOrName);
   if (!airport) return localizedName;
+
+  const airportCity = resolveAirportCityName(airport, language);
+  const nameLooksLikeCode = normalizeAirportCode(localizedName);
+  if (airportCity && airportCity !== airport && (nameLooksLikeCode || normalizeText(localizedName) === normalizeText(clusterOrName.slug))) {
+    return airportCity;
+  }
 
   const normalizedName = String(localizedName).trim();
   if (normalizedName.toUpperCase() === airport) return normalizedName;

@@ -30,8 +30,8 @@ function safePositiveInt(rawValue, fallback, { min = 1, max = Number.MAX_SAFE_IN
   return Math.max(min, Math.min(max, Math.trunc(parsed)));
 }
 
-const AUTH_EVENTS_RETENTION_DAYS = safePositiveInt(process.env.DATA_RETENTION_AUTH_EVENTS_DAYS, 180, { min: 7, max: 3650 });
-const CLIENT_TELEMETRY_RETENTION_DAYS = safePositiveInt(process.env.DATA_RETENTION_CLIENT_TELEMETRY_DAYS, 120, { min: 7, max: 3650 });
+const AUTH_EVENTS_RETENTION_DAYS = safePositiveInt(process.env.DATA_RETENTION_AUTH_EVENTS_DAYS, 90, { min: 7, max: 3650 });
+const CLIENT_TELEMETRY_RETENTION_DAYS = safePositiveInt(process.env.DATA_RETENTION_CLIENT_TELEMETRY_DAYS, 180, { min: 7, max: 3650 });
 const OUTBOUND_EVENTS_RETENTION_DAYS = safePositiveInt(process.env.DATA_RETENTION_OUTBOUND_EVENTS_DAYS, 180, { min: 7, max: 3650 });
 const AUTH_EVENTS_MAX_ITEMS = safePositiveInt(process.env.DATA_RETENTION_AUTH_EVENTS_MAX, 3000, { min: 100, max: 50000 });
 const CLIENT_TELEMETRY_MAX_ITEMS = safePositiveInt(process.env.DATA_RETENTION_CLIENT_TELEMETRY_MAX, 12000, { min: 100, max: 100000 });
@@ -53,8 +53,9 @@ const initialData = {
   oauthSessions: [],
   subscriptionPricing: {
     free: { monthlyEur: 0 },
-    pro: { monthlyEur: 12.99 },
-    creator: { monthlyEur: 29.99 },
+    pro: { monthlyEur: 12 },
+    elite: { monthlyEur: 22 },
+    creator: { monthlyEur: 22 },
     updatedAt: null,
     lastCostCheckAt: null
   },
@@ -72,6 +73,8 @@ const initialData = {
   freeTravelScores: [],
   freeAlertSignals: [],
   stripeWebhookEvents: [],
+  userConsents: [],
+  consentSessions: [],
   radarPreferences: [],
   radarMatchSnapshots: [],
   pushDeadLetters: [],
@@ -80,6 +83,19 @@ const initialData = {
 
 let queue = Promise.resolve();
 let maintenancePromise = null;
+
+function ensureJsonDbAllowed(operation) {
+  const isProduction = String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
+  if (!isProduction) return;
+  const insecureBypassEnabled =
+    String(process.env.ALLOW_INSECURE_STARTUP_FOR_TESTS || '').trim().toLowerCase() === 'true' &&
+    String(process.env.ALLOW_INSECURE_STARTUP_IN_PRODUCTION || '').trim().toLowerCase() === 'true';
+  if (insecureBypassEnabled) return;
+  if (operation === 'withDb') {
+    throw new Error('[FATAL] withDb JSON store is not allowed in production. Use repository/Postgres instead.');
+  }
+  throw new Error('[FATAL] readDb JSON store is not allowed in production. Use repository/Postgres instead.');
+}
 
 function eventTimestampMs(record, dateKeys = ['at']) {
   if (!record || typeof record !== 'object') return Number.NaN;
@@ -149,6 +165,8 @@ function normalizeDb(parsed) {
     freeTravelScores: parsed.freeTravelScores ?? [],
     freeAlertSignals: parsed.freeAlertSignals ?? [],
     stripeWebhookEvents: parsed.stripeWebhookEvents ?? [],
+    userConsents: parsed.userConsents ?? [],
+    consentSessions: parsed.consentSessions ?? [],
     radarPreferences: parsed.radarPreferences ?? [],
     radarMatchSnapshots: parsed.radarMatchSnapshots ?? [],
     pushDeadLetters: parsed.pushDeadLetters ?? []
@@ -221,6 +239,7 @@ async function ensureDb() {
 }
 
 export async function readDb() {
+  ensureJsonDbAllowed('readDb');
   await ensureDb();
   const primary = await readJsonSafe(DB_FILE);
   if (primary.ok) return normalizeDb(primary.value || {});
@@ -264,6 +283,7 @@ export async function writeDb(nextData) {
 }
 
 export function withDb(task) {
+  ensureJsonDbAllowed('withDb');
   queue = queue.then(async () => {
     const db = await readDb();
     const next = await task(db);

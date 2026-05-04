@@ -1,4 +1,3 @@
-import { useCallback } from 'react';
 import { setCsrfToken, COOKIE_SESSION_TOKEN } from '../../../api';
 
 export function useAuthSessionActions({
@@ -40,7 +39,8 @@ export function useAuthSessionActions({
   clearLocalTravelData,
   clearConsent,
   writeRememberedEmail,
-  clearRememberedEmail
+  clearRememberedEmail,
+  sendAdminTelemetryEvent
 }) {
   async function completeAuthSession(payload) {
     setToken(COOKIE_SESSION_TOKEN);
@@ -72,6 +72,13 @@ export function useAuthSessionActions({
     event.preventDefault();
     setAuthError('');
     try {
+      if (authMode === 'register' && typeof sendAdminTelemetryEvent === 'function') {
+        sendAdminTelemetryEvent({
+          eventType: 'signup_started',
+          source: 'auth_form',
+          surface: 'auth_register'
+        });
+      }
       if (authMode === 'register') {
         const pass = String(authForm.password || '');
         const confirm = String(authForm.confirmPassword || '');
@@ -101,6 +108,13 @@ export function useAuthSessionActions({
         }
       }
       await completeAuthSession(payload);
+      if (authMode === 'register' && typeof sendAdminTelemetryEvent === 'function') {
+        sendAdminTelemetryEvent({
+          eventType: 'signup_completed',
+          source: 'auth_form',
+          surface: 'auth_register'
+        });
+      }
     } catch (error) {
       setAuthError(resolveApiError(error));
     }
@@ -126,29 +140,10 @@ export function useAuthSessionActions({
   }
 
   async function loginWithGoogle() {
-    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-    if (!clientId) {
-      setAuthError(t('oauthNotAvailable'));
-      return;
-    }
     startSocialLogin('google');
   }
 
-  async function loginWithApple() {
-    const clientId = import.meta.env.VITE_APPLE_CLIENT_ID;
-    if (!clientId) {
-      setAuthError(t('oauthNotAvailable'));
-      return;
-    }
-    startSocialLogin('apple');
-  }
-
   async function loginWithFacebook() {
-    const clientId = import.meta.env.VITE_FACEBOOK_CLIENT_ID;
-    if (!clientId) {
-      setAuthError(t('oauthNotAvailable'));
-      return;
-    }
     startSocialLogin('facebook');
   }
 
@@ -221,12 +216,6 @@ export function useAuthSessionActions({
     }
   }
 
-  const openOnboardingSetup = useCallback(() => {
-    setAuthError('');
-    setShowAccountPanel(false);
-    setShowOnboarding(true);
-  }, [setAuthError, setShowAccountPanel, setShowOnboarding]);
-
   async function logout() {
     try {
       await api.logout(token);
@@ -267,14 +256,12 @@ export function useAuthSessionActions({
     submitAuth,
     submitLoginMfa,
     loginWithGoogle,
-    loginWithApple,
     loginWithFacebook,
     setupMfa,
     resetMfaSetup,
     enableMfa,
     disableMfa,
     finishOnboarding,
-    openOnboardingSetup,
     logout,
     deleteAccount
   };

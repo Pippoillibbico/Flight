@@ -1,5 +1,6 @@
 import { addDays, differenceInCalendarDays, format, parseISO } from 'date-fns';
 import { extractUpgradeContext } from '../../../utils/handleApiError';
+import { TELEMETRY_EVENTS } from '../../../shared/telemetry/events.js';
 
 export function useSearchFlowActions({
   api,
@@ -50,7 +51,7 @@ export function useSearchFlowActions({
   }
   async function submitSearch(event) {
     event.preventDefault();
-    trackSearchEvent('search_submitted', {
+    trackSearchEvent(TELEMETRY_EVENTS.SEARCH_SUBMITTED, {
       extra:
         searchMode === 'multi_city'
           ? { multiCitySegments: Array.isArray(multiCitySegments) ? multiCitySegments.length : 0 }

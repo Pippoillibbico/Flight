@@ -1,4 +1,4 @@
-export type AdminPlanType = 'free' | 'pro' | 'elite';
+export type AdminPlanType = 'free' | 'pro' | 'elite' | 'creator';
 
 export interface AdminOverviewMetrics {
   totalUsers: number;
@@ -104,6 +104,16 @@ export interface AdminDashboardApi {
 }
 
 export type AdminTelemetryEventType =
+  | 'homepage_viewed'
+  | 'teaser_deal_viewed'
+  | 'deal_opened'
+  | 'outbound_clicked'
+  | 'signup_started'
+  | 'signup_completed'
+  | 'upgrade_started'
+  | 'upgrade_completed'
+  | 'paywall_viewed'
+  | 'no_deals_viewed'
   | 'result_interaction_clicked'
   | 'itinerary_opened'
   | 'booking_clicked'
@@ -115,6 +125,10 @@ export type AdminTelemetryEventType =
   | 'live_deal_return_view'
   | 'live_deal_save_route_click'
   | 'live_deal_alert_click'
+  | 'alternative_departure_viewed'
+  | 'alternative_departure_expanded'
+  | 'alternative_departure_clicked'
+  | 'savings_hint_viewed'
   | 'upgrade_cta_shown'
   | 'upgrade_cta_clicked'
   | 'elite_cta_clicked'

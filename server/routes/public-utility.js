@@ -1,4 +1,16 @@
 import express from 'express';
+import { z } from 'zod';
+
+const affiliateLinksQuerySchema = z
+  .object({
+    origin: z.string().trim().regex(/^[A-Za-z]{3}$/),
+    destination: z.string().trim().regex(/^[A-Za-z]{3}$/),
+    dateFrom: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/),
+    dateTo: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    travellers: z.coerce.number().int().min(1).max(9).optional().default(1),
+    cabin: z.enum(['economy', 'premium', 'business']).optional().default('economy')
+  })
+  .strict();
 
 export function buildPublicUtilityRouter({
   buildAllAffiliateLinks,
@@ -14,17 +26,16 @@ export function buildPublicUtilityRouter({
   const router = express.Router();
 
   router.get('/api/affiliate/links', async (req, res) => {
-    const { origin, destination, dateFrom, dateTo, travellers = '1', cabin = 'economy' } = req.query;
-    if (!origin || !destination || !dateFrom) {
-      return res.status(400).json({ error: 'origin, destination and dateFrom are required.' });
-    }
+    const parsed = affiliateLinksQuerySchema.safeParse(req.query || {});
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid query.' });
+    const { origin, destination, dateFrom, dateTo, travellers, cabin } = parsed.data;
     const links = buildAllAffiliateLinks({
-      origin: String(origin).toUpperCase().slice(0, 3),
-      destinationIata: String(destination).toUpperCase().slice(0, 3),
-      dateFrom: String(dateFrom).slice(0, 10),
-      dateTo: dateTo ? String(dateTo).slice(0, 10) : null,
-      travellers: Math.min(9, Math.max(1, Number(travellers) || 1)),
-      cabinClass: ['economy', 'premium', 'business'].includes(String(cabin)) ? cabin : 'economy'
+      origin: origin.toUpperCase(),
+      destinationIata: destination.toUpperCase(),
+      dateFrom,
+      dateTo: dateTo || null,
+      travellers,
+      cabinClass: cabin
     });
     return res.json({ links });
   });

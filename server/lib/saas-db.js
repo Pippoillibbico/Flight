@@ -764,13 +764,14 @@ export async function getPricingConfig() {
   const db = await readDb();
   const stored = db.subscriptionPricing || {};
   const free = Number(process.env.PRICING_FREE_EUR ?? stored.free?.monthlyEur ?? PLANS.free.priceEur);
-  const pro = Number(process.env.PRICING_PRO_EUR ?? stored.pro?.monthlyEur ?? PLANS.pro.priceEur);
-  const creator = Number(process.env.PRICING_CREATOR_EUR ?? stored.creator?.monthlyEur ?? PLANS.creator.priceEur);
+  const pro = Number(process.env.PRICING_PRO_EUR ?? 12);
+  const elite = Number(process.env.PRICING_ELITE_EUR ?? process.env.PRICING_CREATOR_EUR ?? 22);
   return {
     pricing: {
       free: { monthlyEur: free },
       pro: { monthlyEur: pro },
-      creator: { monthlyEur: creator },
+      elite: { monthlyEur: elite },
+      creator: { monthlyEur: elite },
       updatedAt: stored.updatedAt || null,
       lastCostCheckAt: stored.lastCostCheckAt || null
     },

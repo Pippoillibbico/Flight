@@ -24,14 +24,17 @@ function withStripeSecret(secret, fn) {
 
 function withStripePrices(fn) {
   const prevPro = process.env.STRIPE_PRICE_PRO;
+  const prevElite = process.env.STRIPE_PRICE_ELITE;
   const prevCreator = process.env.STRIPE_PRICE_CREATOR;
   process.env.STRIPE_PRICE_PRO = process.env.STRIPE_PRICE_PRO || 'price_pro_test_123';
-  process.env.STRIPE_PRICE_CREATOR = process.env.STRIPE_PRICE_CREATOR || 'price_creator_test_123';
+  process.env.STRIPE_PRICE_ELITE = process.env.STRIPE_PRICE_ELITE || process.env.STRIPE_PRICE_CREATOR || 'price_elite_test_123';
   return Promise.resolve()
     .then(fn)
     .finally(() => {
       if (prevPro === undefined) delete process.env.STRIPE_PRICE_PRO;
       else process.env.STRIPE_PRICE_PRO = prevPro;
+      if (prevElite === undefined) delete process.env.STRIPE_PRICE_ELITE;
+      else process.env.STRIPE_PRICE_ELITE = prevElite;
       if (prevCreator === undefined) delete process.env.STRIPE_PRICE_CREATOR;
       else process.env.STRIPE_PRICE_CREATOR = prevCreator;
     });
@@ -442,10 +445,12 @@ test('billing checkout does not allow inline price-data fallback in production',
   const prevEnv = process.env.NODE_ENV;
   const prevInline = process.env.STRIPE_ALLOW_INLINE_PRICE_DATA;
   const prevPro = process.env.STRIPE_PRICE_PRO;
+  const prevElite = process.env.STRIPE_PRICE_ELITE;
   const prevCreator = process.env.STRIPE_PRICE_CREATOR;
   process.env.NODE_ENV = 'production';
   process.env.STRIPE_ALLOW_INLINE_PRICE_DATA = 'true';
   delete process.env.STRIPE_PRICE_PRO;
+  delete process.env.STRIPE_PRICE_ELITE;
   delete process.env.STRIPE_PRICE_CREATOR;
 
   const app = createApp({
@@ -472,6 +477,8 @@ test('billing checkout does not allow inline price-data fallback in production',
     else process.env.STRIPE_ALLOW_INLINE_PRICE_DATA = prevInline;
     if (prevPro === undefined) delete process.env.STRIPE_PRICE_PRO;
     else process.env.STRIPE_PRICE_PRO = prevPro;
+    if (prevElite === undefined) delete process.env.STRIPE_PRICE_ELITE;
+    else process.env.STRIPE_PRICE_ELITE = prevElite;
     if (prevCreator === undefined) delete process.env.STRIPE_PRICE_CREATOR;
     else process.env.STRIPE_PRICE_CREATOR = prevCreator;
   }
@@ -512,7 +519,7 @@ test('billing portal creates a Stripe customer portal session', async () => {
 test('billing change-plan updates Stripe subscription price and returns normalized subscription', async () => {
   const calls = { update: [] };
   await withStripePrices(async () => {
-    const expectedCreatorPrice = String(process.env.STRIPE_PRICE_CREATOR || '');
+    const expectedElitePrice = String(process.env.STRIPE_PRICE_ELITE || '');
     const stripeClient = {
       subscriptions: {
         retrieve: async () => ({
@@ -539,7 +546,7 @@ test('billing change-plan updates Stripe subscription price and returns normaliz
             current_period_end: 1702678400,
             metadata: { user_id: 'user_1', plan_type: 'elite' },
             items: {
-              data: [{ id: 'si_test_001', price: { id: expectedCreatorPrice } }]
+              data: [{ id: 'si_test_001', price: { id: expectedElitePrice } }]
             }
           };
         }
@@ -574,13 +581,13 @@ test('billing change-plan updates Stripe subscription price and returns normaliz
       const body = await response.json();
       assert.equal(body.ok, true);
       assert.equal(body.provider, 'stripe');
-      assert.equal(body.subscription.planId, 'creator');
+      assert.equal(body.subscription.planId, 'elite');
       assert.equal(body.subscription.planType, 'elite');
       assert.equal(body.subscription.status, 'active');
     });
 
     assert.equal(calls.update.length, 1);
-    assert.equal(calls.update[0].items[0].price, expectedCreatorPrice);
+    assert.equal(calls.update[0].items[0].price, expectedElitePrice);
   });
 });
 

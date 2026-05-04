@@ -52,6 +52,7 @@ function buildServerEnv() {
   env.DATABASE_URL = '';
   env.REDIS_URL = '';
   env.ALLOW_INSECURE_STARTUP_FOR_TESTS = 'true';
+  env.ALLOW_INSECURE_STARTUP_TEST_CONTEXT = 'true';
   env.CORS_ORIGIN = String(env.CORS_ORIGIN || 'http://localhost:5173').trim();
   env.FRONTEND_ORIGIN = String(env.FRONTEND_ORIGIN || 'http://localhost:5173').trim();
   env.JWT_SECRET = ensureMinSecret(env.JWT_SECRET, 'smoke_local_jwt_secret_1234567890123456');

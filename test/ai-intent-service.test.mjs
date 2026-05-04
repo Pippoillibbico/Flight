@@ -40,7 +40,7 @@ test('parseIntentWithAi skips provider call when heuristic confidence is high', 
     prompt: 'budget 1200 eur MXP 7 giorni asia caldo slow senza overtourism',
     aiProvider: 'chatgpt',
     packageCount: 3,
-    userPlan: 'free'
+    userPlan: 'elite'
   });
 
   assert.equal(fetchCalls, 0);

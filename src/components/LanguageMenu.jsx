@@ -37,10 +37,10 @@ function LanguageMenu(props) {
   }, []);
 
   return (
-    <div className={`landing-ctrl-btn landing-lang-btn${open ? ' open' : ''}`} ref={rootRef}>
+    <div className={`landing-lang-btn${open ? ' open' : ''}`} ref={rootRef}>
       <button
         type="button"
-        className="landing-lang-trigger"
+        className="landing-ctrl-btn landing-theme-btn landing-lang-trigger app-header-control-btn"
         aria-label={title}
         aria-haspopup="listbox"
         aria-expanded={open}

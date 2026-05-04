@@ -22,14 +22,35 @@ function resolveConfiguredPlanPriceEur(planType) {
   if (normalized === 'pro') {
     const envValue = Number(process.env.PRICING_PRO_EUR);
     if (Number.isFinite(envValue) && envValue > 0) return round4(envValue);
-    return 12.99;
+    return 12;
   }
-  if (normalized === 'creator' || normalized === 'elite') {
-    const envValue = Number(process.env.PRICING_CREATOR_EUR);
+  if (normalized === 'elite' || normalized === 'creator') {
+    const envValue = Number(process.env.PRICING_ELITE_EUR ?? process.env.PRICING_CREATOR_EUR);
     if (Number.isFinite(envValue) && envValue > 0) return round4(envValue);
-    return 29.99;
+    return 22;
   }
   return null;
+}
+
+function createCheckoutCart({ planType, priceId, inlinePriceData, priceSource }) {
+  const normalizedPlanType = String(planType || '').trim().toLowerCase() === 'elite' ? 'elite' : 'pro';
+  const amountEur = resolveConfiguredPlanPriceEur(normalizedPlanType);
+  return {
+    mode: 'subscription',
+    currency: String(process.env.STRIPE_PRICE_CURRENCY || 'EUR').trim().toUpperCase() || 'EUR',
+    items: [
+      {
+        planType: normalizedPlanType,
+        name: normalizedPlanType === 'elite' ? 'Elite' : 'Pro',
+        quantity: 1,
+        priceId: priceId || null,
+        priceSource: priceSource || (priceId ? 'price_id' : inlinePriceData ? 'inline_price_data' : 'unknown'),
+        amountEur
+      }
+    ],
+    subtotalEur: amountEur,
+    totalEur: amountEur
+  };
 }
 
 export class StripeBillingService {
@@ -54,6 +75,41 @@ export class StripeBillingService {
 
   resolveDefaultProrationBehavior() {
     return normalizeStripeProrationBehavior(process.env.STRIPE_SUBSCRIPTION_PRORATION_BEHAVIOR, 'create_prorations');
+  }
+
+  async resolveCheckoutPrice({ stripe, planType }) {
+    const configuredPriceOrProduct = this.stateService.planToStripePriceId(planType);
+    if (configuredPriceOrProduct.startsWith('price_')) {
+      return { priceId: configuredPriceOrProduct, source: 'env_price_id' };
+    }
+
+    const configuredProductId = configuredPriceOrProduct.startsWith('prod_')
+      ? configuredPriceOrProduct
+      : this.stateService.planToStripeProductId(planType);
+    if (configuredProductId.startsWith('prod_')) {
+      const listed = await stripe.prices.list({
+        product: configuredProductId,
+        active: true,
+        type: 'recurring',
+        limit: 20
+      });
+      const monthly = (listed?.data || []).find((price) => String(price?.recurring?.interval || '') === 'month');
+      const selected = monthly || listed?.data?.[0] || null;
+      if (selected?.id) return { priceId: selected.id, source: 'product_price_lookup' };
+    }
+
+    const lookupKey = this.stateService.planToStripeLookupKey(planType);
+    if (lookupKey) {
+      const listed = await stripe.prices.list({
+        lookup_keys: [lookupKey],
+        active: true,
+        limit: 1
+      });
+      const selected = listed?.data?.[0] || null;
+      if (selected?.id) return { priceId: selected.id, source: 'lookup_key' };
+    }
+
+    return { priceId: '', source: 'missing' };
   }
 
   getPublicConfig() {
@@ -224,8 +280,23 @@ export class StripeBillingService {
     if (isProduction && inlinePriceRequested) {
       this.logger.warn({ endpoint: '/api/billing/checkout' }, 'stripe_inline_price_data_forced_off_in_production');
     }
-    const stripePriceId = this.stateService.planToStripePriceId(payload.planType);
     const allowInlinePriceData = !isProduction && inlinePriceRequested;
+    const configuredPriceOrProduct = this.stateService.planToStripePriceId(payload.planType);
+    const configuredProduct = this.stateService.planToStripeProductId(payload.planType);
+    const configuredLookupKey = this.stateService.planToStripeLookupKey(payload.planType);
+    if (!configuredPriceOrProduct && !configuredProduct && !configuredLookupKey && !allowInlinePriceData) {
+      return {
+        status: 500,
+        body: {
+          error: 'billing_plan_not_configured',
+          message: `Missing Stripe price mapping for ${payload.planType}.`
+        }
+      };
+    }
+
+    const stripe = this.getStripeClient();
+    const resolvedPrice = await this.resolveCheckoutPrice({ stripe, planType: payload.planType });
+    const stripePriceId = resolvedPrice.priceId;
     const inlinePriceData = stripePriceId || !allowInlinePriceData ? null : this.stateService.planToInlinePriceData(payload.planType);
     if (!stripePriceId && !inlinePriceData) {
       return {
@@ -237,7 +308,6 @@ export class StripeBillingService {
       };
     }
 
-    const stripe = this.getStripeClient();
     const customerId = await this.stateService.ensureStripeCustomerForUser({ stripe, user });
     const successUrl = resolveAbsoluteUrl(payload.successUrl, '/billing/success?session_id={CHECKOUT_SESSION_ID}');
     const cancelUrl = resolveAbsoluteUrl(payload.cancelUrl, '/billing/cancel');
@@ -262,6 +332,13 @@ export class StripeBillingService {
       }
     });
 
+    const cart = createCheckoutCart({
+      planType: payload.planType,
+      priceId: stripePriceId,
+      inlinePriceData,
+      priceSource: resolvedPrice.source
+    });
+
     const revenueEur = inlinePriceData
       ? Number(inlinePriceData.unit_amount || 0) / 100
       : resolveConfiguredPlanPriceEur(payload.planType);
@@ -276,6 +353,7 @@ export class StripeBillingService {
       user_tier: payload.planType,
       plan_type: payload.planType,
       price_id: stripePriceId,
+      price_source: resolvedPrice.source,
       price_eur: revenueEur,
       revenue_eur: revenueEur,
       stripe_fee_eur: stripeFeeEur,
@@ -292,9 +370,23 @@ export class StripeBillingService {
         provider: BILLING_PROVIDER,
         sessionId: session?.id || null,
         customerId,
-        planType: payload.planType
+        planType: payload.planType,
+        priceId: stripePriceId || null,
+        priceSource: resolvedPrice.source,
+        cart
       }
-    }).catch(() => {});
+    }).catch((error) => {
+      this.logger.warn(
+        {
+          code: 'STRIPE_WEBHOOK_SIDE_EFFECT_FAILED',
+          error: error?.message || String(error),
+          user_id: String(user.id || userId || ''),
+          action: 'billing.checkout.created',
+          stripe_session_id: session?.id || null
+        },
+        'billing_checkout_audit_write_failed'
+      );
+    });
 
     return {
       status: 201,
@@ -302,6 +394,7 @@ export class StripeBillingService {
         ok: true,
         provider: BILLING_PROVIDER,
         planType: payload.planType,
+        cart,
         sessionId: session?.id || null,
         checkoutUrl: session?.url || null
       }

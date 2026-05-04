@@ -189,7 +189,7 @@ export function estimateInputTokensFromText(value, minTokens = 0) {
 
 export function resolveOpportunityAiModel(provider) {
   if (provider === 'openai') {
-    return String(process.env.OPENAI_MODEL_OPPORTUNITY || process.env.OPENAI_MODEL || 'gpt-4o-mini').trim();
+    return String(process.env.OPENAI_MODEL_OPPORTUNITY || process.env.OPENAI_MODEL || 'gpt-5-mini').trim();
   }
   return String(process.env.ANTHROPIC_MODEL_OPPORTUNITY || process.env.ANTHROPIC_MODEL || 'claude-3-5-sonnet-20241022').trim();
 }

@@ -15,6 +15,12 @@ This runbook closes the remaining external production risks for:
 3. Allow network from runtime to Postgres/Redis only on required ports.
 4. Deny public access to Postgres/Redis.
 
+## 1.1 Local release Docker policy
+1. Local release gates require a Docker Engine reachable from the terminal via `docker info`.
+2. The repository must not start Docker Desktop automatically.
+3. On Windows, run local infra gates from WSL/Linux with Docker Engine available, or configure `DOCKER_HOST` for a remote/rootless engine.
+4. If `docker info` fails, local infra status is `NOT READY`; do not bypass the Postgres/Redis gate.
+
 ## 2. Domain and TLS
 1. Point DNS `A/AAAA/CNAME` to the reverse proxy/load balancer.
 2. Enable TLS certificate issuance/renewal.

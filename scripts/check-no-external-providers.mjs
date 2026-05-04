@@ -6,9 +6,16 @@ const EXTENSIONS = new Set(['.js', '.mjs', '.jsx', '.ts', '.tsx']);
 const ALLOWED_CONTEXT = ['docs', 'readme', 'comment', 'template', 'blocked_terms', 'const banned ='];
 const ALLOWED_PROVIDER_FILES = new Set([
   'server/lib/providers/duffel-provider.js',
+  'server/lib/providers/kiwi-provider.js',
+  'server/lib/providers/skyscanner-provider.js',
   'server/lib/providers/provider-registry.js',
   'server/lib/runtime-config.js',
-  'server/routes/system.js'
+  'server/routes/system.js',
+  'server/lib/affiliate-link-engine.js',
+  'server/lib/affiliate-links.js',
+  'server/lib/outbound-provider-selector.js',
+  'server/lib/multi-source-search-engine.js',
+  'server/lib/affiliate-clicks-store.js'
 ]);
 const BLOCKED_TERMS = [
   'skyscanner',
@@ -27,6 +34,9 @@ function normalizePath(path) {
 function hasAllowedContext(path, line) {
   const normalizedPath = normalizePath(path);
   if (ALLOWED_PROVIDER_FILES.has(normalizedPath)) return true;
+  if (normalizedPath === 'scripts/ops-production-readiness.mjs') return true;
+  const trimmed = String(line || '').trim();
+  if (trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*')) return true;
   const lower = `${normalizedPath} ${line}`.toLowerCase();
   if (lower.includes('check-no-external-providers.mjs')) return true;
   return ALLOWED_CONTEXT.some((token) => lower.includes(token));

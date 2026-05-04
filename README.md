@@ -121,6 +121,19 @@ npm run worker:flight-scan-cycle
 ```
 
 ## Docker
+The repository expects a Docker Engine reachable from the terminal.
+It does not require or start Docker Desktop automatically.
+
+On Windows, the preferred free path is Docker Engine inside WSL2:
+
+```bash
+npm run release:prod:gate:free
+```
+
+This command rejects Docker Desktop-backed WSL integration. `release:prod:gate:auto` also stays on free/non-Desktop paths unless `ALLOW_DOCKER_DESKTOP_FALLBACK=true` is set.
+
+You can also run Docker commands from a WSL/Linux terminal with Docker Engine available, or export `DOCKER_HOST` for a remote/rootless engine before running the scripts.
+
 ```bash
 docker compose up --build
 ```

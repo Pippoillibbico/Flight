@@ -104,6 +104,70 @@
   color: #2c548a;
 }
 
+.upgrade-flow-cart {
+  border: 1px solid rgba(35, 112, 213, 0.22);
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 12px 30px rgba(35, 91, 164, 0.1);
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.upgrade-flow-cart-head,
+.upgrade-flow-cart-line,
+.upgrade-flow-cart-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.upgrade-flow-cart-head p,
+.upgrade-flow-cart-head span,
+.upgrade-flow-cart-line span,
+.upgrade-flow-cart-total span {
+  margin: 0;
+}
+
+.upgrade-flow-cart-head p {
+  color: #1f4c85;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.upgrade-flow-cart-head span,
+.upgrade-flow-cart-line span {
+  color: #5c759a;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.upgrade-flow-cart-line {
+  border-top: 1px solid rgba(55, 110, 184, 0.14);
+  padding-top: 10px;
+}
+
+.upgrade-flow-cart-line div {
+  display: grid;
+  gap: 3px;
+}
+
+.upgrade-flow-cart-line strong {
+  color: #183f73;
+  font-size: 14px;
+}
+
+.upgrade-flow-cart-total {
+  border-top: 1px solid rgba(55, 110, 184, 0.14);
+  color: #163c70;
+  font-size: 14px;
+  font-weight: 900;
+  padding-top: 10px;
+}
+
 .upgrade-flow-trust-line {
   margin: 0;
   font-size: 12px;
@@ -157,6 +221,29 @@
 
 .app-shell.app-dark .upgrade-flow-current-plan {
   color: #d0e3ff;
+}
+
+.app-shell.app-dark .upgrade-flow-cart {
+  border-color: rgba(116, 166, 238, 0.34);
+  background: rgba(15, 26, 43, 0.9);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.28);
+}
+
+.app-shell.app-dark .upgrade-flow-cart-head p,
+.app-shell.app-dark .upgrade-flow-cart-line strong,
+.app-shell.app-dark .upgrade-flow-cart-total {
+  color: #d6e7ff;
+}
+
+.app-shell.app-dark .upgrade-flow-cart-head span,
+.app-shell.app-dark .upgrade-flow-cart-line span,
+.app-shell.app-dark .upgrade-flow-cart-total span {
+  color: #a8c0df;
+}
+
+.app-shell.app-dark .upgrade-flow-cart-line,
+.app-shell.app-dark .upgrade-flow-cart-total {
+  border-top-color: rgba(145, 181, 232, 0.18);
 }
 
 .app-shell.app-dark .upgrade-flow-trust-line {

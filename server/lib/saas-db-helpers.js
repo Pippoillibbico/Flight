@@ -18,23 +18,33 @@ const PLANS = {
     id: 'pro',
     name: 'Pro',
     monthlyCredits: 500,
-    priceEur: 12.99,
+    priceEur: 12,
     // AI premium access is ELITE/CREATOR only (enforced in auth/plan gates).
-    aiEnabled: false,
+    aiEnabled: true,
     apiKeysMax: 10,
-    features: { exports: false, apiKeys: true, aiIncluded: false },
+    features: { exports: false, apiKeys: true, aiIncluded: true },
     // 40 searches/day × 30 = 1200/month; no AI decision for pro
-    quotas: { read: 4000, search: 1200, decision: 0, alerts: 400, notifications: 900, export: 0 }
+    quotas: { read: 4000, search: 1200, decision: 90, alerts: 400, notifications: 900, export: 0 }
   },
   creator: {
     id: 'creator',
     name: 'Creator',
     monthlyCredits: 2000,
-    priceEur: 29.99,
+    priceEur: 22,
     aiEnabled: true,
     apiKeysMax: 50,
     features: { exports: true, apiKeys: true, aiIncluded: true },
     // 100 searches/day × 30 = 3000/month; 8 AI calls/day × 30 = 240/month
+    quotas: { read: 16000, search: 3000, decision: 240, alerts: 2200, notifications: 4000, export: 400 }
+  },
+  elite: {
+    id: 'elite',
+    name: 'Elite',
+    monthlyCredits: 2000,
+    priceEur: 22,
+    aiEnabled: true,
+    apiKeysMax: 50,
+    features: { exports: true, apiKeys: true, aiIncluded: true },
     quotas: { read: 16000, search: 3000, decision: 240, alerts: 2200, notifications: 4000, export: 400 }
   }
 };

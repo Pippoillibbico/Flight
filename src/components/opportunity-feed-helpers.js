@@ -18,7 +18,7 @@ export function buildActivitySignal(value, labels) {
 export function formatPrice(value, currency = 'EUR') {
   const amount = Number(value);
   if (!Number.isFinite(amount)) return '-';
-  return String(currency).toUpperCase() === 'EUR' ? `${Math.round(amount)} �` : `${Math.round(amount)} ${currency}`;
+  return String(currency).toUpperCase() === 'EUR' ? `${Math.round(amount)} EUR` : `${Math.round(amount)} ${currency}`;
 }
 
 export function formatPeriod(item, locale, labels) {
@@ -73,8 +73,8 @@ export function sanitizeBadgeText(value) {
   const raw = String(value || '').trim();
   if (!raw) return '';
   const cleaned = raw
-    .replace(/Ã°Å¸[^ ]*\s*/g, '')
-    .replace(/Ã¢[^ ]*\s*/g, '')
+    .replace(/ÃƒÂ°Ã…Â¸[^ ]*\s*/g, '')
+    .replace(/ÃƒÂ¢[^ ]*\s*/g, '')
     .replace(/\s{2,}/g, ' ')
     .trim();
   return cleaned || raw;
@@ -82,7 +82,7 @@ export function sanitizeBadgeText(value) {
 
 export function localizeOpportunityDescription(item, language, labels) {
   const raw = String(item?.ai_description || '')
-    .replace(/\bopportunita\b/gi, 'opportunit�')
+    .replace(/\bopportunita\b/gi, 'opportunità')
     .trim();
   if (!raw) return '';
   const isEnglish = String(language || 'it').toLowerCase().startsWith('en');

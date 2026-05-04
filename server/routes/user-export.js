@@ -10,9 +10,22 @@
 import { Router } from 'express';
 import { format } from 'date-fns';
 import { canExportData, getUpgradeContext } from '../lib/plan-access.js';
+import { buildExportAuditEvent, createExportRateLimiter, requireExportPagination, requireExportReason } from '../lib/export-security.js';
 
-export function buildUserExportRouter({ authGuard, requireSessionAuth, quotaGuard, withDb, readDb, fetchCurrentUser }) {
+export function buildUserExportRouter({ authGuard, requireSessionAuth, quotaGuard, withDb, readDb, fetchCurrentUser, appendImmutableAudit }) {
   const router = Router();
+  const exportRateLimiter = createExportRateLimiter({ windowMs: 60_000, max: 8 });
+  async function writeExportAudit(req, { formatType, status }) {
+    if (typeof appendImmutableAudit !== 'function') return;
+    await appendImmutableAudit(
+      buildExportAuditEvent(req, {
+        action: 'export',
+        targetType: `user_data_export_${formatType}`,
+        targetId: String(req.user?.sub || req.user?.id || 'unknown'),
+        outcome: status === 'success' ? 'success' : status === 'blocked_plan' ? 'blocked' : 'failed'
+      })
+    ).catch(() => {});
+  }
 
   /**
    * Build the user's exportable data snapshot.
@@ -119,6 +132,7 @@ export function buildUserExportRouter({ authGuard, requireSessionAuth, quotaGuar
     const user = await fetchCurrentUser(req.user?.sub || req.user?.id);
     if (!user) return res.status(401).json({ error: 'user_not_found', request_id: req.id || null });
     if (!canExportData(user)) {
+      await writeExportAudit(req, { formatType: 'n/a', status: 'blocked_plan' });
       return res.status(402).json({
         error: 'premium_required',
         message: 'Data export is available on the Elite plan.',
@@ -134,10 +148,19 @@ export function buildUserExportRouter({ authGuard, requireSessionAuth, quotaGuar
     '/user/data-export',
     authGuard,
     requireSessionAuth,
+    requireExportReason({ enforcePrefix: true }),
+    requireExportPagination,
+    exportRateLimiter,
     requireExportAccess,
     quotaGuard({ counter: 'export', amount: 1 }),
     async (req, res) => {
       const snapshot = await buildUserExportSnapshot(req.user.sub);
+      const safeLimit = req.exportPagination?.limit || 200;
+      snapshot.search_history = snapshot.search_history.slice(0, safeLimit);
+      snapshot.price_alerts = snapshot.price_alerts.slice(0, safeLimit);
+      snapshot.watchlist = snapshot.watchlist.slice(0, safeLimit);
+      snapshot.notifications = snapshot.notifications.slice(0, safeLimit);
+      await writeExportAudit(req, { formatType: 'json', status: 'success' });
       return res.json(snapshot);
     }
   );
@@ -147,14 +170,23 @@ export function buildUserExportRouter({ authGuard, requireSessionAuth, quotaGuar
     '/user/data-export.csv',
     authGuard,
     requireSessionAuth,
+    requireExportReason({ enforcePrefix: true }),
+    requireExportPagination,
+    exportRateLimiter,
     requireExportAccess,
     quotaGuard({ counter: 'export', amount: 1 }),
     async (req, res) => {
       const snapshot = await buildUserExportSnapshot(req.user.sub);
+      const safeLimit = req.exportPagination?.limit || 200;
+      snapshot.search_history = snapshot.search_history.slice(0, safeLimit);
+      snapshot.price_alerts = snapshot.price_alerts.slice(0, safeLimit);
+      snapshot.watchlist = snapshot.watchlist.slice(0, safeLimit);
+      snapshot.notifications = snapshot.notifications.slice(0, safeLimit);
       const csv = snapshotToCsv(snapshot);
       const filename = `flight-suite-export-${format(new Date(), 'yyyyMMdd-HHmm')}.csv`;
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      await writeExportAudit(req, { formatType: 'csv', status: 'success' });
       return res.status(200).send(csv);
     }
   );

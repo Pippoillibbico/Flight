@@ -19,7 +19,16 @@ function firstCsvValue(value) {
 }
 
 function redirectToFrontend(res, frontendUrl, params = {}) {
-  const url = new URL(frontendUrl || 'http://localhost:5173');
+  let url = null;
+  try {
+    url = new URL(frontendUrl || 'http://localhost:5173');
+  } catch {
+    url = new URL('http://localhost:5173');
+  }
+  const protocol = String(url.protocol || '').toLowerCase();
+  if (protocol !== 'http:' && protocol !== 'https:') {
+    url = new URL('http://localhost:5173');
+  }
   for (const [key, value] of Object.entries(params)) {
     if (value == null) continue;
     url.searchParams.set(key, String(value));

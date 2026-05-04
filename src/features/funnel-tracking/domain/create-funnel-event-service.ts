@@ -5,16 +5,17 @@ import type {
   FunnelSearchMode,
   FunnelTrackingEvent
 } from '../types/index.ts';
+import { TELEMETRY_EVENTS } from '../../../shared/telemetry/events.js';
 
 type FunnelEventExtra = Record<string, string | number | boolean | null | undefined>;
 
 type SearchLifecycleEventType =
-  | 'search_submitted'
+  | typeof TELEMETRY_EVENTS.SEARCH_SUBMITTED
   | 'search_validation_blocked'
   | 'search_succeeded'
   | 'search_failed'
   | 'search_retry_clicked'
-  | 'results_rendered';
+  | typeof TELEMETRY_EVENTS.RESULTS_RENDERED;
 
 interface FunnelTrackerLike {
   track: (event: FunnelTrackingEvent) => void;
@@ -185,21 +186,21 @@ export function createFunnelEventService(tracker: FunnelTrackerLike) {
     },
     trackBookingClicked(payload: BaseTrackingPayload): void {
       tracker.track(
-        createEvent('booking_clicked', payload, {
+        createEvent(TELEMETRY_EVENTS.BOOKING_CLICKED, payload, {
           action: 'book_cta'
         })
       );
     },
     trackOutboundRedirectSucceeded(payload: BaseTrackingPayload): void {
       tracker.track(
-        createEvent('outbound_redirect_succeeded', payload, {
+        createEvent(TELEMETRY_EVENTS.OUTBOUND_REDIRECT_SUCCEEDED, payload, {
           action: 'book_cta'
         })
       );
     },
     trackOutboundRedirectFailed(payload: OutboundRedirectTrackingPayload): void {
       tracker.track(
-        createEvent('outbound_redirect_failed', payload, {
+        createEvent(TELEMETRY_EVENTS.OUTBOUND_REDIRECT_FAILED, payload, {
           action: 'book_cta',
           errorCode: sanitizeErrorCode(payload.errorCode),
           errorMessage: sanitizeErrorMessage(payload.errorMessage)

@@ -4,6 +4,8 @@ import express from 'express';
 import { buildSystemRouter } from '../server/routes/system.js';
 import { buildSearchRouter } from '../server/routes/search.js';
 import { buildAlertsRouter } from '../server/routes/alerts.js';
+import { buildAdminTelemetryRouter } from '../server/routes/admin-telemetry.js';
+import { buildOutboundRouter } from '../server/routes/outbound.js';
 
 async function withServer(app, fn) {
   const server = await new Promise((resolve) => {
@@ -503,5 +505,177 @@ test('alerts router supports price alerts CRUD and manual scan', async () => {
       method: 'DELETE'
     });
     assert.equal(deleteRes.status, 204);
+  });
+});
+
+test('admin telemetry endpoint requires admin guard', async () => {
+  const app = express();
+  app.use(express.json());
+  app.use((req, _res, next) => {
+    req.user = { sub: 'u1', email: 'user@example.com' };
+    req.authSource = 'cookie';
+    next();
+  });
+
+  app.use(
+    buildAdminTelemetryRouter({
+      telemetryBurstLimiter: (_req, _res, next) => next(),
+      telemetryEventLimiter: (_req, _res, next) => next(),
+      authGuard: (_req, _res, next) => next(),
+      adminGuard: (_req, res) => res.status(403).json({ error: 'admin_access_denied' }),
+      requireSessionAuth: (_req, _res, next) => next(),
+      csrfGuard: (_req, _res, next) => next(),
+      safeJsonByteLength: (value) => Buffer.byteLength(JSON.stringify(value ?? {}), 'utf8'),
+      sendMachineError: (_req, res, status, error) => res.status(status).json({ error }),
+      adminTelemetryEventSchema: {
+        safeParse: (body) => ({
+          success: true,
+          data: {
+            eventType: String(body?.eventType || 'upgrade_primary_cta_clicked'),
+            action: String(body?.action || 'click'),
+            surface: String(body?.surface || 'results'),
+            source: String(body?.source || 'web'),
+            routeSlug: null,
+            dealId: null,
+            sessionId: null,
+            price: null,
+            planType: null,
+            correlationId: null,
+            itineraryId: null,
+            at: new Date().toISOString()
+          }
+        })
+      },
+      withDb: async () => {},
+      telemetryRepo: { isAvailable: () => false },
+      fetchCurrentUser: async () => ({ id: 'u1', planType: 'free' }),
+      resolveUserPlan: () => ({ planType: 'free' }),
+      logger: { info: () => {}, warn: () => {}, error: () => {} },
+      createHash: () => ({
+        update: () => ({
+          digest: () => 'f'.repeat(64)
+        })
+      }),
+      ADMIN_TELEMETRY_MAX_BODY_BYTES: 8192,
+      ADMIN_TELEMETRY_ALLOWED_SKEW_MS: 120000,
+      ADMIN_TELEMETRY_DEDUPE_WINDOW_MS: 60000,
+      TELEMETRY_BURST_WINDOW_MS: 1000,
+      TELEMETRY_BURST_MAX: 5,
+      toIsoFromRateLimit: () => new Date(Date.now() + 60000).toISOString()
+    })
+  );
+
+  await withServer(app, async (baseUrl) => {
+    const res = await fetch(`${baseUrl}/api/admin/telemetry`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ eventType: 'upgrade_primary_cta_clicked' })
+    });
+    assert.equal(res.status, 403);
+    const body = await res.json();
+    assert.equal(body.error, 'admin_access_denied');
+  });
+});
+
+test('outbound tracking is blocked without server-side consent and enabled only with backend consent', async () => {
+  const app = express();
+  app.use(express.json());
+
+  const dbState = { outboundRedirects: [], outboundClicks: [] };
+  const repoClicks = [];
+  let consentGranted = false;
+
+  app.use(
+    buildOutboundRouter({
+      authGuard: (_req, _res, next) => next(),
+      requireSessionAuth: (_req, _res, next) => next(),
+      adminGuard: (_req, _res, next) => next(),
+      requireApiScope: () => (_req, _res, next) => next(),
+      quotaGuard: () => (_req, _res, next) => next(),
+      optionalAuth: () => ({ sub: 'u1' }),
+      attachUserConsent: (req, _res, next) => {
+        req.userConsent = consentGranted ? { categories: { necessary: true, analytics: true } } : null;
+        next();
+      },
+      canTrack: (req, category) => category === 'analytics' && req?.userConsent?.categories?.analytics === true,
+      withDb: async (fn) => {
+        const maybe = await fn(dbState);
+        if (maybe && typeof maybe === 'object') Object.assign(dbState, maybe);
+      },
+      outboundRepo: {
+        isAvailable: () => true,
+        async insertClick(payload) {
+          repoClicks.push(payload);
+        },
+        async markRedirectSucceeded() {},
+        async markRedirectFailed() {}
+      },
+      logger: { info: () => {}, warn: () => {}, error: () => {} },
+      sendMachineError: (_req, res, status, error, extra = {}) => res.status(status).json({ error, ...extra }),
+      resolveOutboundPartnerUrl: ({ partner, origin, destinationIata }) =>
+        `https://partner.example.com/${partner}/${origin}/${destinationIata}`,
+      ensureAllowedOutboundUrl: () => {},
+      allowedPartners: ['tde_booking'],
+      outboundClickSecret: 'OutboundClickHmacKeyForSecurityCompliance123456789',
+      outboundClickTtlSeconds: 300,
+      outboundMaxQueryChars: 1600
+    })
+  );
+
+  await withServer(app, async (baseUrl) => {
+    const resolveUrl = `${baseUrl}/api/outbound/resolve?partner=tde_booking&surface=results&origin=MXP&destinationIata=LIS&dateFrom=2026-10-10&travellers=1&cabinClass=economy`;
+    const resolveRes = await fetch(resolveUrl, { redirect: 'manual' });
+    assert.equal(resolveRes.status, 302);
+    const location = String(resolveRes.headers.get('location') || '');
+    assert.match(location, /^\/go\//);
+    assert.equal(repoClicks.length, 0);
+
+    const clickRes = await fetch(`${baseUrl}/api/outbound/click`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        eventName: 'booking_clicked',
+        url: '/api/outbound/resolve?partner=tde_booking&surface=results&origin=MXP&destinationIata=LIS&dateFrom=2026-10-10&travellers=1&cabinClass=economy'
+      })
+    });
+    assert.equal(clickRes.status, 204);
+
+    consentGranted = true;
+    const resolveWithConsentRes = await fetch(resolveUrl, { redirect: 'manual' });
+    assert.equal(resolveWithConsentRes.status, 302);
+    const withConsentLocation = String(resolveWithConsentRes.headers.get('location') || '');
+    assert.match(withConsentLocation, /^\/go\//);
+    assert.equal(repoClicks.length > 0, true);
+
+    const clickWithConsentRes = await fetch(`${baseUrl}/api/outbound/click`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        eventName: 'booking_clicked',
+        url: '/api/outbound/resolve?partner=tde_booking&surface=results&origin=MXP&destinationIata=LIS&dateFrom=2026-10-10&travellers=1&cabinClass=economy'
+      })
+    });
+    assert.equal([201, 202].includes(clickWithConsentRes.status), true);
+
+    const tamperedClientOptIn = await fetch(`${baseUrl}/api/outbound/click`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        eventName: 'booking_clicked',
+        url: '/api/outbound/resolve?partner=tde_booking&surface=results&origin=MXP&destinationIata=LIS&dateFrom=2026-10-10&travellers=1&cabinClass=economy&analyticsOptIn=1'
+      })
+    });
+    assert.equal(tamperedClientOptIn.status, 400);
+
+    consentGranted = false;
+    const clickAfterRevokeRes = await fetch(`${baseUrl}/api/outbound/click`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        eventName: 'booking_clicked',
+        url: '/api/outbound/resolve?partner=tde_booking&surface=results&origin=MXP&destinationIata=LIS&dateFrom=2026-10-10&travellers=1&cabinClass=economy'
+      })
+    });
+    assert.equal(clickAfterRevokeRes.status, 204);
   });
 });

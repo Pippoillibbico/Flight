@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import express from 'express';
+import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { nanoid } from 'nanoid';
@@ -41,6 +42,7 @@ import { buildAuthOAuthRouter } from './routes/auth-oauth.js';
 import { buildPushRouter } from './routes/push.js';
 import { buildAdminTelemetryRouter } from './routes/admin-telemetry.js';
 import { buildPublicUtilityRouter } from './routes/public-utility.js';
+import { buildConsentRouter } from './routes/consent.js';
 import { startRuntimeLifecycle } from './bootstrap/runtime-lifecycle.js';
 import { createRuntimeAppContext } from './bootstrap/app-context.js';
 import { createDomainServices } from './bootstrap/domain-services.js';
@@ -80,6 +82,8 @@ import { getRuntimeConfigAudit } from './lib/runtime-config.js';
 import { evaluateStartupReadiness } from './lib/startup-readiness.js';
 import { getAiCacheMetrics, getAiCostGuardMetrics } from './lib/ai/index.js';
 import { loadServerRuntimeConfig } from './lib/server-runtime-config.js';
+import { TelemetryRepo } from './repositories/telemetry-repo.js';
+import { OutboundRepo } from './repositories/outbound-repo.js';
 import {
   getAccessTokenFromCookie as readAccessTokenFromCookie,
   getAuthToken as resolveRequestAuthToken,
@@ -91,6 +95,8 @@ import { canUseAITravel, canUseRadar, getUpgradeContext, resolveUserPlan } from 
 import { buildAdminBackofficeReport } from './lib/admin-backoffice-report.js';
 import { getCostCapMonitoringSnapshot } from './lib/cost-cap-monitor.js';
 import { createAuditCheck, runFeatureAudit as runFeatureAuditModule } from './lib/feature-audit.js';
+import { canTrack, createConsentService } from './lib/consent-service.js';
+import { buildExportAuditEvent, createExportRateLimiter, requireExportReason } from './lib/export-security.js';
 import {
   CABIN_ENUM,
   CONNECTION_ENUM,
@@ -115,6 +121,60 @@ import {
 } from './lib/request-schemas.js';
 
 dotenv.config();
+
+function parseProductionOrigins(rawValue) {
+  return String(rawValue || '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function isInvalidProductionOrigin(origin) {
+  const value = String(origin || '').trim().toLowerCase();
+  if (!value) return true;
+  if (value.includes('localhost') || value.includes('127.0.0.1')) return true;
+  if (value.startsWith('http://')) return true;
+  if (!value.startsWith('https://')) return true;
+  return false;
+}
+
+function validateProductionEnv(env = process.env) {
+  if (String(env.NODE_ENV || '').trim().toLowerCase() !== 'production') return;
+
+  const required = ['DATABASE_URL', 'REDIS_URL', 'FRONTEND_ORIGIN', 'CORS_ALLOWED_ORIGINS'];
+  for (const key of required) {
+    if (!String(env[key] || '').trim()) {
+      throw new Error(`[FATAL] Missing required env var in production: ${key}`);
+    }
+  }
+
+  const frontendOrigin = String(env.FRONTEND_ORIGIN || '').trim();
+  if (isInvalidProductionOrigin(frontendOrigin)) {
+    throw new Error('[FATAL] FRONTEND_ORIGIN must be HTTPS and not localhost in production');
+  }
+
+  const corsAllowedOrigins = parseProductionOrigins(env.CORS_ALLOWED_ORIGINS);
+  if (corsAllowedOrigins.length === 0) {
+    throw new Error('[FATAL] CORS_ALLOWED_ORIGINS must contain only HTTPS domains in production');
+  }
+  const invalidCorsAllowedOrigin = corsAllowedOrigins.find((origin) => isInvalidProductionOrigin(origin));
+  if (invalidCorsAllowedOrigin) {
+    throw new Error(`[FATAL] CORS_ALLOWED_ORIGINS must contain only HTTPS domains in production: ${invalidCorsAllowedOrigin}`);
+  }
+
+  const allCorsOrigins = [
+    ...corsAllowedOrigins,
+    ...parseProductionOrigins(env.CORS_ALLOWLIST),
+    ...parseProductionOrigins(env.CORS_ORIGIN)
+  ];
+  const invalidCorsOrigin = allCorsOrigins.find((origin) => isInvalidProductionOrigin(origin));
+  if (invalidCorsOrigin) {
+    throw new Error(`[FATAL] CORS origins must be HTTPS and must not contain localhost in production: ${invalidCorsOrigin}`);
+  }
+}
+
+validateProductionEnv();
+
 try {
   await initSqlDb();
 } catch (error) {
@@ -128,6 +188,8 @@ const pgPool = process.env.DATABASE_URL ? new pg.Pool({ connectionString: proces
 if (pgPool) {
   setSaasPool(pgPool);
 }
+const telemetryRepo = new TelemetryRepo(pgPool);
+const outboundRepo = new OutboundRepo(pgPool);
 
 const app = express();
 let runtimeConfig;
@@ -316,11 +378,24 @@ app.use(
   helmet({
     crossOriginEmbedderPolicy: process.env.NODE_ENV === 'production',
     crossOriginResourcePolicy: { policy: 'same-origin' },
+    originAgentCluster: true,
+    dnsPrefetchControl: { allow: false },
+    permissionsPolicy: {
+      features: {
+        camera: [],
+        microphone: [],
+        geolocation: [],
+        payment: [],
+        usb: [],
+        magnetometer: [],
+        gyroscope: []
+      }
+    },
     referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
     hsts:
       process.env.NODE_ENV === 'production'
         ? {
-            maxAge: 15552000,
+            maxAge: 63072000,
             includeSubDomains: true,
             preload: true
           }
@@ -353,7 +428,7 @@ app.use(
 app.disable('x-powered-by');
 
 // Raw body capture for Stripe webhook signature verification
-app.use('/api/billing/webhook', express.raw({ type: 'application/json' }), (req, _res, next) => {
+app.use('/api/billing/webhook', express.raw({ type: 'application/json', limit: AUTH_MAX_BODY_BYTES }), (req, _res, next) => {
   if (Buffer.isBuffer(req.body)) req.rawBody = req.body.toString('utf8');
   next();
 });
@@ -395,6 +470,13 @@ function rejectHardenedPayload(req, res, reason) {
   if (reason === 'payload_too_large') return sendMachineError(req, res, 413, 'payload_too_large');
   return sendMachineError(req, res, 400, 'invalid_payload');
 }
+
+const BLOCKED_HTTP_METHODS = new Set(['TRACE', 'TRACK', 'CONNECT']);
+app.use((req, res, next) => {
+  const method = String(req.method || '').trim().toUpperCase();
+  if (!BLOCKED_HTTP_METHODS.has(method)) return next();
+  return sendMachineError(req, res, 405, 'method_not_allowed');
+});
 
 const genericApiPayloadGuard = createPayloadHardeningMiddleware({
   maxBytes: API_MAX_BODY_BYTES,
@@ -546,19 +628,25 @@ const moderateDemoLimiter = useDistributedRateLimiting
 });
 
 app.use('/api', (req, res, next) => {
-  const origin = String(req.headers.origin || '').trim();
-  if (origin && !CORS_ALLOWLIST.has(origin)) {
+  const allowedOrigins = CORS_ALLOWLIST;
+  return cors({
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.has(origin)) return callback(null, true);
+      return callback(new Error(`CORS blocked for origin: ${origin}`));
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Authorization', 'Content-Type', 'X-CSRF-Token', 'X-Request-Id', 'X-Export-Reason']
+  })(req, res, next);
+});
+app.use('/api', (err, req, res, next) => {
+  if (err && String(err.message || '').startsWith('CORS blocked for origin:')) {
     return sendMachineError(req, res, 403, 'request_forbidden');
   }
-
-  if (origin) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-    res.setHeader('Vary', 'Origin');
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
-    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-CSRF-Token, X-Request-Id');
-    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS');
-  }
-
+  return next(err);
+});
+app.use('/api', (req, res, next) => {
   if (req.method === 'OPTIONS') return res.status(204).send();
   return next();
 });
@@ -604,7 +692,38 @@ const outboundPathLimiter = useDistributedRateLimiting
   legacyHeaders: false,
   handler: (req, res) => sendMachineError(req, res, 429, 'rate_limited', { reset_at: toIsoFromRateLimit(req) })
 });
+const costlyPublicLimiter = useDistributedRateLimiting
+  ? createDistributedLimiter({
+      namespace: 'rl:public:costly',
+      windowMs: 60 * 1000,
+      limit: Number(process.env.RL_COSTLY_PUBLIC_PER_MINUTE || 60)
+    })
+  : rateLimit({
+  windowMs: 60 * 1000,
+  limit: Number(process.env.RL_COSTLY_PUBLIC_PER_MINUTE || 60),
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => rateLimitKey(req),
+  handler: (req, res) => sendMachineError(req, res, 429, 'rate_limited', { reset_at: toIsoFromRateLimit(req) })
+});
+const costlyPublicBurstLimiter = useDistributedRateLimiting
+  ? createDistributedLimiter({
+      namespace: 'rl:public:costly:burst',
+      windowMs: 10 * 1000,
+      limit: Number(process.env.RL_COSTLY_PUBLIC_BURST_10S || 20)
+    })
+  : rateLimit({
+  windowMs: 10 * 1000,
+  limit: Number(process.env.RL_COSTLY_PUBLIC_BURST_10S || 20),
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => rateLimitKey(req),
+  handler: (req, res) => sendMachineError(req, res, 429, 'rate_limited', { reset_at: toIsoFromRateLimit(req) })
+});
 app.use('/api/outbound', outboundBurstLimiter, outboundPathLimiter);
+app.use('/api/search', costlyPublicBurstLimiter, costlyPublicLimiter);
+app.use('/api/discovery', costlyPublicBurstLimiter, costlyPublicLimiter);
+app.use('/api/opportunities', costlyPublicBurstLimiter, costlyPublicLimiter);
 app.use('/api', standardApiLimiter);
 app.use('/api', apiKeyAuth);
 app.use(
@@ -655,6 +774,7 @@ const telemetryBurstLimiter = useDistributedRateLimiting
   legacyHeaders: false,
   handler: (req, res) => sendMachineError(req, res, 429, 'rate_limited', { reset_at: toIsoFromRateLimit(req) })
 });
+const exportEndpointLimiter = createExportRateLimiter({ windowMs: 60_000, max: 12 });
 
 const appContext = createRuntimeAppContext({
   env: process.env,
@@ -795,6 +915,17 @@ const {
   }
 });
 
+const consentService = createConsentService({
+  pgPool,
+  withDb,
+  readDb,
+  getCookies,
+  optionalAuth,
+  hashValueForLogs,
+  anonymizeIpForLogs
+});
+const attachUserConsent = consentService.attachUserConsent();
+
 const runFeatureAudit = () =>
   runFeatureAuditModule({
     searchFlights,
@@ -869,7 +1000,7 @@ app.get('/api/security/audit/verify', authGuard, requireSessionAuth, adminGuard,
   return res.json(result);
 });
 
-app.get('/api/monetization/report', authGuard, requireSessionAuth, adminGuard, async (_req, res) => {
+app.get('/api/monetization/report', authGuard, requireSessionAuth, adminGuard, requireExportReason({ enforcePrefix: true }), exportEndpointLimiter, async (req, res) => {
   const sql = await getBusinessMetrics();
   let outbound = { searchCount: 0, outboundClicks: 0, clickThroughRatePct: 0 };
   await withDb(async (db) => {
@@ -877,11 +1008,18 @@ app.get('/api/monetization/report', authGuard, requireSessionAuth, adminGuard, a
     outbound = report.summary;
     return null;
   });
-  return res.json({
+  const payload = {
     generatedAt: new Date().toISOString(),
     sql,
     outbound
-  });
+  };
+  await appendImmutableAudit(buildExportAuditEvent(req, {
+    action: 'export',
+    targetType: 'monetization_report',
+    targetId: 'monetization-report',
+    outcome: 'success'
+  })).catch(() => {});
+  return res.json(payload);
 });
 
 app.get('/api/billing/pricing', async (_req, res, next) => {
@@ -894,25 +1032,48 @@ app.get('/api/billing/pricing', async (_req, res, next) => {
   }
 });
 
-app.get('/api/analytics/funnel', authGuard, requireSessionAuth, adminGuard, async (_req, res) => {
+app.get('/api/analytics/funnel', authGuard, requireSessionAuth, adminGuard, requireExportReason({ enforcePrefix: true }), exportEndpointLimiter, async (req, res) => {
   const sqlFunnel = await getFunnelMetricsByChannel();
-  return res.json({
+  const payload = {
     generatedAt: new Date().toISOString(),
     channels: sqlFunnel.items || []
-  });
+  };
+  await appendImmutableAudit(buildExportAuditEvent(req, {
+    action: 'export',
+    targetType: 'analytics_funnel_report',
+    targetId: 'analytics-funnel',
+    outcome: 'success'
+  })).catch(() => {});
+  return res.json(payload);
 });
+
+app.use(
+  buildConsentRouter({
+    consentService,
+    appendImmutableAudit,
+    sendMachineError,
+    isTrustedOrigin,
+    resolveRequestAuthToken,
+    accessCookieName: ACCESS_COOKIE_NAME,
+    csrfGuard
+  })
+);
 
 app.use(
   buildAdminTelemetryRouter({
     telemetryBurstLimiter,
     telemetryEventLimiter,
     authGuard,
+    adminGuard,
     requireSessionAuth,
     csrfGuard,
+    attachUserConsent,
+    canTrack,
     safeJsonByteLength,
     sendMachineError,
     adminTelemetryEventSchema,
     withDb,
+    telemetryRepo,
     fetchCurrentUser,
     resolveUserPlan,
     logger,
@@ -926,14 +1087,46 @@ app.use(
   })
 );
 
-app.get('/api/admin/backoffice/report', authGuard, requireSessionAuth, adminGuard, async (_req, res) => {
+app.get('/api/admin/backoffice/report', authGuard, requireSessionAuth, adminGuard, requireExportReason({ enforcePrefix: true }), exportEndpointLimiter, async (req, res) => {
   let report = null;
   const followSignals = await getFollowSignalsSummary({ limit: 10 }).catch(() => ({ total: 0, topRoutes: [] }));
   const costMonitoring = await getCostCapMonitoringSnapshot().catch(() => null);
-  await withDb(async (db) => {
-    report = buildAdminBackofficeReport({ db, followSignals, now: Date.now(), windowDays: 30, costMonitoring });
-    return null;
-  });
+  const isProduction = String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
+  if (isProduction && telemetryRepo.isAvailable()) {
+    const telemetryRows = await telemetryRepo.listRecentEvents(12000);
+    const telemetryEvents = telemetryRows.map((row) => {
+      const payload = row?.payload && typeof row.payload === 'object' ? row.payload : {};
+      return {
+        ...payload,
+        id: String(row?.id || payload.id || ''),
+        eventType: String(row?.type || payload.eventType || '').trim(),
+        at: row?.created_at ? new Date(row.created_at).toISOString() : String(payload.at || new Date().toISOString())
+      };
+    });
+    report = buildAdminBackofficeReport({
+      db: {
+        users: [],
+        authEvents: [],
+        outboundClicks: [],
+        clientTelemetryEvents: telemetryEvents
+      },
+      followSignals,
+      now: Date.now(),
+      windowDays: 30,
+      costMonitoring
+    });
+  } else {
+    await withDb(async (db) => {
+      report = buildAdminBackofficeReport({ db, followSignals, now: Date.now(), windowDays: 30, costMonitoring });
+      return null;
+    });
+  }
+  await appendImmutableAudit(buildExportAuditEvent(req, {
+    action: 'export',
+    targetType: 'backoffice_report',
+    targetId: 'backoffice-report',
+    outcome: 'success'
+  })).catch(() => {});
   return res.json(report);
 });
 
@@ -1034,6 +1227,7 @@ app.use(
 app.use(
   '/api',
   buildAuthSessionRouter({
+    authLimiter,
     authGuard,
     requireSessionAuth,
     csrfGuard,
@@ -1072,7 +1266,12 @@ app.use(
     requireApiScope,
     quotaGuard,
     optionalAuth,
+    attachUserConsent,
+    canTrack,
     withDb,
+    outboundRepo,
+    appendImmutableAudit,
+    logger,
     sendMachineError,
     resolveOutboundPartnerUrl: (payload) => flightProviderRegistry.resolveOutboundPartnerUrl(payload),
     ensureAllowedOutboundUrl: (rawUrl) => flightProviderRegistry.ensureAllowedUrl(rawUrl),
@@ -1121,8 +1320,8 @@ app.use('/api/push',    buildPushRouter({ authGuard, csrfGuard }));
 app.use('/api/keys',    buildApiKeysRouter({ authGuard, csrfGuard }));
 app.use('/api/billing', buildBillingRouter({ authGuard, requireSessionAuth, csrfGuard }));
 app.use('/api/usage',   buildUsageRouter({ authGuard }));
-app.use('/api',         buildUserExportRouter({ authGuard, requireSessionAuth, quotaGuard, withDb, readDb, fetchCurrentUser }));
-app.use('/', buildDealEngineRouter({ authGuard }));
+app.use('/api',         buildUserExportRouter({ authGuard, requireSessionAuth, quotaGuard, withDb, readDb, fetchCurrentUser, appendImmutableAudit }));
+app.use('/', buildDealEngineRouter({ authGuard, optionalAuth, requireSessionAuth, adminGuard, attachUserConsent, canTrack, outboundRepo }));
 app.use('/api/discovery', buildDiscoveryRouter({ authGuard, csrfGuard, quotaGuard, requireApiScope }));
 app.use('/api/opportunities', buildOpportunitiesRouter({ authGuard, requireSessionAuth, adminGuard, csrfGuard, requireApiScope, quotaGuard, withDb, optionalAuth }));
 

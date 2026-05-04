@@ -128,6 +128,7 @@ function buildServerEnv() {
   env.DATABASE_URL = '';
   env.REDIS_URL = '';
   env.ALLOW_INSECURE_STARTUP_FOR_TESTS = 'true';
+  env.ALLOW_INSECURE_STARTUP_TEST_CONTEXT = 'true';
   env.RUN_STARTUP_TASKS = String(env.RUN_STARTUP_TASKS || 'false').trim() || 'false';
   env.CORS_ORIGIN = String(env.CORS_ORIGIN || 'http://localhost:5173').trim();
   env.FRONTEND_ORIGIN = String(env.FRONTEND_ORIGIN || 'http://localhost:5173').trim();

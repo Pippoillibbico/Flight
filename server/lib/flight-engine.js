@@ -161,6 +161,9 @@ export function searchFlights({
   travellers = 1,
   cabinClass = 'economy'
 }) {
+  if (String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production') {
+    throw new Error('Mock flight data is not allowed in production');
+  }
   const fromDate = parseISO(dateFrom);
   const toDate = dateTo ? parseISO(dateTo) : null;
   const isRoundTrip = Boolean(dateTo);

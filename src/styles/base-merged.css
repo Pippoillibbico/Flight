@@ -300,30 +300,18 @@ body.app-scroll-lock {
   border-color: rgba(255, 255, 255, 0.35);
 }
 
-.app-shell.app-dark .hero-controls .landing-theme-btn:hover,
-.app-shell.app-dark .hero-controls .landing-lang-btn:hover {
+.app-shell.app-dark .hero-controls .landing-theme-btn:hover {
   border-color: var(--hover-gold) !important;
   box-shadow:
     0 0 0 1px var(--hover-gold),
     0 0 18px var(--hover-gold-glow) !important;
 }
 
-.app-shell.app-dark .hero-controls .landing-lang-btn .landing-lang-trigger:hover {
-  border-radius: 10px;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.24);
-}
-
-.hero-controls .landing-theme-btn:hover,
-.hero-controls .landing-lang-btn:hover {
+.hero-controls .landing-theme-btn:hover {
   border-color: var(--hover-gold) !important;
   box-shadow:
     0 0 0 1px var(--hover-gold),
     0 0 18px var(--hover-gold-glow) !important;
-}
-
-.hero-controls .landing-lang-btn .landing-lang-trigger:hover {
-  border-radius: 10px;
-  box-shadow: none !important;
 }
 
 .app-shell.app-dark .landing-lang-popover {
@@ -4092,6 +4080,8 @@ a:focus-visible {
   position: sticky;
   top: 0;
   z-index: 50;
+  width: 100%;
+  box-sizing: border-box;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -4109,6 +4099,7 @@ a:focus-visible {
 .landing-brand {
   display: inline-flex;
   align-items: center;
+  min-width: 0;
   gap: 8px;
   font-weight: 900;
   font-size: 18px;
@@ -4136,7 +4127,7 @@ a:focus-visible {
 
 .landing-brand-logo svg {
   display: block;
-  height: 44px;
+  height: clamp(34px, 3vw, 44px);
   width: auto;
 }
 
@@ -4164,7 +4155,7 @@ a:focus-visible {
 
 .hero-brand-logo svg {
   display: block;
-  height: 44px;
+  height: clamp(34px, 3vw, 44px);
   width: auto;
 }
 
@@ -4176,9 +4167,9 @@ a:focus-visible {
   display: inline-flex;
   align-items: stretch;
   gap: 12px;
-  flex-wrap: wrap;
-  --landing-header-cta-w: 172px;
-  --landing-header-cta-h: 54px;
+  flex-wrap: nowrap;
+  --landing-header-cta-w: clamp(142px, 12vw, 172px);
+  --landing-header-cta-h: clamp(48px, 3.8vw, 54px);
 }
 
 /* Keep all header CTAs visually aligned (theme, lang, sign-in) */
@@ -4276,6 +4267,34 @@ a:focus-visible {
   font-size: 15px;
   font-weight: 600;
   box-shadow: none;
+}
+
+@media (max-width: 1440px) {
+  .landing-nav {
+    gap: 10px;
+    --landing-header-cta-w: clamp(132px, 11vw, 160px);
+  }
+
+  .landing-nav-link {
+    padding: 0 10px;
+    font-size: 14px;
+  }
+
+  .landing-nav .landing-onboarding-cta {
+    min-width: 220px !important;
+    max-width: 280px !important;
+  }
+}
+
+@media (max-width: 1279px) {
+  .landing-nav-link,
+  .landing-nav-sep {
+    display: none;
+  }
+
+  .landing-nav {
+    --landing-header-cta-w: clamp(128px, 10vw, 152px);
+  }
 }
 
 .landing-nav-link:hover {
@@ -4388,18 +4407,23 @@ a:focus-visible {
 }
 
 .landing-lang-current {
-  flex: 1;
-  min-width: 0;
+  flex: 0 0 auto;
+  min-width: max-content;
   line-height: 1.28;
   padding-bottom: 1px;
-  text-overflow: ellipsis;
-  overflow: hidden;
+  text-overflow: clip;
+  overflow: visible;
+  white-space: nowrap;
+}
+
+.landing-lang-trigger > svg {
+  flex: 0 0 auto;
 }
 
 .landing-lang-trigger:hover {
-  background: transparent;
-  border-color: transparent !important;
-  box-shadow: none;
+  background: rgba(255, 255, 255, 0.14);
+  border-color: var(--hover-gold);
+  box-shadow: 0 0 0 1px var(--hover-gold), 0 0 18px var(--hover-gold-glow);
   transform: none;
 }
 
@@ -5900,42 +5924,6 @@ body.landing-dark-active {
     0 0 0 1px rgba(255, 255, 255, 0.1) inset;
 }
 
-/* Final hover lock for app hero controls (prevents later overrides). */
-.app-shell .hero-controls .landing-theme-btn:hover,
-.app-shell .hero-controls .landing-lang-btn:hover {
-  border-color: var(--hover-gold) !important;
-  box-shadow:
-    0 0 0 1px var(--hover-gold),
-    0 0 18px var(--hover-gold-glow) !important;
-}
-
-/* Sign in keeps standard transparent/blue hover, no yellow outline. */
-.app-shell .hero-controls .landing-accedi-btn:hover {
-  border-color: transparent !important;
-  background: linear-gradient(180deg, #5ca9ff, #2f7ee8) !important;
-  box-shadow:
-    0 0 0 1px rgba(140, 189, 255, 0.35),
-    0 14px 32px rgba(15, 111, 255, 0.42) !important;
-}
-
-/* Single-outline hover for language control across all layouts. */
-.landing-lang-btn:hover,
-.landing-lang-btn:has(.landing-lang-trigger:hover) {
-  border-color: var(--hover-gold) !important;
-  box-shadow: 0 0 18px var(--hover-gold-glow) !important;
-}
-
-/* No yellow hover on main section tabs (Home/Explore/Radar/AI Travel/Premium). */
-.app-main-nav .tab:hover {
-  border-color: #8db4ff !important;
-  box-shadow: 0 8px 18px rgba(44, 88, 158, 0.18) !important;
-}
-
-.app-shell.app-dark .app-main-nav .tab:hover {
-  border-color: rgba(167, 194, 235, 0.95) !important;
-  box-shadow: 0 10px 20px rgba(8, 20, 38, 0.28) !important;
-}
-
 /* No yellow hover on opportunity hero CTAs. */
 .opportunity-hero .item-actions > button:not(.ghost):hover {
   border-color: #2d74df !important;
@@ -5977,13 +5965,6 @@ body.landing-dark-active {
   background: rgba(255, 255, 255, 0.14);
   border-color: rgba(255, 255, 255, 0.28);
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05) inset;
-}
-
-/* Keep language hover with a single contour (no double ring). */
-.hero-controls .landing-lang-btn:hover,
-.hero-controls .landing-lang-btn:has(.landing-lang-trigger:hover) {
-  border-color: var(--hover-gold) !important;
-  box-shadow: 0 0 18px var(--hover-gold-glow) !important;
 }
 
 /* =====================================================================
@@ -6032,20 +6013,45 @@ body.landing-dark-active {
   box-shadow: 0 10px 20px rgba(8, 20, 38, 0.28) !important;
 }
 
-/* App hero controls: theme stays subtle. */
+/* App hero controls: theme hover identical to language hover. */
 .app-shell .hero-controls .landing-theme-btn:hover {
-  border-color: rgba(255, 255, 255, 0.35) !important;
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22) !important;
-}
-
-/* App language control: yellow hover (no transparent hover). */
-.app-shell .hero-controls .landing-lang-btn:hover,
-.app-shell .hero-controls .landing-lang-btn:has(.landing-lang-trigger:hover) {
   border-color: var(--hover-gold) !important;
   background: rgba(255, 255, 255, 0.14) !important;
   box-shadow:
     0 0 0 1px var(--hover-gold),
     0 0 18px var(--hover-gold-glow) !important;
+}
+
+/* Hero header lang button: outer div is a layout-only wrapper — no visual of its own.
+   The inner trigger is the single visible element, styled to match the theme button. */
+.app-shell .hero-controls .landing-lang-btn,
+.app-shell .hero-controls .landing-lang-btn:hover {
+  border: none !important;
+  background: none !important;
+  box-shadow: none !important;
+}
+
+.app-shell .hero-controls .landing-lang-btn .landing-lang-trigger {
+  align-self: stretch;
+  border: 1px solid rgba(15, 111, 255, 0.16);
+  background: rgba(15, 111, 255, 0.05);
+  border-radius: 10px;
+  box-shadow: none;
+  transition: background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.app-shell.app-dark .hero-controls .landing-lang-btn .landing-lang-trigger {
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28), 0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+}
+
+.app-shell .hero-controls .landing-lang-btn .landing-lang-trigger:hover,
+.app-shell.app-dark .hero-controls .landing-lang-btn .landing-lang-trigger:hover {
+  background: rgba(255, 255, 255, 0.14) !important;
+  border-color: var(--hover-gold) !important;
+  box-shadow: 0 0 0 1px var(--hover-gold), 0 0 18px var(--hover-gold-glow) !important;
+  transform: none !important;
 }
 
 /* App Sign in must stay transparent/blue hover (no yellow). */
@@ -6117,8 +6123,6 @@ body.landing-dark-active {
   color: #ffffff !important;
 }
 
-
-
 /* Unified app-shell hover policy for discovery/radar CTAs: transparent -> white tint, no yellow. */
 .app-shell .opportunity-hero .item-actions > .opportunity-discover-cta:hover,
 .app-shell .opportunity-hero .item-actions > .opportunity-activate-radar-cta:hover {
@@ -6138,13 +6142,13 @@ body.landing-dark-active {
   transform: none !important;
 }
 
-.app-shell .opportunity-hero .item-actions > .ghost:not(.opportunity-activate-radar-cta):hover {
+.app-shell .opportunity-hero .item-actions > .ghost:not(.opportunity-activate-radar-cta):not(.opportunity-refresh-feed-cta):hover {
   background: transparent !important;
   border-color: #8db4ff !important;
   box-shadow: none !important;
 }
 
-.app-shell.app-dark .opportunity-hero .item-actions > .ghost:not(.opportunity-activate-radar-cta):hover {
+.app-shell.app-dark .opportunity-hero .item-actions > .ghost:not(.opportunity-activate-radar-cta):not(.opportunity-refresh-feed-cta):hover {
   background: transparent !important;
   border-color: #47566a !important;
   box-shadow: none !important;
@@ -6177,9 +6181,8 @@ body.landing-dark-active {
   transform: none !important;
 }
 
-.landing-shell:not(.landing-dark) .landing-theme-btn:hover,
-.landing-shell:not(.landing-dark) .landing-lang-btn:hover,
-.landing-shell:not(.landing-dark) .landing-lang-btn:has(.landing-lang-trigger:hover) {
+.landing-shell:not(.landing-dark) .landing-lang-trigger:hover {
+  border: 1px solid rgba(15, 111, 255, 0.34) !important;
   background: rgba(15, 111, 255, 0.1) !important;
   border-color: rgba(15, 111, 255, 0.34) !important;
   box-shadow: 0 10px 24px rgba(44, 88, 158, 0.18) !important;
@@ -6193,13 +6196,12 @@ body.landing-dark-active {
   transform: none !important;
 }
 
-.app-shell .hero-controls .landing-theme-btn:hover,
-.app-shell .hero-controls .landing-lang-btn:hover,
-.app-shell .hero-controls .landing-lang-btn:has(.landing-lang-trigger:hover) {
-  background: rgba(255, 255, 255, 0.16) !important;
-  border-color: rgba(255, 255, 255, 0.34) !important;
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22) !important;
-  transform: none !important;
+/* Final app-shell lock: language hover identical to theme button. */
+.app-shell .landing-lang-trigger:hover {
+  border: 1px solid var(--hover-gold) !important;
+  background: rgba(255, 255, 255, 0.14) !important;
+  border-color: var(--hover-gold) !important;
+  box-shadow: 0 0 0 1px var(--hover-gold), 0 0 18px var(--hover-gold-glow) !important;
 }
 
 .app-shell .opportunity-hero .item-actions > .opportunity-discover-cta:hover {
@@ -7381,12 +7383,14 @@ body.landing-dark-active {
 .page {
   --unified-cta-hover-border: #8db4ff;
   --unified-cta-hover-glow: rgba(44, 88, 158, 0.22);
+  --unified-ctrl-hover-bg: rgba(15, 111, 255, 0.1);
 }
 
 .page.app-dark,
 .page.landing-shell.landing-dark {
   --unified-cta-hover-border: rgba(167, 194, 235, 0.95);
   --unified-cta-hover-glow: rgba(8, 20, 38, 0.34);
+  --unified-ctrl-hover-bg: rgba(255, 255, 255, 0.16);
 }
 
 .page button:hover:not(:disabled):not(.landing-lang-trigger):not(.account-close-btn):not(.cookie-banner-link):not(.cookie-banner-details-toggle):not(.cookie-btn),
@@ -7404,6 +7408,10 @@ body.landing-dark-active {
     0 0 0 1px var(--unified-cta-hover-border),
     0 0 18px var(--unified-cta-hover-glow) !important;
   transform: none !important;
+}
+
+.page .landing-ctrl-btn:hover {
+  background: var(--unified-ctrl-hover-bg) !important;
 }
 
 /* ============================================================
@@ -7674,11 +7682,15 @@ body.landing-dark-active {
   display: none;
   flex-direction: column;
   justify-content: center;
+  align-items: center;
   gap: 5px;
   background: none;
   border: none;
-  padding: 6px;
+  padding: 8px;
   cursor: pointer;
+  min-width: 40px;
+  min-height: 40px;
+  border-radius: 10px;
   min-height: unset !important;
   box-shadow: none !important;
 }
@@ -7739,7 +7751,8 @@ body.landing-dark-active {
 
 .landing-mobile-signin {
   margin-top: 4px;
-  align-self: flex-start;
+  align-self: stretch;
+  width: 100%;
 }
 
 /* Trust badges below hero CTA */
@@ -7848,7 +7861,7 @@ body.landing-dark-active {
 }
 
 /* Responsive — show hamburger, hide desktop nav on mobile */
-@media (max-width: 700px) {
+@media (max-width: 1180px) {
   .landing-nav {
     display: none;
   }
@@ -7859,10 +7872,6 @@ body.landing-dark-active {
 
   .landing-mobile-nav {
     display: flex;
-  }
-
-  .landing-hero-visual {
-    display: none;
   }
 
   .landing-trust-row {
@@ -7877,6 +7886,30 @@ body.landing-dark-active {
   .landing-footer-inner {
     flex-direction: column;
     align-items: flex-start;
+  }
+}
+
+@media (max-width: 480px) {
+  .landing-header {
+    padding: 10px 12px;
+    gap: 10px;
+  }
+
+  .landing-brand-logo svg,
+  .hero-brand-logo svg {
+    height: 36px;
+  }
+
+  .landing-mobile-nav {
+    margin-inline: 12px;
+    padding: 10px 12px;
+  }
+}
+
+@media (max-width: 360px) {
+  .landing-brand-logo svg,
+  .hero-brand-logo svg {
+    height: 32px;
   }
 }
 
@@ -9169,6 +9202,5 @@ label.ck-cat__name {
   flex-shrink: 0;
 }
 .trial-banner-dismiss:hover { opacity: 1; }
-
 
 

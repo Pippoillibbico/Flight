@@ -1,10 +1,13 @@
 import { z } from 'zod';
 
 export const BILLING_PROVIDER = 'stripe';
+const planTypeInputSchema = z
+  .enum(['pro', 'creator', 'elite'])
+  .transform((value) => (value === 'elite' ? 'creator' : value));
 
 export const checkoutPayloadSchema = z
   .object({
-    planType: z.enum(['pro', 'elite']),
+    planType: planTypeInputSchema,
     successUrl: z.string().trim().url().optional(),
     cancelUrl: z.string().trim().url().optional(),
     paymentMethodNonce: z.string().trim().optional(),
@@ -20,7 +23,7 @@ export const portalPayloadSchema = z
 
 export const changePlanPayloadSchema = z
   .object({
-    planType: z.enum(['pro', 'elite']),
+    planType: planTypeInputSchema,
     prorationBehavior: z.enum(['create_prorations', 'none', 'always_invoice']).optional()
   })
   .strict();

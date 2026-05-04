@@ -92,7 +92,8 @@ export function selectBestProvider(deal) {
  *   return_date?: string|null,
  *   price?: number,
  *   cabin_class?: string,
- *   travellers?: number
+ *   travellers?: number,
+ *   metadata?: { kiwiDeepLink?: string, kiwi_deep_link?: string }
  * }} deal
  * @param {string} [forceProvider]  Override provider selection (for A/B tests)
  * @returns {{
@@ -120,6 +121,7 @@ export function generateAffiliateLink(deal, forceProvider = null) {
     dateTo: deal.return_date || null,
     travellers: deal.travellers || 1,
     cabinClass: deal.cabin_class || 'economy',
+    kiwiDeepLink: deal?.metadata?.kiwiDeepLink || deal?.metadata?.kiwi_deep_link || deal?.kiwiDeepLink || null,
     partner: provider
   });
 

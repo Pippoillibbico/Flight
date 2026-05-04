@@ -1,4 +1,5 @@
 import { parseFlag } from './env-flags.js';
+import { isLiveFlightProviderEnabled } from './live-flight-provider.js';
 
 const PLACEHOLDER_PATTERNS = [
   'replace-with',
@@ -47,6 +48,7 @@ function normalizeOrigin(rawValue) {
 function parseCorsOrigins(env) {
   const combined = [
     ...parseList(env?.CORS_ORIGIN),
+    ...parseList(env?.CORS_ALLOWED_ORIGINS),
     ...parseList(env?.FRONTEND_ORIGIN),
     ...parseList(env?.CORS_ALLOWLIST),
     String(env?.FRONTEND_URL || '').trim()
@@ -199,16 +201,15 @@ const CHECKS = [
   {
     key: 'STRIPE_WEBHOOK_SECRET',
     label: 'Stripe webhook secret',
-    // blocking when Stripe key is present AND we are in production; recommended otherwise
     severity: 'blocking',
     validator: (value, env) => {
-      const hasStripeKey = hasMinLength(env.STRIPE_SECRET_KEY, 16);
-      if (!hasStripeKey) return true; // Stripe not configured -> always pass
       const isProduction = String(env.NODE_ENV || '').trim().toLowerCase() === 'production';
-      if (!isProduction) return true; // dev/staging -> pass (shows only as recommended gap)
+      const provider = String(env.BILLING_PROVIDER || '').trim().toLowerCase();
+      const billingActive = isProduction && provider === 'stripe';
+      if (!billingActive) return true;
       return hasMinLength(value, 12) && !valueLooksPlaceholder(value);
     },
-    detailOnFail: 'required in production when STRIPE_SECRET_KEY is configured',
+    detailOnFail: 'required in production when BILLING_PROVIDER=stripe',
     detailOnPass: 'configured or Stripe/production not active'
   },
   {
@@ -230,27 +231,28 @@ const CHECKS = [
     label: 'Stripe PRO price id',
     severity: 'blocking',
     validator: (value, env) => {
-      const hasStripeKey = hasMinLength(env.STRIPE_SECRET_KEY, 16);
-      if (!hasStripeKey) return true;
       const isProduction = String(env.NODE_ENV || '').trim().toLowerCase() === 'production';
-      if (!isProduction) return true;
+      const provider = String(env.BILLING_PROVIDER || '').trim().toLowerCase();
+      const billingActive = isProduction && provider === 'stripe';
+      if (!billingActive) return true;
       return hasMinLength(value, 8) && !valueLooksPlaceholder(value);
     },
-    detailOnFail: 'required in production when Stripe is active (checkout cannot sell PRO without a configured price)',
+    detailOnFail: 'required in production when BILLING_PROVIDER=stripe (checkout cannot sell PRO without a configured price)',
     detailOnPass: 'configured or Stripe not active'
   },
   {
-    key: 'STRIPE_PRICE_CREATOR',
-    label: 'Stripe CREATOR/ELITE price id',
+    key: 'STRIPE_PRICE_ELITE',
+    label: 'Stripe ELITE price id',
     severity: 'blocking',
     validator: (value, env) => {
-      const hasStripeKey = hasMinLength(env.STRIPE_SECRET_KEY, 16);
-      if (!hasStripeKey) return true;
       const isProduction = String(env.NODE_ENV || '').trim().toLowerCase() === 'production';
-      if (!isProduction) return true;
-      return hasMinLength(value, 8) && !valueLooksPlaceholder(value);
+      const provider = String(env.BILLING_PROVIDER || '').trim().toLowerCase();
+      const billingActive = isProduction && provider === 'stripe';
+      if (!billingActive) return true;
+      const configured = value || env.STRIPE_PRICE_CREATOR;
+      return hasMinLength(configured, 8) && !valueLooksPlaceholder(configured);
     },
-    detailOnFail: 'required in production when Stripe is active (checkout cannot sell ELITE without a configured price)',
+    detailOnFail: 'required in production when BILLING_PROVIDER=stripe (checkout cannot sell ELITE without a configured price)',
     detailOnPass: 'configured or Stripe not active'
   },
   {
@@ -298,7 +300,7 @@ const CHECKS = [
     validator: (value, env) => {
       const isProduction = String(env?.NODE_ENV || '').trim().toLowerCase() === 'production';
       if (!isProduction) return true;
-      const plans = parseList(value || 'elite,creator')
+      const plans = parseList(value || 'pro,creator')
         .map((entry) => String(entry || '').trim().toLowerCase())
         .filter(Boolean);
       return !plans.includes('free');
@@ -420,6 +422,25 @@ export function getRuntimeConfigAudit(env = process.env) {
   checks.push(
     evaluateCheck(
       {
+        key: 'LIVE_FLIGHT_PROVIDER_REQUIRED',
+        label: 'Live flight provider required in production',
+        severity: isProduction ? 'blocking' : 'recommended',
+        validator: (_value, envContext) => {
+          const nodeEnv = String(envContext?.NODE_ENV || '').trim().toLowerCase();
+          if (nodeEnv !== 'production') return true;
+          return isLiveFlightProviderEnabled(envContext);
+        },
+        detailOnFail:
+          'production requires at least one live provider configured: duffel (ENABLE_PROVIDER_DUFFEL + DUFFEL_API_KEY), kiwi (ENABLE_PROVIDER_KIWI + KIWI_TEQUILA_API_KEY), or skyscanner (ENABLE_PROVIDER_SKYSCANNER + SKYSCANNER_API_KEY)',
+        detailOnPass: 'configured'
+      },
+      env
+    )
+  );
+
+  checks.push(
+    evaluateCheck(
+      {
         key: 'DUFFEL_PROVIDER_CREDENTIALS',
         label: 'Duffel provider credentials',
         severity: duffelEnabled ? 'blocking' : 'recommended',
@@ -503,9 +524,9 @@ export function getRuntimeConfigAudit(env = process.env) {
         key: 'DATA_RETENTION_AUTH_EVENTS_DAYS',
         label: 'Auth/security retention window',
         severity: 'recommended',
-        validator: (_value, envContext) => parsePositiveInt(envContext.DATA_RETENTION_AUTH_EVENTS_DAYS, 180) >= 7,
+        validator: (_value, envContext) => parsePositiveInt(envContext.DATA_RETENTION_AUTH_EVENTS_DAYS, 90) >= 7,
         detailOnFail: 'set DATA_RETENTION_AUTH_EVENTS_DAYS to a positive value (recommended >=7)',
-        detailOnPass: `configured (${parsePositiveInt(env.DATA_RETENTION_AUTH_EVENTS_DAYS, 180)} days)`
+        detailOnPass: `configured (${parsePositiveInt(env.DATA_RETENTION_AUTH_EVENTS_DAYS, 90)} days)`
       },
       env
     )
@@ -517,9 +538,9 @@ export function getRuntimeConfigAudit(env = process.env) {
         key: 'DATA_RETENTION_CLIENT_TELEMETRY_DAYS',
         label: 'Telemetry retention window',
         severity: 'recommended',
-        validator: (_value, envContext) => parsePositiveInt(envContext.DATA_RETENTION_CLIENT_TELEMETRY_DAYS, 120) >= 7,
+        validator: (_value, envContext) => parsePositiveInt(envContext.DATA_RETENTION_CLIENT_TELEMETRY_DAYS, 180) >= 7,
         detailOnFail: 'set DATA_RETENTION_CLIENT_TELEMETRY_DAYS to a positive value (recommended >=7)',
-        detailOnPass: `configured (${parsePositiveInt(env.DATA_RETENTION_CLIENT_TELEMETRY_DAYS, 120)} days)`
+        detailOnPass: `configured (${parsePositiveInt(env.DATA_RETENTION_CLIENT_TELEMETRY_DAYS, 180)} days)`
       },
       env
     )

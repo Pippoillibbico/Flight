@@ -11,11 +11,13 @@ import { getLiveDeals, getRealtimeStats } from '../lib/realtime-anomaly-engine.j
 import { generateAffiliateLink, buildBookingUrl } from '../lib/affiliate-link-engine.js';
 import { insertAffiliateClick, getAffiliateStats, initAffiliateClicksStore } from '../lib/affiliate-clicks-store.js';
 import { multiSourceSearch, getProviderStatus, isMultiSourceEnabled } from '../lib/multi-source-search-engine.js';
-import { getCacheRuntimeState } from '../lib/free-cache.js';
+import { getCacheClient, getCacheRuntimeState } from '../lib/free-cache.js';
 import { getAffiliateConfig } from '../lib/affiliate-links.js';
-import { readDb } from '../lib/db.js';
+import { readDb, withDb } from '../lib/db.js';
 import { getCostCapMonitoringSnapshot } from '../lib/cost-cap-monitor.js';
+import { getSmartDeparture } from '../lib/smart-departure-service.js';
 import { logger } from '../lib/logger.js';
+import { anonymizeIpForLogs, hashValueForLogs } from '../lib/log-redaction.js';
 
 const ingestSchema = z.object({
   origin_iata: z.string().trim().length(3),
@@ -148,8 +150,36 @@ function devOnlyGuard(req, res, next) {
   return next();
 }
 
-export function buildDealEngineRouter({ authGuard = (_req, _res, next) => next() } = {}) {
+export function buildDealEngineRouter({
+  authGuard = (_req, _res, next) => next(),
+  optionalAuth = (_req) => null,
+  requireSessionAuth = (_req, _res, next) => next(),
+  adminGuard = (_req, _res, next) => next(),
+  attachUserConsent = (_req, _res, next) => next(),
+  canTrack = () => false,
+  outboundRepo = null
+} = {}) {
   const router = express.Router();
+  const cacheClient = getCacheClient();
+  const isProduction = String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
+
+  function attachOptionalUser(req) {
+    if (req?.user) return req.user;
+    try {
+      const payload = optionalAuth(req);
+      if (payload && typeof payload === 'object') req.user = payload;
+      return req.user || null;
+    } catch {
+      return null;
+    }
+  }
+
+  function outboundBudgetKey({ userId, sessionId, ipHash }) {
+    if (userId) return `radar:outbound:user:${String(userId)}`;
+    if (sessionId) return `radar:outbound:session:${String(sessionId)}`;
+    if (ipHash) return `radar:outbound:ip:${String(ipHash)}`;
+    return 'radar:outbound:anonymous';
+  }
 
   router.get('/api/engine/status', async (_req, res) => {
     try {
@@ -243,7 +273,12 @@ export function buildDealEngineRouter({ authGuard = (_req, _res, next) => next()
     }
   });
 
-  router.post('/api/engine/recompute', adminOrDevGuard, async (_req, res) => {
+  const enforceAdminRoute =
+    isProduction
+      ? [authGuard, requireSessionAuth, adminGuard]
+      : [adminOrDevGuard];
+
+  router.post('/api/engine/recompute', ...enforceAdminRoute, async (_req, res) => {
     try {
       await initDealEngineStore();
       const result = await recomputeRouteBaselines();
@@ -310,7 +345,31 @@ export function buildDealEngineRouter({ authGuard = (_req, _res, next) => next()
           deal_type: evaluated.deal_type || 'unknown',
           deal_confidence: evaluated.dealConfidence
         });
-        deals.push({ ...item, ...evaluated, deal_id: dealId, booking_url: safeBookingUrl, provider, estimated_commission });
+        const smartDeparture = await getSmartDeparture({
+          origin: item.origin,
+          destination: item.destinationIata,
+          departureDate: item.dateFrom,
+          returnDate: item.dateTo || null,
+          basePrice: item.price,
+          travellers: parsed.data.travellers || parsed.data.adults || 1,
+          cabinClass: item.cabinClass || parsed.data.cabinClass || parsed.data.cabin_class || 'economy',
+          user: req.user || null
+        }).catch(() => ({
+          enabled: false,
+          primaryOffer: null,
+          alternatives: [],
+          bestAlternative: null,
+          summaryMessage: null
+        }));
+        deals.push({
+          ...item,
+          ...evaluated,
+          deal_id: dealId,
+          booking_url: safeBookingUrl,
+          provider,
+          estimated_commission,
+          smartDeparture
+        });
       }
       deals.sort((a, b) => b.dealConfidence - a.dealConfidence || a.price - b.price);
       return res.json({ deals: deals.slice(0, parsed.data.topN) });
@@ -373,7 +432,10 @@ export function buildDealEngineRouter({ authGuard = (_req, _res, next) => next()
 
   // ── Affiliate redirect + click tracking ─────────────────────────────────
 
-  router.get('/api/redirect/:dealId', async (req, res) => {
+  router.get('/api/redirect/:dealId', attachUserConsent, async (req, res) => {
+    const user = attachOptionalUser(req);
+    const { planType } = resolveUserPlan(user);
+    const analyticsOptIn = canTrack(req, 'analytics');
     const dealId = String(req.params.dealId || '').trim().slice(0, 128);
     if (!dealId) return res.status(400).json({ error: 'deal_id_required' });
 
@@ -395,6 +457,13 @@ export function buildDealEngineRouter({ authGuard = (_req, _res, next) => next()
 
     const deal = { origin, destination, departure_date: departureDate, return_date: returnDate, price, cabin_class: cabinClass };
     const { url: affiliateUrl, provider, estimated_commission } = generateAffiliateLink(deal);
+    // Lightweight pre-redirect step: frontend can request preview mode before 302.
+    if (String(req.query.preview || '').trim() === '1') {
+      return res.json({
+        message: 'Ti stiamo portando al prezzo...',
+        redirectUrl: affiliateUrl
+      });
+    }
     const sanitizedAffiliateUrl = sanitizeRedirectUrl(affiliateUrl);
     logger.info(
       {
@@ -409,36 +478,130 @@ export function buildDealEngineRouter({ authGuard = (_req, _res, next) => next()
 
     // Hash PII for privacy-safe storage
     const ipRaw = String(req.ip || req.socket?.remoteAddress || '');
-    const ipHash = ipRaw ? createHash('sha256').update(ipRaw).digest('hex').slice(0, 16) : null;
+    const ipHash = anonymizeIpForLogs(ipRaw) || null;
     const uaRaw = String(req.headers['user-agent'] || '');
     const uaHash = uaRaw ? createHash('sha256').update(uaRaw).digest('hex').slice(0, 16) : null;
-    const userId = req.user?.sub || req.auth?.sub || null;
-    const sessionId = req.sessionID || req.cookies?.sid || null;
+    const userId = user?.sub || req.auth?.sub || null;
+    const rawSessionId = String(req.sessionID || req.cookies?.sid || '').trim();
+    const sessionId = rawSessionId ? hashValueForLogs(rawSessionId, { label: 'session', length: 20 }) : null;
 
-    // Store click — fire-and-forget, never block the redirect
-    initAffiliateClicksStore()
-      .then(() =>
-        insertAffiliateClick({
-          dealId, provider, origin, destination,
-          departureDate, returnDate, cabinClass, tripType,
-          price, dealType, dealConfidence, estimatedCommission: estimated_commission,
-          userId, sessionId, ipHash, userAgentHash: uaHash, surface,
-          affiliateUrl
+    // Outbound click gating:
+    // - anonymous: allow first click, then force login from second click
+    // - free plan: one outbound click/day, then limit_reached
+    const dayKey = new Date().toISOString().slice(0, 10);
+    const budgetKey = outboundBudgetKey({ userId, sessionId, ipHash });
+    const counterKey = `${budgetKey}:${dayKey}`;
+    if (cacheClient && typeof cacheClient.incr === 'function') {
+      const clickCount = Number(await cacheClient.incr(counterKey));
+      if (clickCount === 1 && typeof cacheClient.expire === 'function') {
+        await cacheClient.expire(counterKey, 24 * 60 * 60 + 120).catch((error) => {
+          logger.warn({ err: error, counterKey }, 'redirect_daily_counter_expire_failed');
+        });
+      }
+      if (!user && clickCount > 1) {
+        return res.status(401).json({
+          error: 'auth_required',
+          login_required: true,
+          message: 'Login required after first outbound click.'
+        });
+      }
+      if (planType === 'free' && clickCount > 1) {
+        return res.status(402).json({
+          error: 'limit_reached',
+          message: 'Free plan outbound click limit reached. Upgrade to continue.',
+          upgrade_context: 'more_deals'
+        });
+      }
+    }
+
+    if (analyticsOptIn) {
+      // Store click — fire-and-forget, never block the redirect.
+      const clickedAtIso = new Date().toISOString();
+      const isProduction = String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
+      initAffiliateClicksStore()
+        .then(() =>
+          insertAffiliateClick({
+            dealId, provider, origin, destination,
+            departureDate, returnDate, cabinClass, tripType,
+            price, dealType, dealConfidence, estimatedCommission: estimated_commission,
+            userId, sessionId, ipHash, userAgentHash: uaHash, surface,
+            affiliateUrl: sanitizedAffiliateUrl || affiliateUrl
+          })
+        )
+        .then(async () => {
+          if (outboundRepo && typeof outboundRepo.isAvailable === 'function' && outboundRepo.isAvailable()) {
+            await outboundRepo.insertClick({
+              userId: userId || null,
+              provider: provider || null,
+              itineraryId: dealId,
+              destinationUrl: sanitizedAffiliateUrl || affiliateUrl,
+              correlationId: dealId,
+              redirectStatus: 'pending'
+            });
+            await outboundRepo.markRedirectSucceeded(dealId);
+          }
+
+          if (isProduction) return;
+          await withDb(async (db) => {
+            const routeSlug = `${String(origin || '').trim().toUpperCase()}-${String(destination || '').trim().toUpperCase()}`;
+            db.outboundClicks = Array.isArray(db.outboundClicks) ? db.outboundClicks : [];
+            db.outboundClicks.push({
+              id: `redirect_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+              at: clickedAtIso,
+              clickedAt: clickedAtIso,
+              eventName: 'booking_clicked',
+              providerType: 'affiliate',
+              clickId: dealId,
+              correlationId: dealId,
+              itineraryId: dealId,
+              userId: userId || null,
+              sessionId: sessionId || null,
+              partner: provider || null,
+              url: sanitizedAffiliateUrl || affiliateUrl,
+              surface: surface || 'deal_feed',
+              origin,
+              destinationIata: destination,
+              destination,
+              stopCount: null,
+              comfortScore: null
+            });
+            db.outboundClicks = db.outboundClicks.slice(-5000);
+
+            db.clientTelemetryEvents = Array.isArray(db.clientTelemetryEvents) ? db.clientTelemetryEvents : [];
+            db.clientTelemetryEvents.push({
+              id: `redir_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+              at: clickedAtIso,
+              eventType: 'outbound_clicked',
+              action: 'book_cta',
+              surface: surface || 'deal_feed',
+              source: 'redirect_server',
+              itineraryId: dealId,
+              correlationId: dealId,
+              routeSlug,
+              dealId,
+              sessionId: sessionId || null,
+              userId: userId || null,
+              price: Number.isFinite(Number(price)) ? Number(price) : null,
+              planType: planType || null
+            });
+            db.clientTelemetryEvents = db.clientTelemetryEvents.slice(-12000);
+            return db;
+          });
         })
-      )
-      .then(() => {
-        logger.info(
-          {
-            dealId,
-            provider,
-            origin,
-            destination,
-            price
-          },
-          'redirect_tracked'
-        );
-      })
-      .catch((err) => logger.warn({ err, dealId }, 'affiliate_click_insert_failed'));
+        .then(() => {
+          logger.info(
+            {
+              dealId,
+              provider,
+              origin,
+              destination,
+              price
+            },
+            'redirect_tracked'
+          );
+        })
+        .catch((err) => logger.warn({ err, dealId, provider, origin, destination }, 'affiliate_click_insert_failed'));
+    }
 
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
     logger.info(
@@ -455,7 +618,7 @@ export function buildDealEngineRouter({ authGuard = (_req, _res, next) => next()
 
   // ── Admin affiliate analytics ─────────────────────────────────────────────
 
-  router.get('/api/admin/affiliate-stats', adminOrDevGuard, async (req, res) => {
+  router.get('/api/admin/affiliate-stats', ...enforceAdminRoute, async (req, res) => {
     try {
       await initAffiliateClicksStore();
       const windowDays = Math.max(1, Math.min(365, Number(req.query.days || 30)));
@@ -469,8 +632,10 @@ export function buildDealEngineRouter({ authGuard = (_req, _res, next) => next()
 
   // ── Real-time live deals ──────────────────────────────────────────────────
 
-  router.get('/api/engine/realtime-deals', authGuard, async (req, res) => {
+  router.get('/api/engine/realtime-deals', async (req, res) => {
     try {
+      const user = attachOptionalUser(req);
+      const { planType } = resolveUserPlan(user);
       const limit = Math.max(1, Math.min(200, Number(req.query.limit || 50)));
       const origin = req.query.origin ? String(req.query.origin).trim().toUpperCase() : null;
       const minConfidence = Math.max(0, Number(req.query.min_confidence || 0));
@@ -479,7 +644,7 @@ export function buildDealEngineRouter({ authGuard = (_req, _res, next) => next()
       const rawDeals = await getLiveDeals({ limit, origin, minConfidence, minDelta });
       const { redisConnected, source } = readRealtimeCacheMeta();
       // Enrich live deals with booking_url + estimated_commission
-      const deals = rawDeals.map((deal) => {
+      const allDeals = await Promise.all(rawDeals.map(async (deal) => {
         const realtimeId = generateRealtimeId(deal);
         const { provider, estimated_commission } = generateAffiliateLink({
           origin: deal.origin, destination: deal.destination,
@@ -505,15 +670,66 @@ export function buildDealEngineRouter({ authGuard = (_req, _res, next) => next()
             deal_confidence: deal.deal_confidence
           }
         );
-        return { ...deal, realtime_id: realtimeId, booking_url: safeBookingUrl, provider, estimated_commission };
-      });
+        const smartDeparture = await getSmartDeparture({
+          origin: deal.origin,
+          destination: deal.destination,
+          departureDate: deal.departure_date,
+          returnDate: deal.return_date || null,
+          basePrice: deal.price,
+          travellers: deal.travellers || 1,
+          cabinClass: deal.cabin_class || 'economy',
+          user
+        }).catch(() => ({
+          enabled: false,
+          primaryOffer: null,
+          alternatives: [],
+          bestAlternative: null,
+          summaryMessage: null
+        }));
+        return {
+          ...deal,
+          realtime_id: realtimeId,
+          booking_url: safeBookingUrl,
+          provider,
+          estimated_commission,
+          smartDeparture
+        };
+      }));
+
+      // Radar access model:
+      // - anonymous teaser: 3 deals
+      // - free plan: 5 deals
+      // - pro/creator: full feed
+      let deals = allDeals;
+      let accessTier = 'paid';
+      if (!user) {
+        deals = allDeals.slice(0, 3);
+        accessTier = 'anonymous_teaser';
+      } else if (planType === 'free') {
+        deals = allDeals.slice(0, 5);
+        accessTier = 'free_limited';
+      }
+
+      const providers = getProviderStatus();
+      const duffel = providers.find((item) => String(item?.name || '').toLowerCase() === 'duffel') || null;
+      const providerUnavailable = Boolean(
+        duffel &&
+        (duffel.enabled && (!duffel.configured || duffel.circuitOpen))
+      );
+      const reason = deals.length === 0
+        ? (providerUnavailable ? 'provider_unavailable' : 'no_data')
+        : 'ok';
       return res.json({
         deals,
         meta: {
           enabled: String(process.env.REALTIME_ANOMALY_ENABLED || 'true') !== 'false',
           redisConnected,
           source,
-          reason: deals.length === 0 ? 'no_data' : 'ok'
+          reason,
+          accessTier,
+          loginRequiredAfterDetailViews: 2,
+          loginRequiredAfterOutboundClicks: 1,
+          upgradeTriggers: ['advanced_alerts', 'history', 'more_deals']
         }
       });
     } catch (error) {
@@ -687,7 +903,7 @@ export function buildDealEngineRouter({ authGuard = (_req, _res, next) => next()
     }
   });
 
-  router.get('/api/admin/provider-coverage', adminOrDevGuard, async (req, res) => {
+  router.get('/api/admin/provider-coverage', ...enforceAdminRoute, async (req, res) => {
     try {
       const providers = getProviderStatus();
       const multiSourceOn = isMultiSourceEnabled();

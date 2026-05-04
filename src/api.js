@@ -457,6 +457,12 @@ export const api = {
   billingPublicConfig() {
     return requestCached('/billing/public-config', { auth: false }, 5 * 60 * 1000);
   },
+  getConsent() {
+    return request('/consent', { auth: false });
+  },
+  updateConsent(categories) {
+    return request('/consent', { method: 'POST', body: { categories }, auth: false });
+  },
   billingCheckout(token, body) {
     return request('/billing/checkout', { method: 'POST', token, body });
   },

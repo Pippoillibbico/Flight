@@ -266,6 +266,8 @@
   position: sticky;
   top: 0;
   z-index: 50;
+  width: 100%;
+  box-sizing: border-box;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -283,6 +285,7 @@
 .landing-brand {
   display: inline-flex;
   align-items: center;
+  min-width: 0;
   gap: 8px;
   font-weight: 900;
   font-size: 18px;
@@ -310,7 +313,7 @@
 
 .landing-brand-logo svg {
   display: block;
-  height: 44px;
+  height: clamp(34px, 3vw, 44px);
   width: auto;
 }
 
@@ -338,7 +341,7 @@
 
 .hero-brand-logo svg {
   display: block;
-  height: 44px;
+  height: clamp(34px, 3vw, 44px);
   width: auto;
 }
 
@@ -350,9 +353,9 @@
   display: inline-flex;
   align-items: stretch;
   gap: 12px;
-  flex-wrap: wrap;
-  --landing-header-cta-w: 172px;
-  --landing-header-cta-h: 54px;
+  flex-wrap: nowrap;
+  --landing-header-cta-w: clamp(142px, 12vw, 172px);
+  --landing-header-cta-h: clamp(48px, 3.8vw, 54px);
 }
 
 /* Keep all header CTAs visually aligned (theme, lang, sign-in) */
@@ -450,6 +453,34 @@
   font-size: 15px;
   font-weight: 600;
   box-shadow: none;
+}
+
+@media (max-width: 1440px) {
+  .landing-nav {
+    gap: 10px;
+    --landing-header-cta-w: clamp(132px, 11vw, 160px);
+  }
+
+  .landing-nav-link {
+    padding: 0 10px;
+    font-size: 14px;
+  }
+
+  .landing-nav .landing-onboarding-cta {
+    min-width: 220px !important;
+    max-width: 280px !important;
+  }
+}
+
+@media (max-width: 1279px) {
+  .landing-nav-link,
+  .landing-nav-sep {
+    display: none;
+  }
+
+  .landing-nav {
+    --landing-header-cta-w: clamp(128px, 10vw, 152px);
+  }
 }
 
 .landing-nav-link:hover {
@@ -562,12 +593,17 @@
 }
 
 .landing-lang-current {
-  flex: 1;
-  min-width: 0;
+  flex: 0 0 auto;
+  min-width: max-content;
   line-height: 1.28;
   padding-bottom: 1px;
-  text-overflow: ellipsis;
-  overflow: hidden;
+  text-overflow: clip;
+  overflow: visible;
+  white-space: nowrap;
+}
+
+.landing-lang-trigger > svg {
+  flex: 0 0 auto;
 }
 
 .landing-lang-trigger:hover {

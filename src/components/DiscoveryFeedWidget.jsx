@@ -91,17 +91,37 @@ function flattenCategoryItems(feed) {
   return unique;
 }
 
-function DiscoveryCard({ item }) {
+function isValidIata(value) {
+  return /^[A-Z]{3}$/.test(String(value || '').trim().toUpperCase());
+}
+
+function DiscoveryCard({ item, origin }) {
   const savingsPct = Number(item.savings_pct_vs_avg);
   const hasSavings = Number.isFinite(savingsPct) && savingsPct > 0;
   const categoryLabel = CATEGORY_LABEL[item.category] || item.category;
   const visibleTags = (item.tags || []).filter((t) => t !== 'hidden_gem' || item.category !== 'unusual_route').slice(0, 2);
+  const bookingLink = String(item.booking_link || '').trim();
+  const originCode = isValidIata(item.origin_iata)
+    ? item.origin_iata.trim().toUpperCase()
+    : isValidIata(origin)
+    ? origin.trim().toUpperCase()
+    : null;
+  const destinationCode = isValidIata(item.destination_iata)
+    ? item.destination_iata.trim().toUpperCase()
+    : null;
+  const routeLabel = originCode && destinationCode
+    ? `${originCode} → ${destinationCode}`
+    : originCode
+    ? `${originCode} → ${item.destination_name}`
+    : destinationCode
+    ? `${destinationCode} → ${item.destination_name}`
+    : item.destination_name;
 
   return (
     <article className="disc-feed-card" data-category={item.category}>
       <div className="disc-feed-card-head">
         <div className="disc-feed-card-route">
-          <strong className="disc-feed-card-dest">{item.destination_name}</strong>
+          <strong className="disc-feed-card-route-main">{routeLabel}</strong>
           <span className="disc-feed-card-country">{item.country}</span>
         </div>
         <span className="disc-feed-card-badge" data-category={item.category}>
@@ -129,10 +149,10 @@ function DiscoveryCard({ item }) {
         </div>
       )}
 
-      {item.booking_link ? (
+      {bookingLink ? (
         <a
           className="disc-feed-card-cta"
-          href={item.booking_link}
+          href={bookingLink}
           target="_blank"
           rel="noopener noreferrer"
         >
@@ -199,7 +219,7 @@ export default function DiscoveryFeedWidget({ origin, limit = 12, language = 'it
         {items.length > 0 ? (
           <div className="disc-feed-grid">
             {items.map((item) => (
-              <DiscoveryCard key={item.id} item={item} language={language} />
+              <DiscoveryCard key={item.id} item={item} origin={origin} language={language} />
             ))}
           </div>
         ) : null}
@@ -228,7 +248,7 @@ export default function DiscoveryFeedWidget({ origin, limit = 12, language = 'it
       </header>
       <div className="disc-feed-grid">
         {items.map((item) => (
-          <DiscoveryCard key={item.id} item={item} language={language} />
+          <DiscoveryCard key={item.id} item={item} origin={origin} language={language} />
         ))}
       </div>
     </section>

@@ -4,6 +4,8 @@ import { parseFlag } from '../lib/env-flags.js';
 import { applyPricingToOffer, computeEconomics, guardOffer, sanitizeOfferForClient } from '../lib/pricing/index.js';
 import { logEconomicEvent } from '../lib/observability/index.js';
 import { getPlanRuntimeLimits } from '../lib/plan-access.js';
+import { isLiveFlightProviderEnabled } from '../lib/live-flight-provider.js';
+import { z } from 'zod';
 
 function round4(value) {
   return Math.round(Number(value || 0) * 10000) / 10000;
@@ -67,6 +69,16 @@ export function buildSearchRouter({
   liveFlightService = null
 }) {
   const router = Router();
+  const suggestionsQuerySchema = z.object({
+    q: z.string().trim().max(80).optional().default(''),
+    region: z.string().trim().max(20).optional().default('all'),
+    country: z.string().trim().min(2).max(80).optional(),
+    limit: z.coerce.number().int().min(1).max(20).optional().default(8)
+  }).strict();
+  const countriesQuerySchema = z.object({
+    q: z.string().trim().max(80).optional().default(''),
+    limit: z.coerce.number().int().min(1).max(50).optional().default(12)
+  }).strict();
   const persistSearchHistory = parseFlag(
     process.env.SEARCH_HISTORY_PERSIST_ENABLED,
     !String(process.env.DATABASE_URL || '').trim()
@@ -89,10 +101,12 @@ export function buildSearchRouter({
   });
 
   router.get('/suggestions', (req, res) => {
-    const query = String(req.query.q || '');
-    const region = String(req.query.region || 'all');
-    const country = req.query.country ? String(req.query.country) : undefined;
-    const limit = Number(req.query.limit || 8);
+    const parsed = suggestionsQuerySchema.safeParse(req.query);
+    if (!parsed.success) return res.status(400).json({ error: 'Invalid input' });
+    const query = parsed.data.q;
+    const region = parsed.data.region;
+    const country = parsed.data.country;
+    const limit = parsed.data.limit;
 
     const safeRegion = REGION_ENUM.includes(region) ? region : 'all';
     const safeLimit = Number.isFinite(limit) ? Math.min(Math.max(limit, 1), 20) : 8;
@@ -108,10 +122,12 @@ export function buildSearchRouter({
   });
 
   router.get('/countries', (req, res) => {
-    const query = String(req.query.q || '')
+    const parsed = countriesQuerySchema.safeParse(req.query);
+    if (!parsed.success) return res.status(400).json({ error: 'Invalid input' });
+    const query = String(parsed.data.q || '')
       .toLowerCase()
       .trim();
-    const limit = Number(req.query.limit || 12);
+    const limit = Number(parsed.data.limit || 12);
     const safeLimit = Number.isFinite(limit) ? Math.min(Math.max(limit, 1), 50) : 12;
 
     const scored = COUNTRIES.map((country) => {
@@ -149,6 +165,10 @@ export function buildSearchRouter({
   router.post('/search', authGuard, csrfGuard, requireApiScope('search'), quotaGuard({ counter: 'search', amount: 1 }), async (req, res) => {
     const parsed = searchSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid payload.' });
+    const isProduction = String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
+    if (isProduction && !isLiveFlightProviderEnabled(process.env)) {
+      return res.status(503).json({ error: 'live_flight_provider_required_in_production' });
+    }
 
     const searchPayload = parsed.data;
     let resolvedPlanId = String(req.user?.planType || req.user?.plan || 'free').toLowerCase();
@@ -159,6 +179,8 @@ export function buildSearchRouter({
       } catch {}
     }
     const isFreeUser = resolvedPlanId === 'free';
+    // Provider gating: free users (and anonymous, when present) never trigger live Duffel search.
+    const enableLiveSearch = Boolean(req.user) && !isFreeUser;
     const isMultiCityMode = searchPayload.mode === 'multi_city' && Array.isArray(searchPayload.segments) && searchPayload.segments.length >= 2;
     const firstSegment = isMultiCityMode ? searchPayload.segments[0] : null;
     const lastSegment = isMultiCityMode ? searchPayload.segments[searchPayload.segments.length - 1] : null;
@@ -188,7 +210,11 @@ export function buildSearchRouter({
     let searchMode = 'synthetic_local_model';
     let liveMeta = null;
 
-    if (liveFlightService && syntheticFlights.length > 0) {
+    if (isProduction && !liveFlightService) {
+      return res.status(503).json({ error: 'live_flight_provider_service_unavailable' });
+    }
+
+    if (liveFlightService && syntheticFlights.length > 0 && enableLiveSearch) {
       const uniqueDestsAll = [
         ...new Set(
           syntheticFlights
@@ -230,7 +256,10 @@ export function buildSearchRouter({
         offersByDest = liveResult.offersByDest;
         liveMeta = liveResult.meta;
         if (Object.keys(offersByDest).length > 0) searchMode = 'live_duffel';
-      } catch (_) {
+      } catch (error) {
+        if (isProduction) {
+          return res.status(503).json({ error: 'live_flight_provider_search_failed' });
+        }
         // Graceful degrade: live provider failed, stay on synthetic
         searchMode = 'synthetic_local_model';
       }
@@ -350,6 +379,9 @@ export function buildSearchRouter({
 
     const liveCount = enhancedFlights.filter((f) => f.isBookable).length;
     const syntheticCount = enhancedFlights.length - liveCount;
+    if (isProduction && (searchMode !== 'live_duffel' || liveCount === 0)) {
+      return res.status(503).json({ error: 'synthetic_flight_data_not_allowed_in_production' });
+    }
     const providerValidatedItems = enhancedFlights
       .filter((flight) => flight?.isBookable)
       .map((flight) => ({

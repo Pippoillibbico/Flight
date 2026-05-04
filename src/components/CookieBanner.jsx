@@ -7,6 +7,7 @@ import {
   getConsentSnapshot,
   saveConsentPreferences
 } from '../utils/cookieConsent';
+import { api } from '../api';
 
 /**
  * GDPR-compliant cookie consent banner + settings modal.
@@ -23,7 +24,7 @@ import {
  *  - Links to Privacy and Cookie Policy
  */
 function CookieBanner({ t }) {
-  const [visible, setVisible]               = useState(false);
+  const [visible, setVisible]               = useState(true);
   const [settingsOpen, setSettingsOpen]     = useState(false);
   const [consentRecorded, setConsentRecorded] = useState(false);
   const [functionalEnabled, setFunctionalEnabled] = useState(false);
@@ -40,39 +41,36 @@ function CookieBanner({ t }) {
     if (!snap) setVisible(true);
   }, []);
 
-  useEffect(() => {
-    if (!hasConsented()) {
-      setVisible(true);
-      setConsentRecorded(false);
-      setFunctionalEnabled(false);
-      setAnalyticsEnabled(false);
-    } else {
-      syncFromConsent();
-    }
-    function handleConsentChange() {
-      syncFromConsent();
-      if (hasConsented()) { setVisible(false); setSettingsOpen(false); }
-    }
-    window.addEventListener('flight_consent_changed', handleConsentChange);
-    return () => window.removeEventListener('flight_consent_changed', handleConsentChange);
-  }, [syncFromConsent]);
-
   const tr = useCallback((key, fallback) => (typeof t === 'function' ? t(key) : null) || fallback, [t]);
+
+  const syncConsentServerSide = useCallback(async ({ functional, analytics }) => {
+    try {
+      await api.updateConsent({
+        analytics: Boolean(analytics),
+        marketing: false,
+        personalization: Boolean(functional)
+      });
+    } catch {
+      // Backend enforcement remains fail-safe (optional tracking denied without consent).
+    }
+  }, []);
 
   // ── Actions ─────────────────────────────────────────────────────────────
   const handleAcceptAll = useCallback(() => {
     acceptAllConsent();
+    void syncConsentServerSide({ functional: true, analytics: true });
     setConsentRecorded(true);
     setVisible(false);
     setSettingsOpen(false);
-  }, []);
+  }, [syncConsentServerSide]);
 
   const handleRejectOptional = useCallback(() => {
     rejectOptionalConsent();
+    void syncConsentServerSide({ functional: false, analytics: false });
     setConsentRecorded(true);
     setVisible(false);
     setSettingsOpen(false);
-  }, []);
+  }, [syncConsentServerSide]);
 
   const openSettings = useCallback(() => {
     const snap = getConsentSnapshot();
@@ -82,6 +80,25 @@ function CookieBanner({ t }) {
     setVisible(false);
   }, []);
 
+  useEffect(() => {
+    // Product requirement: keep the banner open on app startup.
+    setVisible(true);
+    syncFromConsent();
+    function handleConsentChange() {
+      syncFromConsent();
+      if (hasConsented()) { setVisible(false); setSettingsOpen(false); }
+    }
+    function handleOpenCookieSettings() {
+      openSettings();
+    }
+    window.addEventListener('flight_consent_changed', handleConsentChange);
+    window.addEventListener('flight_open_cookie_settings', handleOpenCookieSettings);
+    return () => {
+      window.removeEventListener('flight_consent_changed', handleConsentChange);
+      window.removeEventListener('flight_open_cookie_settings', handleOpenCookieSettings);
+    };
+  }, [openSettings, syncFromConsent]);
+
   const closeSettings = useCallback(() => {
     setSettingsOpen(false);
     if (!hasConsented()) setVisible(true);
@@ -89,10 +106,11 @@ function CookieBanner({ t }) {
 
   const saveSettings = useCallback(() => {
     saveConsentPreferences({ functional: Boolean(functionalEnabled), analytics: Boolean(analyticsEnabled) });
+    void syncConsentServerSide({ functional: Boolean(functionalEnabled), analytics: Boolean(analyticsEnabled) });
     setConsentRecorded(true);
     setSettingsOpen(false);
     setVisible(false);
-  }, [functionalEnabled, analyticsEnabled]);
+  }, [functionalEnabled, analyticsEnabled, syncConsentServerSide]);
 
   // ── Body padding offset for the banner ──────────────────────────────────
   useEffect(() => {
@@ -187,7 +205,7 @@ function CookieBanner({ t }) {
             <p className="ck-banner__desc">
               {tr(
                 'cookieBannerBody',
-                'Usiamo cookie tecnici per garantire il funzionamento del sito. Con il tuo consenso memorizziamo anche le tue preferenze e raccogliamo statistiche anonime per migliorare il servizio. Nessun dato è venduto a terzi.'
+                'Usiamo cookie e strumenti necessari per far funzionare il servizio. Con il tuo consenso attiviamo anche funzionalità opzionali e analytics per migliorarlo. Non vendiamo dati personali.'
               )}
             </p>
 
@@ -302,7 +320,7 @@ function CookieBanner({ t }) {
                     {tr('cookieCatAnalyticsLabel', 'Analytics')}
                   </label>
                   <span className="ck-cat__desc">
-                    {tr('cookieCatAnalyticsDesc', 'Statistiche anonime (ricerche, click) per migliorare il servizio. Nessun dato personale condiviso con terze parti.')}
+                    {tr('cookieCatAnalyticsDesc', 'Eventi analytics per misurare utilizzo e qualità del servizio. I dati non sono venduti e vengono trattati secondo la Privacy Policy.')}
                   </span>
                 </div>
                 <button

@@ -1,4 +1,5 @@
 import type { BookingClickedEvent, BookingTrackerApiClient } from '../types/index.ts';
+import { isConsentGiven } from '../../../utils/cookieConsent.js';
 
 interface BookingClickedDispatcher {
   dispatchEvent: (eventName: string, detail: BookingClickedEvent) => void;
@@ -52,13 +53,19 @@ function sanitizeEventForDispatch(event: BookingClickedEvent): BookingClickedEve
 
 export function createBookingClickedTracker({
   apiClient,
-  dispatcher = defaultDispatcher()
+  dispatcher = defaultDispatcher(),
+  hasAnalyticsConsent = () => {
+    if (typeof window === 'undefined') return true;
+    return isConsentGiven('analytics');
+  }
 }: {
   apiClient?: BookingTrackerApiClient;
   dispatcher?: BookingClickedDispatcher | null;
+  hasAnalyticsConsent?: () => boolean;
 } = {}) {
   return {
     async track(event: BookingClickedEvent): Promise<void> {
+      if (!hasAnalyticsConsent()) return;
       try {
         dispatcher?.dispatchEvent('booking_clicked', sanitizeEventForDispatch(event));
       } catch {

@@ -1,5 +1,6 @@
 import { PLANS } from '../saas-db.js';
 import { planIdToPublicPlanType, normalizeStripeProrationBehavior, normalizeSubscriptionStatus } from './stripe-billing-utils.js';
+import { normalizePlanType } from '../plans/normalize-plan-type.js';
 
 export class StripeBillingStateService {
   constructor({
@@ -24,29 +25,40 @@ export class StripeBillingStateService {
     const value = String(priceId || '').trim();
     if (!value) return 'free';
     const proPrice = String(process.env.STRIPE_PRICE_PRO || '').trim();
-    const creatorPrice = String(process.env.STRIPE_PRICE_CREATOR || '').trim();
+    const elitePrice = String(process.env.STRIPE_PRICE_ELITE || process.env.STRIPE_PRICE_CREATOR || '').trim();
     if (value && proPrice && value === proPrice) return 'pro';
-    if (value && creatorPrice && value === creatorPrice) return 'creator';
+    if (value && elitePrice && value === elitePrice) return 'elite';
     return 'free';
   }
 
   planToStripePriceId(planType) {
-    const normalized = String(planType || '').trim().toLowerCase();
+    const normalized = normalizePlanType(planType);
     if (normalized === 'pro') return String(process.env.STRIPE_PRICE_PRO || '').trim();
-    if (normalized === 'elite' || normalized === 'creator') return String(process.env.STRIPE_PRICE_CREATOR || '').trim();
+    if (normalized === 'creator') return String(process.env.STRIPE_PRICE_ELITE || process.env.STRIPE_PRICE_CREATOR || '').trim();
+    return '';
+  }
+
+  planToStripeProductId(planType) {
+    const normalized = normalizePlanType(planType);
+    if (normalized === 'pro') return String(process.env.STRIPE_PRODUCT_PRO || '').trim();
+    if (normalized === 'creator') return String(process.env.STRIPE_PRODUCT_ELITE || process.env.STRIPE_PRODUCT_CREATOR || '').trim();
+    return '';
+  }
+
+  planToStripeLookupKey(planType) {
+    const normalized = normalizePlanType(planType);
+    if (normalized === 'pro') return String(process.env.STRIPE_PRICE_LOOKUP_KEY_PRO || '').trim();
+    if (normalized === 'creator') return String(process.env.STRIPE_PRICE_LOOKUP_KEY_ELITE || process.env.STRIPE_PRICE_LOOKUP_KEY_CREATOR || '').trim();
     return '';
   }
 
   normalizePlanTypeForSubscription(rawValue) {
-    const value = String(rawValue || '').trim().toLowerCase();
-    if (value === 'pro') return 'pro';
-    if (value === 'elite' || value === 'creator') return 'creator';
-    return 'free';
+    return normalizePlanType(rawValue);
   }
 
   planToInlinePriceData(planType) {
-    const normalized = String(planType || '').trim().toLowerCase();
-    const plan = normalized === 'pro' ? PLANS.pro : normalized === 'elite' || normalized === 'creator' ? PLANS.creator : null;
+    const normalized = normalizePlanType(planType);
+    const plan = normalized === 'pro' ? PLANS.pro : normalized === 'creator' ? PLANS.elite || PLANS.creator : null;
     if (!plan) return null;
     const unitAmount = Math.round(Number(plan.priceEur || 0) * 100);
     if (!Number.isFinite(unitAmount) || unitAmount <= 0) return null;
@@ -217,7 +229,18 @@ export class StripeBillingStateService {
           priceId: payload.priceId,
           cancelAtPeriodEnd: payload.cancelAtPeriodEnd
         }
-      }).catch(() => {});
+      }).catch((error) => {
+        this.logger.warn(
+          {
+            code: 'STRIPE_WEBHOOK_SIDE_EFFECT_FAILED',
+            error: error?.message || String(error),
+            user_id: userId,
+            audit_action: auditAction,
+            stripe_subscription_id: payload.id || null
+          },
+          'stripe_subscription_audit_write_failed'
+        );
+      });
     }
 
     return {
@@ -264,9 +287,10 @@ export class StripeBillingStateService {
   }
 
   async updateSubscriptionPlan({ stripe, subscription, targetPlanType, prorationBehavior, userId, defaultProrationBehavior }) {
-    const priceId = this.planToStripePriceId(targetPlanType);
+    const normalizedTargetPlanType = normalizePlanType(targetPlanType);
+    const priceId = this.planToStripePriceId(normalizedTargetPlanType);
     if (!priceId) {
-      throw Object.assign(new Error(`Missing Stripe price mapping for ${targetPlanType}.`), {
+      throw Object.assign(new Error(`Missing Stripe price mapping for ${normalizedTargetPlanType}.`), {
         code: 'billing_plan_not_configured'
       });
     }
@@ -279,7 +303,7 @@ export class StripeBillingStateService {
       metadata: {
         ...(subscription?.metadata || {}),
         user_id: String(userId || '').trim(),
-        plan_type: targetPlanType
+        plan_type: normalizedTargetPlanType
       }
     });
 
@@ -340,7 +364,7 @@ export class StripeBillingStateService {
   }
 
   mapStoredSubscriptionResponse(sub) {
-    const planId = String(sub?.plan_id ?? sub?.planId ?? 'free').trim().toLowerCase() || 'free';
+    const planId = normalizePlanType(sub?.plan_id ?? sub?.planId ?? 'free');
     const planType = planIdToPublicPlanType(planId);
     const status = normalizeSubscriptionStatus(sub?.status ?? 'active');
     return {

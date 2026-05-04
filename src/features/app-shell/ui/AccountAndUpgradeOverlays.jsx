@@ -1,6 +1,29 @@
 import AuthSection from '../../../components/AuthSection';
 import UpgradeFlowModal from '../../upgrade-flow/ui/UpgradeFlowModal';
 
+function formatCheckoutAmount(value) {
+  const amount = Number(value);
+  const safeAmount = Number.isFinite(amount) && amount >= 0 ? amount : 0;
+  return `EUR ${safeAmount.toFixed(2)}`;
+}
+
+function createCheckoutCart(planType, billingPricing) {
+  const normalizedPlanType = planType === 'elite' ? 'elite' : 'pro';
+  const pricing =
+    normalizedPlanType === 'elite'
+      ? billingPricing?.elite || billingPricing?.creator || null
+      : billingPricing?.pro || null;
+  const amount = Number(pricing?.monthlyEur ?? (normalizedPlanType === 'elite' ? 22 : 12));
+  const amountLabel = formatCheckoutAmount(amount);
+  return {
+    planName: normalizedPlanType === 'elite' ? 'Flight Suite Elite' : 'Flight Suite Pro',
+    intervalLabel: 'Monthly subscription',
+    quantity: 1,
+    unitAmountLabel: amountLabel,
+    totalLabel: amountLabel
+  };
+}
+
 export default function AccountAndUpgradeOverlays({
   adminRouteRequested,
   isAuthenticated,
@@ -17,7 +40,6 @@ export default function AccountAndUpgradeOverlays({
   billingPricingError,
   upgradeToPremium,
   chooseElitePlan,
-  openOnboardingSetup,
   setupMfa,
   disableMfa,
   resetMfaSetup,
@@ -31,7 +53,6 @@ export default function AccountAndUpgradeOverlays({
   loginWithFacebook,
   oauthLoading,
   loginWithGoogle,
-  loginWithApple,
   submitAuth,
   authForm,
   setAuthForm,
@@ -52,8 +73,13 @@ export default function AccountAndUpgradeOverlays({
   closePlanUpgradeFlow,
   submitPlanUpgradeInterest,
   openPremiumSectionFromUpgradeFlow,
+  checkoutLoading,
   searchLimitValueNote
 }) {
+  const checkoutCart = upgradePlanContent
+    ? createCheckoutCart(upgradePlanContent.planType, billingPricing)
+    : null;
+
   return (
     <>
       <AuthSection
@@ -69,7 +95,6 @@ export default function AccountAndUpgradeOverlays({
         billingPricingError={billingPricingError}
         upgradeToPremium={() => upgradeToPremium('account_panel')}
         chooseElitePlan={() => chooseElitePlan('account_panel')}
-        reopenOnboarding={openOnboardingSetup}
         setupMfa={setupMfa}
         disableMfa={disableMfa}
         resetMfaSetup={resetMfaSetup}
@@ -83,7 +108,6 @@ export default function AccountAndUpgradeOverlays({
         loginWithFacebook={loginWithFacebook}
         oauthLoading={oauthLoading}
         loginWithGoogle={loginWithGoogle}
-        loginWithApple={loginWithApple}
         submitAuth={submitAuth}
         authForm={authForm}
         setAuthForm={setAuthForm}
@@ -104,6 +128,8 @@ export default function AccountAndUpgradeOverlays({
         step={upgradeFlowState.step}
         content={upgradePlanContent}
         currentPlanType={userPlanType}
+        checkoutLoading={checkoutLoading}
+        checkoutCart={checkoutCart}
         comparisonRows={planComparisonRows}
         valueNoteLabel={upgradeFlowState.source === 'search_limit' ? searchLimitValueNote : undefined}
         onClose={closePlanUpgradeFlow}
@@ -113,4 +139,3 @@ export default function AccountAndUpgradeOverlays({
     </>
   );
 }
-

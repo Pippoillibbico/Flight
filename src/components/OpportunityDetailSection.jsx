@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { validateProps } from '../utils/validateProps';
+import { formatRouteDisplayName } from '../utils/localizePlace';
 import UpgradePrompt from './UpgradePrompt';
 
 const OpportunityDetailSectionPropsSchema = z
@@ -41,7 +42,7 @@ function OpportunityDetailSection(props) {
   const formatPrice = (value, currency = 'EUR') => {
     const amount = Number(value);
     if (!Number.isFinite(amount)) return '-';
-    return String(currency).toUpperCase() === 'EUR' ? `${Math.round(amount)} \u20AC` : `${Math.round(amount)} ${currency}`;
+    return String(currency).toUpperCase() === 'EUR' ? `${Math.round(amount)} EUR` : `${Math.round(amount)} ${currency}`;
   };
   const normalizeWhyItMatters = (value) => {
     const raw = String(value || '').trim();
@@ -80,7 +81,7 @@ function OpportunityDetailSection(props) {
     { key: 'stops', label: tt('opportunityDetailStopsLabel', 'Stops'), value: stopsLabel },
     { key: 'length', label: tt('opportunityDetailTripLengthLabel', 'Trip length'), value: tripLengthLabel }
   ];
-  const routeLabel = `${String(item?.origin_airport || '-')} -> ${String(item?.destination_airport || '-')}`;
+  const routeLabel = formatRouteDisplayName(item, language);
 
   return (
     <section className="panel opportunity-detail-panel">
@@ -161,9 +162,7 @@ function OpportunityDetailSection(props) {
                   data-testid={`related-opportunity-${relatedItem.id}`}
                   onClick={() => onViewRelated(relatedItem.id)}
                 >
-                  <span className="opportunity-related-route">
-                    {relatedItem.origin_airport} {'→'} {relatedItem.destination_airport}
-                  </span>
+                  <span className="opportunity-related-route">{formatRouteDisplayName(relatedItem, language)}</span>
                   <span className="opportunity-related-price">
                     {formatPrice(relatedItem.price, relatedItem.currency)}
                   </span>

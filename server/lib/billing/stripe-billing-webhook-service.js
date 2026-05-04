@@ -4,6 +4,13 @@ import { logEconomicEvent } from '../economic-logger.js';
 const STRIPE_API_VERSION = '2026-02-25.clover';
 const STRIPE_INVOICE_FEE_RATE = 0.029;
 const STRIPE_INVOICE_FEE_FIXED_EUR = 0.3;
+const DEFAULT_WEBHOOK_TOLERANCE_SECONDS = 300;
+
+function resolveWebhookToleranceSeconds() {
+  const raw = Number(process.env.STRIPE_WEBHOOK_TOLERANCE_SECONDS);
+  if (!Number.isFinite(raw)) return DEFAULT_WEBHOOK_TOLERANCE_SECONDS;
+  return Math.max(30, Math.min(900, Math.trunc(raw)));
+}
 
 function round4(value) {
   return Math.round(Number(value || 0) * 10000) / 10000;
@@ -57,7 +64,7 @@ export class StripeBillingWebhookService {
         ? stripeClient
         : this.defaultStripeClientForWebhookVerification();
 
-    return verifier.webhooks.constructEvent(payload, signature, secret);
+    return verifier.webhooks.constructEvent(payload, signature, secret, resolveWebhookToleranceSeconds());
   }
 
   async updateStripeCustomerMappingFromCheckoutSession(session) {
@@ -139,16 +146,26 @@ export class StripeBillingWebhookService {
         } else {
           const userId = String(session?.metadata?.user_id || session?.client_reference_id || '').trim();
           if (userId) {
-            await this.stateService.appendImmutableAudit({
-              actor: 'stripe',
-              action: 'billing.checkout.completed',
-              target: userId,
-              metadata: {
-                checkoutSessionId: session?.id || null,
-                stripeSubscriptionId: subscriptionId || null,
-                stripeCustomerId: session?.customer || null
-              }
-            }).catch(() => {});
+            try {
+              await this.stateService.appendImmutableAudit({
+                actor: 'stripe',
+                action: 'billing.checkout.completed',
+                target: userId,
+                metadata: {
+                  checkoutSessionId: session?.id || null,
+                  stripeSubscriptionId: subscriptionId || null,
+                  stripeCustomerId: session?.customer || null
+                }
+              });
+            } catch (err) {
+              this.logger.warn({
+                code: 'STRIPE_WEBHOOK_SIDE_EFFECT_FAILED',
+                error: err?.message || String(err),
+                stripeEventId: event?.id || null,
+                stripeEventType: event?.type || null,
+                sideEffect: 'appendImmutableAudit.billing.checkout.completed'
+              });
+            }
           }
         }
         break;
@@ -182,16 +199,26 @@ export class StripeBillingWebhookService {
         });
 
         if (userId) {
-          await this.stateService.appendImmutableAudit({
-            actor: 'stripe',
-            action: 'billing.payment_succeeded',
-            target: userId,
-            metadata: {
-              invoiceId: invoice?.id || null,
-              amountPaid: invoice?.amount_paid ?? null,
-              currency: invoice?.currency || null
-            }
-          }).catch(() => {});
+          try {
+            await this.stateService.appendImmutableAudit({
+              actor: 'stripe',
+              action: 'billing.payment_succeeded',
+              target: userId,
+              metadata: {
+                invoiceId: invoice?.id || null,
+                amountPaid: invoice?.amount_paid ?? null,
+                currency: invoice?.currency || null
+              }
+            });
+          } catch (err) {
+            this.logger.warn({
+              code: 'STRIPE_WEBHOOK_SIDE_EFFECT_FAILED',
+              error: err?.message || String(err),
+              stripeEventId: event?.id || null,
+              stripeEventType: event?.type || null,
+              sideEffect: 'appendImmutableAudit.billing.payment_succeeded'
+            });
+          }
         }
         break;
       }
@@ -200,15 +227,25 @@ export class StripeBillingWebhookService {
         const sub = data.object;
         const userId = sub?.metadata?.user_id ?? (await this.stateService.resolveUserIdFromStripeCustomer(sub?.customer));
         if (userId) {
-          await this.stateService.appendImmutableAudit({
-            actor: 'stripe',
-            action: 'billing.subscription.trial_will_end',
-            target: userId,
-            metadata: {
-              subscriptionId: sub?.id || null,
-              currentPeriodEnd: sub?.current_period_end ? new Date(sub.current_period_end * 1000).toISOString() : null
-            }
-          }).catch(() => {});
+          try {
+            await this.stateService.appendImmutableAudit({
+              actor: 'stripe',
+              action: 'billing.subscription.trial_will_end',
+              target: userId,
+              metadata: {
+                subscriptionId: sub?.id || null,
+                currentPeriodEnd: sub?.current_period_end ? new Date(sub.current_period_end * 1000).toISOString() : null
+              }
+            });
+          } catch (err) {
+            this.logger.warn({
+              code: 'STRIPE_WEBHOOK_SIDE_EFFECT_FAILED',
+              error: err?.message || String(err),
+              stripeEventId: event?.id || null,
+              stripeEventType: event?.type || null,
+              sideEffect: 'appendImmutableAudit.billing.subscription.trial_will_end'
+            });
+          }
         }
         break;
       }
@@ -231,12 +268,22 @@ export class StripeBillingWebhookService {
           }
         });
         if (userId) {
-          await this.stateService.appendImmutableAudit({
-            actor: 'stripe',
-            action: 'billing.payment_failed',
-            target: userId,
-            metadata: { invoiceId: invoice?.id || null, amount: invoice?.amount_due ?? null }
-          }).catch(() => {});
+          try {
+            await this.stateService.appendImmutableAudit({
+              actor: 'stripe',
+              action: 'billing.payment_failed',
+              target: userId,
+              metadata: { invoiceId: invoice?.id || null, amount: invoice?.amount_due ?? null }
+            });
+          } catch (err) {
+            this.logger.warn({
+              code: 'STRIPE_WEBHOOK_SIDE_EFFECT_FAILED',
+              error: err?.message || String(err),
+              stripeEventId: event?.id || null,
+              stripeEventType: event?.type || null,
+              sideEffect: 'appendImmutableAudit.billing.payment_failed'
+            });
+          }
         }
         break;
       }
@@ -339,13 +386,31 @@ export class StripeBillingWebhookService {
       );
       return res.json({ received: true, deduped: false });
     } catch (error) {
-      await this.finalizeStripeWebhookEvent({
-        id: eventId,
-        status: 'failed',
-        errorMessage: error?.message || 'webhook_processing_failed'
-      }).catch(() => {});
+      try {
+        await this.finalizeStripeWebhookEvent({
+          id: eventId,
+          status: 'failed',
+          errorMessage: error?.message || 'webhook_processing_failed'
+        });
+      } catch (err) {
+        this.logger.warn({
+          code: 'STRIPE_WEBHOOK_SIDE_EFFECT_FAILED',
+          error: err?.message || String(err),
+          stripeEventId: event?.id || null,
+          stripeEventType: event?.type || null,
+          sideEffect: 'finalizeStripeWebhookEvent.failed'
+        });
+      }
       this.logger.error(
-        { err: error, endpoint: '/api/billing/webhook', stripe_event_type: event?.type, billing_provider: this.billingProvider },
+        {
+          code: 'STRIPE_WEBHOOK_PROCESSING_FAILED',
+          error: error?.message || String(error),
+          stack: error?.stack,
+          stripeEventId: event?.id || null,
+          stripeEventType: event?.type || null,
+          endpoint: '/api/billing/webhook',
+          billing_provider: this.billingProvider
+        },
         'billing_webhook_handler_error'
       );
       return res.status(500).json({ error: 'webhook_processing_failed' });

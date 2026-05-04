@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { z } from 'zod';
 import { validateProps } from '../utils/validateProps';
-import { localizeCityName, localizeClusterDisplayName } from '../utils/localizePlace';
+import { formatRouteDisplayName, localizeClusterDisplayName } from '../utils/localizePlace';
 import {
   readTrackedRouteSlugs,
   subscribeToPersonalHubStorage,
@@ -114,10 +114,10 @@ function OpportunityFeedSection(props) {
     eyebrow: isLiveData
       ? tt('opportunityFeedEyebrow', 'Live radar intelligence')
       : tt('opportunityFeedEyebrowSynthetic', 'Radar intelligence'),
-    heroTitle: tt('opportunityFeedHeroTitle', 'Flights you shouldn\u2019t be able to find'),
+    heroTitle: tt('opportunityFeedHeroTitle', 'Your travel opportunity radar'),
     heroSub: isLiveData
       ? tt('opportunityFeedHeroSub', 'Our radar scans millions of routes in real time to surface hidden travel opportunities before they disappear.')
-      : tt('opportunityFeedHeroSubSynthetic', 'Our radar analyses historical pricing data to surface exceptional travel opportunities.'),
+      : tt('opportunityFeedHeroSubSynthetic', 'We rank pricing signals, route patterns, and timing windows so you can inspect the best opportunities first.'),
     liveSignalActive: isLiveData
       ? tt('opportunityFeedLiveSignalActive', 'Live radar active - scanning routes now')
       : tt('opportunityFeedSignalActive', 'Radar active - analysing routes'),
@@ -132,13 +132,13 @@ function OpportunityFeedSection(props) {
     refreshCta: tt('opportunityFeedRefreshCta', 'Refresh feed'),
     topDealTitle: isLiveData
       ? tt('opportunityFeedTopDealTitle', '\ud83d\udd25 Best deal live now')
-      : tt('opportunityFeedTopDealTitleSynthetic', '\ud83d\udd25 Top opportunity'),
+      : tt('opportunityFeedTopDealTitleSynthetic', 'Top opportunity'),
     topDealSubtitle: isLiveData
       ? tt('opportunityFeedTopDealSubtitle', 'Real fare identified in the latest radar sweep. Prices may move quickly.')
-      : tt('opportunityFeedTopDealSubtitleSynthetic', 'Strong historical pricing signal. Verify current availability before booking.'),
+      : tt('opportunityFeedTopDealSubtitleSynthetic', 'Strong pricing signal. Verify current availability before booking.'),
     topDealCta: tt('opportunityFeedTopDealCta', 'View deal'),
     topDealHot: 'Hot',
-    topDealEmpty: tt('opportunityFeedTopDealEmpty', 'No standout deal detected yet. Keep the feed active and refresh for new signals.'),
+    topDealEmpty: tt('opportunityFeedTopDealEmpty', 'No high-priority signal right now; the radar is still scanning.'),
     topDealSavingLabel: tt('opportunityFeedTopDealSavingLabel', 'Saving vs average'),
     topDealSignalLabel: isLiveData
       ? tt('opportunityFeedTopDealSignalLabel', 'Live fare verified')
@@ -155,9 +155,14 @@ function OpportunityFeedSection(props) {
       : tt('opportunityFeedTodayTitleSynthetic', 'Opportunity feed'),
     todaySub: isLiveData
       ? tt('opportunityFeedTodaySub', 'Real fares from the latest radar scans, prioritized by value.')
-      : tt('opportunityFeedTodaySubSynthetic', 'Historical pricing intelligence, prioritized by value. Connect live providers for real-time fares.'),
+      : tt('opportunityFeedTodaySubSynthetic', 'Ranked opportunities from pricing history and route signals. Confirm the live fare before booking.'),
     clusterTitle: tt('opportunityFeedClusterTitle', 'Opportunity clusters'),
     clusterSub: tt('opportunityFeedClusterSub', 'Focus on destinations with the strongest active pricing signals.'),
+    trackingEmpty: tt('opportunityFeedTrackingEmpty', isEnglish ? 'Track routes to build your personal radar' : 'Segui le rotte per creare il tuo radar personale'),
+    trackingActive: (count) => tt(
+      'opportunityFeedTrackingActive',
+      isEnglish ? `Tracking ${count} routes - radar is watching for you` : `${count} rotte seguite - il radar le monitora per te`
+    ).replace('{count}', count),
     activitySignalStrong: tt(
       'opportunityFeedActivitySignalStrong',
       isEnglish ? 'High opportunity signal' : 'Segnale opportunita alto'
@@ -331,7 +336,7 @@ function OpportunityFeedSection(props) {
           <p className="opportunity-hot-state" data-testid="opportunity-hot-state">{isLiveData ? 'Live opportunities detected' : 'High-signal opportunities detected'}</p>
         ) : (
           <p className="opportunity-hot-empty" data-testid="opportunity-hot-empty">
-            Nothing hot right now - but the radar is still scanning.
+            {labels.topDealEmpty}
           </p>
         )}
         <p className="muted">{labels.topDealSubtitle}</p>
@@ -340,10 +345,7 @@ function OpportunityFeedSection(props) {
             <article className="opportunity-top-deal-card" data-testid="opportunity-top-deal">
               <div className="opportunity-top-deal-main">
                 <div className="opportunity-top-deal-head">
-                  <strong className="opportunity-top-deal-route">
-                    {String(topDeal?.origin_city || topDeal?.origin_airport || 'Origin')} {'→'}{' '}
-                    {localizeCityName(String(topDeal?.destination_city || topDeal?.destination_airport || 'Destination'), language)}
-                  </strong>
+                  <strong className="opportunity-top-deal-route">{formatRouteDisplayName(topDeal, language)}</strong>
                   <div className="opportunity-top-deal-badges">
                     {getRadarState(topDeal) === 'radar_hot' ? (
                       <span className="opportunity-urgency-pill" data-testid="opportunity-urgency-pill-top-deal">
@@ -386,10 +388,7 @@ function OpportunityFeedSection(props) {
                 <p className="opportunity-live-rail-title">{labels.topRailTitle}</p>
                 {topRailItems.map((item) => (
                   <article key={item.id} className="opportunity-live-rail-item" data-testid={`opportunity-live-rail-item-${item.id}`}>
-                    <strong className="opportunity-live-rail-route">
-                      {String(item?.origin_city || item?.origin_airport || 'Origin')} {'→'}{' '}
-                      {localizeCityName(String(item?.destination_city || item?.destination_airport || 'Destination'), language)}
-                    </strong>
+                    <strong className="opportunity-live-rail-route">{formatRouteDisplayName(item, language)}</strong>
                     <p className="opportunity-live-rail-price">{formatPrice(item?.price, item?.currency)}</p>
                     <p className="opportunity-live-rail-meta">
                       {formatTripType(item, labels)} | {item?.stops === 0 ? labels.direct : `${item?.stops} ${labels.stopsSuffix}`}
@@ -424,11 +423,11 @@ function OpportunityFeedSection(props) {
         <p className="muted">{labels.clusterSub}</p>
         {trackedRoutesCount === 0 ? (
           <p className="opportunity-retention-hook" data-testid="opportunity-retention-hook-empty">
-            Start tracking routes to unlock your personal radar
+            {labels.trackingEmpty}
           </p>
         ) : (
           <p className="opportunity-retention-hook" data-testid="opportunity-retention-hook-returning">
-            You&apos;re tracking {trackedRoutesCount} routes - radar is watching for you
+            {labels.trackingActive(trackedRoutesCount)}
           </p>
         )}
         {trackedRoutesLimitReached ? (
@@ -540,9 +539,7 @@ function OpportunityFeedSection(props) {
               <article key={item.id} className="opportunity-card">
                 <div className="opportunity-card-main">
                   <div className="opportunity-card-top">
-                    <strong className="opportunity-card-route">
-                      {item.origin_city} {'→'} {localizeCityName(item.destination_city, language)}
-                    </strong>
+                    <strong className="opportunity-card-route">{formatRouteDisplayName(item, language)}</strong>
                     <div className="opportunity-card-badges">
                       {getRadarState(item) === 'radar_hot' ? (
                         <span className="opportunity-urgency-pill" data-testid={`opportunity-urgency-pill-${item.id}`}>

@@ -22,6 +22,9 @@ const SubscriptionSchema = z.object({
     auth:   z.string().min(4)
   })
 });
+const UnsubscribeSchema = z.object({
+  endpoint: z.string().url()
+});
 
 export function buildPushRouter({
   authGuard   = (_req, _res, next) => next(),
@@ -54,8 +57,9 @@ export function buildPushRouter({
 
   // Remove a browser PushSubscription
   router.delete('/subscribe', authGuard, csrfGuard, async (req, res) => {
-    const endpoint = String(req.body?.endpoint || '').trim();
-    if (!endpoint) return res.status(400).json({ error: 'endpoint_required' });
+    const parse = UnsubscribeSchema.safeParse(req.body || {});
+    if (!parse.success) return res.status(400).json({ error: 'invalid_subscription', detail: parse.error.issues });
+    const endpoint = parse.data.endpoint;
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: 'unauthenticated' });
     const removed = await removePushSubscription({ userId, endpoint });

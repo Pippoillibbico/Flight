@@ -1,5 +1,6 @@
 import express from 'express';
 import { nanoid } from 'nanoid';
+import { hashValueForLogs } from '../lib/log-redaction.js';
 
 function sanitizeTelemetryText(value, maxLength) {
   return String(value || '')
@@ -38,12 +39,16 @@ export function buildAdminTelemetryRouter({
   telemetryBurstLimiter,
   telemetryEventLimiter,
   authGuard,
+  adminGuard,
   requireSessionAuth,
   csrfGuard,
+  attachUserConsent = (_req, _res, next) => next(),
+  canTrack = () => false,
   safeJsonByteLength,
   sendMachineError,
   adminTelemetryEventSchema,
   withDb,
+  telemetryRepo,
   fetchCurrentUser,
   resolveUserPlan,
   logger,
@@ -62,9 +67,12 @@ export function buildAdminTelemetryRouter({
     telemetryBurstLimiter,
     telemetryEventLimiter,
     authGuard,
+    adminGuard,
     requireSessionAuth,
     csrfGuard,
+    attachUserConsent,
     async (req, res) => {
+      if (!canTrack(req, 'analytics')) return res.status(204).send();
       const rawBody = req.body;
       if (!rawBody || typeof rawBody !== 'object' || Array.isArray(rawBody)) {
         return sendMachineError(req, res, 400, 'invalid_payload');
@@ -118,7 +126,10 @@ export function buildAdminTelemetryRouter({
         source: sanitizeTelemetryText(payload.source, 120) || null,
         routeSlug: sanitizeTelemetryText(payload.routeSlug, 120) || null,
         dealId: sanitizeTelemetryText(payload.dealId, 120) || null,
-        sessionId: sanitizeTelemetryText(payload.sessionId, 120) || null,
+        sessionId: (() => {
+          const rawSession = sanitizeTelemetryText(payload.sessionId, 120);
+          return rawSession ? hashValueForLogs(rawSession, { label: 'telemetry_session', length: 24 }) : null;
+        })(),
         price: Number.isFinite(Number(payload.price)) ? Number(payload.price) : null,
         planType: resolvedPlanType || null,
         trustLevel: 'session_bound_client'
@@ -135,49 +146,79 @@ export function buildAdminTelemetryRouter({
 
       let rejectedForBurst = false;
       let burstResetAt = null;
-      await withDb(async (db) => {
-        db.clientTelemetryEvents = Array.isArray(db.clientTelemetryEvents) ? db.clientTelemetryEvents : [];
-        const eventAtMs = new Date(eventRecord.at).getTime();
-        const recentSameFingerprintCount = db.clientTelemetryEvents.reduce((count, candidate) => {
-          if (!candidate || typeof candidate !== 'object') return count;
-          if (String(candidate.userId || '') !== String(eventRecord.userId || '')) return count;
-          if (String(candidate.fingerprint || '') !== String(eventRecord.fingerprint || '')) return count;
-          const candidateAt = new Date(candidate.at || '').getTime();
-          if (!Number.isFinite(candidateAt) || !Number.isFinite(eventAtMs)) return count;
-          if (Math.abs(eventAtMs - candidateAt) > TELEMETRY_BURST_WINDOW_MS) return count;
-          return count + 1;
-        }, 0);
+      const eventAtMs = new Date(eventRecord.at).getTime();
+      const hasPostgresRepo = Boolean(telemetryRepo && typeof telemetryRepo.isAvailable === 'function' && telemetryRepo.isAvailable());
+      const isProduction = String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
+      if (!hasPostgresRepo && isProduction) {
+        logger.error({ endpoint: '/api/admin/telemetry' }, 'admin_telemetry_repo_missing_in_production');
+        return sendMachineError(req, res, 503, 'telemetry_storage_not_configured');
+      }
+      if (hasPostgresRepo) {
+        const recentSameFingerprintCount = await telemetryRepo.countRecentByFingerprint({
+          userId: eventRecord.userId,
+          fingerprint: eventRecord.fingerprint,
+          eventAtIso: eventRecord.at,
+          windowMs: TELEMETRY_BURST_WINDOW_MS
+        });
         if (recentSameFingerprintCount >= TELEMETRY_BURST_MAX) {
           rejectedForBurst = true;
           burstResetAt = new Date(eventAtMs + TELEMETRY_BURST_WINDOW_MS).toISOString();
-          return db;
+        } else {
+          const hasDuplicate = await telemetryRepo.hasDuplicateEvent(eventRecord, ADMIN_TELEMETRY_DEDUPE_WINDOW_MS);
+          if (!hasDuplicate) {
+            await telemetryRepo.insertEvent({
+              type: eventRecord.eventType,
+              payload: eventRecord,
+              userId: eventRecord.userId,
+              correlationId: eventRecord.correlationId,
+              createdAt: eventRecord.at
+            });
+          }
         }
+      } else {
+        await withDb(async (db) => {
+          db.clientTelemetryEvents = Array.isArray(db.clientTelemetryEvents) ? db.clientTelemetryEvents : [];
+          const recentSameFingerprintCount = db.clientTelemetryEvents.reduce((count, candidate) => {
+            if (!candidate || typeof candidate !== 'object') return count;
+            if (String(candidate.userId || '') !== String(eventRecord.userId || '')) return count;
+            if (String(candidate.fingerprint || '') !== String(eventRecord.fingerprint || '')) return count;
+            const candidateAt = new Date(candidate.at || '').getTime();
+            if (!Number.isFinite(candidateAt) || !Number.isFinite(eventAtMs)) return count;
+            if (Math.abs(eventAtMs - candidateAt) > TELEMETRY_BURST_WINDOW_MS) return count;
+            return count + 1;
+          }, 0);
+          if (recentSameFingerprintCount >= TELEMETRY_BURST_MAX) {
+            rejectedForBurst = true;
+            burstResetAt = new Date(eventAtMs + TELEMETRY_BURST_WINDOW_MS).toISOString();
+            return db;
+          }
 
-        const hasDuplicate = db.clientTelemetryEvents.some((candidate) => {
-          if (!candidate || typeof candidate !== 'object') return false;
-          if (String(candidate.userId || '') !== String(eventRecord.userId || '')) return false;
-          if (eventRecord.eventId && String(candidate.eventId || '') === String(eventRecord.eventId || '')) return true;
-          if (eventRecord.fingerprint && String(candidate.fingerprint || '') === String(eventRecord.fingerprint || '')) return true;
-          if (String(candidate.eventType || '') !== String(eventRecord.eventType || '')) return false;
-          if (String(candidate.action || '') !== String(eventRecord.action || '')) return false;
-          if (String(candidate.surface || '') !== String(eventRecord.surface || '')) return false;
-          if (String(candidate.source || '') !== String(eventRecord.source || '')) return false;
-          if (String(candidate.planType || '') !== String(eventRecord.planType || '')) return false;
-          if (String(candidate.routeSlug || '') !== String(eventRecord.routeSlug || '')) return false;
-          if (String(candidate.dealId || '') !== String(eventRecord.dealId || '')) return false;
-          if (String(candidate.sessionId || '') !== String(eventRecord.sessionId || '')) return false;
-          if (String(candidate.price || '') !== String(eventRecord.price || '')) return false;
-          if (String(candidate.correlationId || '') !== String(eventRecord.correlationId || '')) return false;
-          if (String(candidate.itineraryId || '') !== String(eventRecord.itineraryId || '')) return false;
-          const candidateAt = new Date(candidate.at || '').getTime();
-          if (!Number.isFinite(candidateAt) || !Number.isFinite(eventAtMs)) return false;
-          return Math.abs(eventAtMs - candidateAt) <= ADMIN_TELEMETRY_DEDUPE_WINDOW_MS;
+          const hasDuplicate = db.clientTelemetryEvents.some((candidate) => {
+            if (!candidate || typeof candidate !== 'object') return false;
+            if (String(candidate.userId || '') !== String(eventRecord.userId || '')) return false;
+            if (eventRecord.eventId && String(candidate.eventId || '') === String(eventRecord.eventId || '')) return true;
+            if (eventRecord.fingerprint && String(candidate.fingerprint || '') === String(eventRecord.fingerprint || '')) return true;
+            if (String(candidate.eventType || '') !== String(eventRecord.eventType || '')) return false;
+            if (String(candidate.action || '') !== String(eventRecord.action || '')) return false;
+            if (String(candidate.surface || '') !== String(eventRecord.surface || '')) return false;
+            if (String(candidate.source || '') !== String(eventRecord.source || '')) return false;
+            if (String(candidate.planType || '') !== String(eventRecord.planType || '')) return false;
+            if (String(candidate.routeSlug || '') !== String(eventRecord.routeSlug || '')) return false;
+            if (String(candidate.dealId || '') !== String(eventRecord.dealId || '')) return false;
+            if (String(candidate.sessionId || '') !== String(eventRecord.sessionId || '')) return false;
+            if (String(candidate.price || '') !== String(eventRecord.price || '')) return false;
+            if (String(candidate.correlationId || '') !== String(eventRecord.correlationId || '')) return false;
+            if (String(candidate.itineraryId || '') !== String(eventRecord.itineraryId || '')) return false;
+            const candidateAt = new Date(candidate.at || '').getTime();
+            if (!Number.isFinite(candidateAt) || !Number.isFinite(eventAtMs)) return false;
+            return Math.abs(eventAtMs - candidateAt) <= ADMIN_TELEMETRY_DEDUPE_WINDOW_MS;
+          });
+          if (hasDuplicate) return db;
+          db.clientTelemetryEvents.push(eventRecord);
+          db.clientTelemetryEvents = db.clientTelemetryEvents.slice(-12000);
+          return db;
         });
-        if (hasDuplicate) return db;
-        db.clientTelemetryEvents.push(eventRecord);
-        db.clientTelemetryEvents = db.clientTelemetryEvents.slice(-12000);
-        return db;
-      });
+      }
       if (rejectedForBurst) {
         return sendMachineError(req, res, 429, 'rate_limited', { reset_at: burstResetAt || toIsoFromRateLimit(req) });
       }

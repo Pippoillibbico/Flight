@@ -13,7 +13,6 @@ const AuthSectionPropsSchema = z
     authError: z.string(),
     oauthLoading: z.string(),
     mfaActionCode: z.string(),
-    reopenOnboarding: z.any().optional(),
     authForm: z.object({ name: z.string(), email: z.string(), password: z.string(), confirmPassword: z.string().optional() }),
     authMfa: z.object({ ticket: z.string(), code: z.string(), expiresAt: z.string() }),
     deleteAccount: z.any(),
@@ -22,6 +21,7 @@ const AuthSectionPropsSchema = z
       .object({
         free: z.object({ monthlyEur: z.number() }),
         pro: z.object({ monthlyEur: z.number() }),
+        elite: z.object({ monthlyEur: z.number() }).optional(),
         creator: z.object({ monthlyEur: z.number() }),
         updatedAt: z.any(),
         lastCostCheckAt: z.any()
@@ -94,7 +94,6 @@ function AuthSection(props) {
     billingPricingError,
     upgradeToPremium,
     chooseElitePlan,
-    reopenOnboarding,
     setupMfa,
     disableMfa,
     resetMfaSetup,
@@ -108,7 +107,6 @@ function AuthSection(props) {
     loginWithFacebook,
     oauthLoading,
     loginWithGoogle,
-    loginWithApple,
     submitAuth,
     authForm,
     setAuthForm,
@@ -124,13 +122,16 @@ function AuthSection(props) {
     systemCapabilities
   } = validateProps(AuthSectionPropsSchema, props, 'AuthSection');
 
-  // When capabilities are null (not yet loaded), show all buttons to avoid flicker.
-  // When loaded, hide buttons for providers that are not configured server-side.
+  // Keep the expected social options visible; capabilities only decide whether a
+  // provider can be launched from this environment.
   const cap = systemCapabilities;
-  const showGoogle = cap === null || cap?.oauth_google?.active !== false;
-  const showFacebook = cap === null || cap?.oauth_facebook?.active !== false;
-  const showApple = cap === null || cap?.oauth_apple?.active !== false;
-  const anyOAuthAvailable = showGoogle || showFacebook || showApple;
+  const googleReady = cap === null || cap?.oauth_google?.active !== false;
+  const facebookReady = cap === null || cap?.oauth_facebook?.active !== false;
+  const showGoogle = true;
+  const showFacebook = true;
+  const anyOAuthAvailable = showGoogle || showFacebook;
+  const hasUnavailableSocialLogin = cap !== null && (!googleReady || !facebookReady);
+  const socialAuthLabel = t('authSocialOrEmailLabelNoApple') || 'Continue with Google, Facebook, or email';
 
   const mfaInputRef = useRef(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -164,6 +165,7 @@ function AuthSection(props) {
 
   const planTypeRaw = String(user?.planType || user?.plan_type || '').trim().toLowerCase();
   const planType = planTypeRaw === 'creator' ? 'elite' : planTypeRaw || (user?.isPremium ? 'pro' : 'free');
+  const eliteMonthlyEur = billingPricing.elite?.monthlyEur ?? billingPricing.creator?.monthlyEur;
   const mfaCodeValue = String(mfaActionCode || '').trim();
   const hasMfaCode = /^\d{6}$/.test(mfaCodeValue);
   const mfaSetupActive = Boolean(!user?.mfaEnabled && mfaSetupData?.qrDataUrl);
@@ -215,7 +217,7 @@ function AuthSection(props) {
               <div className="watch-item account-pricing-card">
                 <div>
                   <strong>{t('pricingLive')}</strong>
-                  <p>Free EUR {formatEur(billingPricing.free?.monthlyEur)} | Pro EUR {formatEur(billingPricing.pro?.monthlyEur)} | Elite EUR {formatEur(billingPricing.creator?.monthlyEur)}</p>
+                  <p>Free EUR {formatEur(billingPricing.free?.monthlyEur)} | Pro EUR {formatEur(billingPricing.pro?.monthlyEur)} | Elite EUR {formatEur(eliteMonthlyEur)}</p>
                   <p className="muted">
                     {t('pricingLastCheck')}: {formatPricingDate(billingPricing.lastCostCheckAt || billingPricing.updatedAt)}
                   </p>
@@ -239,19 +241,6 @@ function AuthSection(props) {
                   </button>
                 ) : null}
               </div>
-              {typeof reopenOnboarding === 'function' ? (
-                <div className="watch-item account-onboarding-card">
-                  <div>
-                    <strong>{t('onboardingTitle')}</strong>
-                    <p className="muted">{t('onboardingReopenHint')}</p>
-                  </div>
-                  <div className="item-actions">
-                    <button className="ghost" type="button" onClick={reopenOnboarding}>
-                      {t('onboardingReopenCta')}
-                    </button>
-                  </div>
-                </div>
-              ) : null}
               <div className="watch-item account-security-card">
                 <div className="account-security-head">
                   <strong>{t('mfaSecurityTitle')}</strong>
@@ -365,7 +354,7 @@ function AuthSection(props) {
 
                     <div className="social-auth social-auth-stack">
                       {anyOAuthAvailable ? (
-                        <p className="auth-social-label">{t('authSocialOrEmailLabel') || 'Continue with'}</p>
+                        <p className="auth-social-label">{socialAuthLabel}</p>
                       ) : null}
                       <button
                         type="button"
@@ -378,7 +367,13 @@ function AuthSection(props) {
                         {authUi.email}
                       </button>
                       {showGoogle ? (
-                        <button type="button" className="auth-provider-btn" onClick={loginWithGoogle} disabled={oauthLoading === 'google'}>
+                        <button
+                          type="button"
+                          className={`auth-provider-btn${!googleReady ? ' auth-provider-btn--disabled' : ''}`}
+                          onClick={loginWithGoogle}
+                          disabled={!googleReady || oauthLoading === 'google'}
+                          title={!googleReady ? t('oauthNotAvailable') : undefined}
+                        >
                           <span className="social-icon google" aria-hidden="true">
                             <svg viewBox="0 0 24 24">
                               <path fill="#4285F4" d="M23.49 12.27c0-.79-.07-1.54-.2-2.27H12v4.29h6.45a5.52 5.52 0 0 1-2.4 3.62v3.01h3.88c2.27-2.09 3.56-5.17 3.56-8.65z"/>
@@ -389,11 +384,22 @@ function AuthSection(props) {
                           </span>
                           {oauthLoading === 'google' ? (
                             <span className="auth-btn-loading"><span className="auth-spinner" aria-hidden="true" /> {authUi.google}</span>
-                          ) : authUi.google}
+                          ) : (
+                            <>
+                              <span>{authUi.google}</span>
+                              {!googleReady ? <span className="auth-provider-status">Setup required</span> : null}
+                            </>
+                          )}
                         </button>
                       ) : null}
                       {showFacebook ? (
-                        <button type="button" className="auth-provider-btn" onClick={loginWithFacebook} disabled={oauthLoading === 'facebook'}>
+                        <button
+                          type="button"
+                          className={`auth-provider-btn${!facebookReady ? ' auth-provider-btn--disabled' : ''}`}
+                          onClick={loginWithFacebook}
+                          disabled={!facebookReady || oauthLoading === 'facebook'}
+                          title={!facebookReady ? t('oauthNotAvailable') : undefined}
+                        >
                           <span className="social-icon facebook" aria-hidden="true">
                             <svg viewBox="0 0 24 24">
                               <path fill="currentColor" d="M24 12.073C24 5.405 18.627 0 12 0S0 5.405 0 12.073c0 6.026 4.388 11.022 10.125 11.926v-8.437H7.078v-3.49h3.047V9.413c0-3.017 1.792-4.687 4.533-4.687 1.313 0 2.686.236 2.686.236v2.965h-1.514c-1.491 0-1.956.93-1.956 1.885v2.26h3.328l-.532 3.49h-2.796V24C19.612 23.095 24 18.1 24 12.073z"/>
@@ -401,20 +407,16 @@ function AuthSection(props) {
                           </span>
                           {oauthLoading === 'facebook' ? (
                             <span className="auth-btn-loading"><span className="auth-spinner" aria-hidden="true" /> {authUi.facebook}</span>
-                          ) : authUi.facebook}
+                          ) : (
+                            <>
+                              <span>{authUi.facebook}</span>
+                              {!facebookReady ? <span className="auth-provider-status">Setup required</span> : null}
+                            </>
+                          )}
                         </button>
                       ) : null}
-                      {showApple ? (
-                        <button type="button" className="auth-provider-btn" onClick={loginWithApple} disabled={oauthLoading === 'apple'}>
-                          <span className="social-icon apple" aria-hidden="true">
-                            <svg viewBox="0 0 24 24">
-                              <path fill="currentColor" d="M16.37 12.5c.02 2.16 1.9 2.88 1.92 2.89-.02.05-.3 1.05-1 2.07-.6.88-1.22 1.75-2.2 1.77-.96.02-1.27-.56-2.37-.56-1.1 0-1.44.54-2.33.58-.94.04-1.66-.94-2.26-1.81-1.24-1.78-2.2-5.03-.92-7.28.63-1.12 1.76-1.83 2.98-1.85.93-.02 1.81.62 2.37.62.55 0 1.59-.77 2.68-.66.46.02 1.75.18 2.57 1.39-.07.04-1.54.91-1.54 2.84zM14.83 4.6c.5-.6.85-1.42.76-2.25-.73.03-1.62.48-2.14 1.08-.47.54-.88 1.4-.77 2.22.82.06 1.65-.42 2.15-1.05z"/>
-                            </svg>
-                          </span>
-                          {oauthLoading === 'apple' ? (
-                            <span className="auth-btn-loading"><span className="auth-spinner" aria-hidden="true" /> {authUi.apple}</span>
-                          ) : authUi.apple}
-                        </button>
+                      {hasUnavailableSocialLogin ? (
+                        <p className="auth-oauth-config-note">{t('oauthNotAvailable')}</p>
                       ) : null}
                     </div>
 
@@ -508,9 +510,30 @@ function AuthSection(props) {
 
                     <p className="muted auth-legal">
                       {authUi.legalPrefix}{' '}
-                      <span className="auth-legal-link">{authUi.legalTerms}</span>{' '}
+                      <a className="auth-legal-link" href="/terms" target="_blank" rel="noopener noreferrer">
+                        {authUi.legalTerms}
+                      </a>{' '}
                       {authUi.legalAnd}{' '}
-                      <span className="auth-legal-link">{authUi.legalPrivacy}</span>.
+                      <a className="auth-legal-link" href="/privacy-policy" target="_blank" rel="noopener noreferrer">
+                        {authUi.legalPrivacy}
+                      </a>
+                      {' '}|{' '}
+                      <a className="auth-legal-link" href="/cookie-policy" target="_blank" rel="noopener noreferrer">
+                        {t('footerCookiePolicy') || 'Cookie policy'}
+                      </a>
+                      {' '}|{' '}
+                      <button
+                        type="button"
+                        className="auth-inline-link"
+                        onClick={() => {
+                          if (typeof window !== 'undefined') {
+                            window.dispatchEvent(new CustomEvent('flight_open_cookie_settings'));
+                          }
+                        }}
+                      >
+                        {t('cookieSettingsManage') || 'Cookie settings'}
+                      </button>
+                      .
                     </p>
                   </>
                 ) : (

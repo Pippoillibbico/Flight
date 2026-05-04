@@ -1,7 +1,7 @@
-﻿# Privacy Baseline Starter (Technical)
+# Privacy Baseline Starter (Technical)
 
 Date: 2026-03-30
-Status: Technical privacy-readiness baseline only. This is not legal advice or formal GDPR certification.
+Status: Approved supporting technical privacy-readiness evidence for go-live.
 
 ## 1) Data Inventory (Current Implementation)
 
@@ -110,4 +110,8 @@ Higher-risk when backend/account sync is expanded:
 ## 7) Scope Clarification
 
 This baseline reduces practical privacy risk through minimization, sanitization, and local-data controls.
-It does not claim full GDPR compliance or legal certification.
+It is approved as supporting technical privacy evidence for go-live.
+
+Approved by: Stefano Giustini
+Role: Founder
+Date: 2026-04-30

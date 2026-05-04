@@ -16,8 +16,8 @@ export const PLAN_LIMITS = {
 // 'elite' is the canonical id for the Creator plan internally.
 export const PLAN_RUNTIME_LIMITS = {
   free: {
-    searchPerDay:      10,  searchPerMin:     2,
-    sessionPerDay:     10,  sessionPerMin:    2,
+    searchPerDay:       3,  searchPerMin:     2,
+    sessionPerDay:      3,  sessionPerMin:    2,
     liveDestinations:   0,  cacheOnly:        true,
     aiEnabled:         false,
     aiCallsPerDay:      0,  aiTokensPerMonth: 0
@@ -26,15 +26,15 @@ export const PLAN_RUNTIME_LIMITS = {
     searchPerDay:      40,  searchPerMin:     5,
     sessionPerDay:     30,  sessionPerMin:    4,
     liveDestinations:   3,  cacheOnly:        false,
-    aiEnabled:         false,
-    aiCallsPerDay:      0,  aiTokensPerMonth: 0
+    aiEnabled:          true,
+    aiCallsPerDay:      3,  aiTokensPerMonth: 60_000
   },
   elite: {
     searchPerDay:     100,  searchPerMin:    10,
     sessionPerDay:     60,  sessionPerMin:    8,
     liveDestinations:   4,  cacheOnly:        false,
     aiEnabled:         true,
-    aiCallsPerDay:      8,  aiTokensPerMonth: 200_000
+    aiCallsPerDay:     12,  aiTokensPerMonth: 240_000
   }
 };
 
@@ -74,7 +74,7 @@ export function canUseRadar(user) {
 
 export function canUseAITravel(user) {
   const { planType } = resolveUserPlan(user);
-  return planType === 'elite';
+  return planType === 'pro' || planType === 'elite';
 }
 
 export function canViewRareOpportunities(user) {
@@ -138,7 +138,7 @@ export function getUpgradeContext(user, feature) {
   const { planType } = resolveUserPlan(user);
   const needs = {
     radar:         planType === 'free' ? 'radar_access'        : null,
-    ai_travel:     planType !== 'elite' ? 'ai_travel_limit'    : null,
+    ai_travel:     planType === 'free' ? 'ai_travel_limit'    : null,
     follows_limit: planType === 'free' ? 'follows_limit'       : planType === 'pro' ? 'follows_limit_pro' : null,
     rare_opps:     planType !== 'elite' ? 'rare_opportunities'  : null,
     smart_alerts:  planType !== 'elite' ? 'smart_alerts_limit'  : null,

@@ -117,8 +117,9 @@ export function createReportOperations({
       const pricing = payload?.pricing || {};
       setBillingPricing({
         free: { monthlyEur: Number(pricing?.free?.monthlyEur || 0) },
-        pro: { monthlyEur: Number(pricing?.pro?.monthlyEur || 7) },
-        creator: { monthlyEur: Number(pricing?.creator?.monthlyEur || 19) },
+        pro: { monthlyEur: Number(pricing?.pro?.monthlyEur || 12) },
+        elite: { monthlyEur: Number(pricing?.elite?.monthlyEur ?? pricing?.creator?.monthlyEur ?? 22) },
+        creator: { monthlyEur: Number(pricing?.creator?.monthlyEur ?? pricing?.elite?.monthlyEur ?? 22) },
         updatedAt: pricing?.updatedAt || null,
         lastCostCheckAt: pricing?.lastCostCheckAt || null
       });

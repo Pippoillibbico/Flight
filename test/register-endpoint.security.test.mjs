@@ -77,6 +77,12 @@ async function startServer({ envOverrides = {}, legacySqliteSchema = false } = {
 
   const port = 3300 + Math.floor(Math.random() * 2000);
   const baseUrl = `http://127.0.0.1:${port}`;
+  const localDatabaseUrl =
+    String(process.env.SECURITY_COMPLIANCE_LOCAL_DATABASE_URL || '').trim() ||
+    'postgresql://flight:flight@localhost:5432/flight';
+  const localRedisUrl =
+    String(process.env.SECURITY_COMPLIANCE_LOCAL_REDIS_URL || '').trim() ||
+    'redis://localhost:6379';
 
   let stdout = '';
   let stderr = '';
@@ -90,19 +96,34 @@ async function startServer({ envOverrides = {}, legacySqliteSchema = false } = {
       ALLOW_MOCK_BILLING_UPGRADES: 'false',
       INTERNAL_INGEST_TOKEN: process.env.INTERNAL_INGEST_TOKEN || 'internal_ingest_token_for_register_tests_1234',
       FRONTEND_ORIGIN: ALLOWED_ORIGIN,
+      FRONTEND_URL: ALLOWED_ORIGIN,
       CORS_ORIGIN: ALLOWED_ORIGIN,
       CORS_ALLOWLIST: ALLOWED_ORIGIN,
+      CORS_ALLOWED_ORIGINS: ALLOWED_ORIGIN,
       TRUST_PROXY: '1',
       RUN_STARTUP_TASKS: 'false',
       BILLING_PROVIDER: 'stripe',
       STRIPE_SECRET_KEY: 'sk_live_test_1234567890abcdef',
+      STRIPE_PUBLISHABLE_KEY: 'pk_live_test_1234567890abcdef',
+      STRIPE_WEBHOOK_SECRET: 'whsec_live_1234567890abcdef1234567890',
+      STRIPE_PRICE_PRO: 'price_live_12eur_plan_pro',
+      STRIPE_PRICE_CREATOR: 'price_live_22eur_plan_creator',
+      ENABLE_PROVIDER_DUFFEL: 'true',
+      DUFFEL_API_KEY: 'duffel_live_like_key_1234567890',
+      SMTP_HOST: 'smtp.test.local',
+      SMTP_USER: 'smtp-user',
+      SMTP_PASS: 'smtp-pass',
+      RL_AUTH_PER_MINUTE: '500',
+      RL_LOGIN_ATTEMPTS_15M: '500',
       FLIGHT_DB_FILE: jsonDbFile,
       SQLITE_DB_FILE: sqliteDbFile,
       AUDIT_LOG_FILE: auditLogFile,
       ALLOW_INSECURE_STARTUP_FOR_TESTS: 'true',
       ALLOW_INSECURE_STARTUP_IN_PRODUCTION: 'true',
-      DATABASE_URL: '',
-      REDIS_URL: '',
+      ALLOW_INSECURE_STARTUP_TEST_CONTEXT: 'true',
+      DATABASE_URL: localDatabaseUrl,
+      REDIS_URL: localRedisUrl,
+      IP_HASH_SALT: 'rx9Kf4mP2qL8sV7nH3cT6wZ1',
       ...envOverrides
     },
     stdio: 'pipe',

@@ -1,3 +1,5 @@
+import { getSaasPool } from '../lib/saas-db.js';
+
 export function createAuthRuntime({
   constants,
   deps
@@ -46,6 +48,7 @@ export function createAuthRuntime({
     canUseAITravel,
     getUpgradeContext
   } = deps;
+  const saasPool = getSaasPool();
 
   function getAccessTokenFromCookie(req) {
     return readAccessTokenFromCookie(req, ACCESS_COOKIE_NAME);
@@ -64,10 +67,15 @@ export function createAuthRuntime({
   }
 
   function authCookieOptions(req, maxAgeMs) {
+    const isProduction = NODE_ENV === 'production';
+    const sameSiteRaw = String(process.env.AUTH_COOKIE_SAMESITE || '').trim().toLowerCase();
+    const sameSite = sameSiteRaw === 'none' || sameSiteRaw === 'strict' || sameSiteRaw === 'lax'
+      ? sameSiteRaw
+      : 'lax';
     return {
       httpOnly: true,
-      sameSite: 'lax',
-      secure: Boolean(isSecureRequest(req) || NODE_ENV === 'production'),
+      sameSite,
+      secure: Boolean(isSecureRequest(req) || isProduction),
       path: '/',
       maxAge: maxAgeMs,
       ...(AUTH_COOKIE_DOMAIN ? { domain: AUTH_COOKIE_DOMAIN } : {})
@@ -76,6 +84,14 @@ export function createAuthRuntime({
 
   async function isRevokedJti(jti) {
     if (!jti) return false;
+    if (saasPool) {
+      const nowSec = Math.floor(Date.now() / 1000);
+      const result = await saasPool.query(
+        'SELECT 1 FROM revoked_tokens WHERE jti = $1 AND (exp IS NULL OR exp > $2) LIMIT 1',
+        [jti, nowSec]
+      );
+      return result.rowCount > 0;
+    }
     const db = await readDb();
     const nowSec = Math.floor(Date.now() / 1000);
     return (db.revokedTokens || []).some((entry) => entry.jti === jti && (!Number.isFinite(entry.exp) || entry.exp > nowSec));
@@ -83,6 +99,17 @@ export function createAuthRuntime({
 
   async function revokeJwt(payload) {
     if (!payload?.jti) return;
+    if (saasPool) {
+      const nowSec = Math.floor(Date.now() / 1000);
+      const exp = Number.isFinite(payload.exp) ? payload.exp : nowSec + 7 * 24 * 60 * 60;
+      await saasPool.query(
+        `INSERT INTO revoked_tokens (jti, exp, revoked_at)
+         VALUES ($1, $2, NOW())
+         ON CONFLICT (jti) DO UPDATE SET exp = EXCLUDED.exp, revoked_at = NOW()`,
+        [payload.jti, exp]
+      );
+      return;
+    }
     await withDb(async (db) => {
       const nowSec = Math.floor(Date.now() / 1000);
       db.revokedTokens = (db.revokedTokens || []).filter((entry) => !Number.isFinite(entry.exp) || entry.exp > nowSec);
@@ -98,6 +125,14 @@ export function createAuthRuntime({
   }
 
   async function createRefreshSession({ userId, family, jti, exp }) {
+    if (saasPool) {
+      await saasPool.query(
+        `INSERT INTO refresh_sessions (id, user_id, family, jti, exp, issued_at, revoked_at, rotated_to)
+         VALUES ($1, $2, $3, $4, $5, NOW(), NULL, NULL)`,
+        [nanoid(10), userId, family, jti, exp]
+      );
+      return;
+    }
     await withDb(async (db) => {
       db.refreshSessions = (db.refreshSessions || []).filter((s) => !s.exp || s.exp > Math.floor(Date.now() / 1000));
       db.refreshSessions.push({
@@ -116,6 +151,16 @@ export function createAuthRuntime({
   }
 
   async function revokeRefreshFamily(family, reason = 'manual') {
+    if (saasPool) {
+      await saasPool.query(
+        `UPDATE refresh_sessions
+         SET revoked_at = NOW(),
+             revoke_reason = COALESCE(revoke_reason, $2)
+         WHERE family = $1 AND revoked_at IS NULL`,
+        [family, reason]
+      );
+      return;
+    }
     await withDb(async (db) => {
       for (const session of db.refreshSessions || []) {
         if (session.family === family && !session.revokedAt) {
@@ -128,6 +173,51 @@ export function createAuthRuntime({
   }
 
   async function rotateRefreshSession({ oldJti, newJti, userId, family, exp }) {
+    if (saasPool) {
+      const nowSec = Math.floor(Date.now() / 1000);
+      const client = await saasPool.connect();
+      try {
+        await client.query('BEGIN');
+        const oldSessionRes = await client.query(
+          `SELECT user_id, family, revoked_at, exp
+           FROM refresh_sessions
+           WHERE jti = $1
+           FOR UPDATE`,
+          [oldJti]
+        );
+        const oldSession = oldSessionRes.rows[0] || null;
+        if (!oldSession || oldSession.user_id !== userId || oldSession.family !== family) {
+          await client.query('ROLLBACK');
+          return { ok: false, reason: 'not_found' };
+        }
+        if (oldSession.revoked_at) {
+          await client.query('ROLLBACK');
+          return { ok: false, reason: 'reused' };
+        }
+        if (Number.isFinite(Number(oldSession.exp)) && Number(oldSession.exp) <= nowSec) {
+          await client.query('ROLLBACK');
+          return { ok: false, reason: 'expired' };
+        }
+        await client.query(
+          `UPDATE refresh_sessions
+           SET revoked_at = NOW(), rotated_to = $2
+           WHERE jti = $1`,
+          [oldJti, newJti]
+        );
+        await client.query(
+          `INSERT INTO refresh_sessions (id, user_id, family, jti, exp, issued_at, revoked_at, rotated_to)
+           VALUES ($1, $2, $3, $4, $5, NOW(), NULL, NULL)`,
+          [nanoid(10), userId, family, newJti, exp]
+        );
+        await client.query('COMMIT');
+        return { ok: true, reason: null };
+      } catch (error) {
+        await client.query('ROLLBACK').catch(() => {});
+        throw error;
+      } finally {
+        client.release();
+      }
+    }
     const nowSec = Math.floor(Date.now() / 1000);
     let result = { ok: false, reason: 'not_found' };
     await withDb(async (db) => {
@@ -249,11 +339,19 @@ export function createAuthRuntime({
       detail
     };
 
-    await withDb(async (db) => {
-      db.authEvents.push(event);
-      db.authEvents = db.authEvents.slice(-3000);
-      return db;
-    });
+    if (saasPool) {
+      await saasPool.query(
+        `INSERT INTO auth_events (id, at, user_id, email_hash, type, success, ip_hash, user_agent, detail)
+         VALUES ($1, $2::timestamptz, $3, $4, $5, $6, $7, $8, $9)`,
+        [event.id, event.at, userId, event.emailHash, type, Boolean(success), event.ipHash, event.userAgent, detail]
+      );
+    } else {
+      await withDb(async (db) => {
+        db.authEvents.push(event);
+        db.authEvents = db.authEvents.slice(-3000);
+        return db;
+      });
+    }
     appendImmutableAudit({
       category: 'auth_event',
       userId,
@@ -262,7 +360,21 @@ export function createAuthRuntime({
       success: Boolean(success),
       ipHash: event.ipHash,
       detail
-    }).catch(() => {});
+    }).catch((error) => {
+      logger.warn(
+        {
+          request_id: req?.id || null,
+          code: 'AUTH_SECURITY_EVENT',
+          reason: 'append_immutable_audit_failed',
+          userId: userId || null,
+          ip: req?.ip || null,
+          route: req?.path || null,
+          err_code: String(error?.code || '').slice(0, 60),
+          err_message: String(error?.message || '').slice(0, 220)
+        },
+        'auth_immutable_audit_append_failed'
+      );
+    });
   }
 
   async function ensureAiPremiumAccess(req, aiProvider) {
@@ -271,14 +383,26 @@ export function createAuthRuntime({
     const userId = req.user?.id || req.user?.sub;
     if (!userId) return { allowed: false, status: 401, error: 'auth_required' };
     const sub = await getOrCreateSubscription(userId);
-    const planId = String(sub?.planId || 'free').toLowerCase();
-    if (planId !== 'creator') {
+    const planIdRaw = String(sub?.planId || 'free').toLowerCase();
+    const planId = planIdRaw === 'creator' ? 'elite' : planIdRaw;
+    if (planId === 'free') {
       return {
         allowed: false,
         status: 402,
-        error: 'premium_required',
+        error: 'upgrade_required',
         extra: {
-          message: 'AI decision workflows are available on the Elite plan.',
+          message: 'AI workflows are not available on the Free plan.',
+          upgrade_context: 'ai_travel_limit'
+        }
+      };
+    }
+    if (planId !== 'pro' && planId !== 'elite') {
+      return {
+        allowed: false,
+        status: 402,
+        error: 'upgrade_required',
+        extra: {
+          message: 'AI workflows require Pro or Elite.',
           upgrade_context: 'ai_travel_limit'
         }
       };
@@ -350,10 +474,44 @@ export function createAuthRuntime({
 
   async function fetchCurrentUser(userId) {
     let user = null;
-    await withDb(async (db) => {
-      user = db.users.find((item) => item.id === userId) || null;
-      return null;
-    });
+    if (saasPool) {
+      const result = await saasPool.query(
+        `SELECT
+           id, name, email, password_hash, is_premium, plan_type, plan_status, onboarding_done,
+           mfa_enabled, mfa_secret, mfa_temp_secret, failed_login_count, lock_until, auth_channel,
+           email_verified, trial_ends_at
+         FROM users
+         WHERE id = $1
+         LIMIT 1`,
+        [userId]
+      );
+      const row = result.rows[0] || null;
+      user = row
+        ? {
+            id: row.id,
+            name: row.name,
+            email: row.email,
+            passwordHash: row.password_hash || null,
+            isPremium: Boolean(row.is_premium),
+            planType: String(row.plan_type || 'free'),
+            planStatus: String(row.plan_status || 'active'),
+            onboardingDone: Boolean(row.onboarding_done),
+            mfaEnabled: Boolean(row.mfa_enabled),
+            mfaSecret: row.mfa_secret || null,
+            mfaTempSecret: row.mfa_temp_secret || null,
+            failedLoginCount: Number(row.failed_login_count || 0),
+            lockUntil: row.lock_until || null,
+            authChannel: row.auth_channel || 'direct',
+            emailVerified: Boolean(row.email_verified),
+            trialEndsAt: row.trial_ends_at || null
+          }
+        : null;
+    } else {
+      await withDb(async (db) => {
+        user = db.users.find((item) => item.id === userId) || null;
+        return null;
+      });
+    }
     return user;
   }
 
@@ -432,10 +590,15 @@ export function createAuthRuntime({
   }
 
   function oauthBindingCookieOptions(req, maxAgeMs) {
+    const isProduction = NODE_ENV === 'production';
+    const sameSiteRaw = String(process.env.AUTH_COOKIE_SAMESITE || '').trim().toLowerCase();
+    const sameSite = sameSiteRaw === 'none' || sameSiteRaw === 'strict' || sameSiteRaw === 'lax'
+      ? sameSiteRaw
+      : 'lax';
     return {
       httpOnly: true,
-      sameSite: 'lax',
-      secure: Boolean(isSecureRequest(req) || NODE_ENV === 'production'),
+      sameSite,
+      secure: Boolean(isSecureRequest(req) || isProduction),
       path: '/api/auth/oauth',
       maxAge: maxAgeMs,
       ...(AUTH_COOKIE_DOMAIN ? { domain: AUTH_COOKIE_DOMAIN } : {})
@@ -459,10 +622,11 @@ export function createAuthRuntime({
   }
 
   function clearOAuthBrowserBinding(req, res) {
+    const cookieOptions = oauthBindingCookieOptions(req, 1);
     res.clearCookie(OAUTH_BINDING_COOKIE_NAME, {
       httpOnly: true,
-      sameSite: 'lax',
-      secure: oauthBindingCookieOptions(req, 1).secure,
+      sameSite: cookieOptions.sameSite,
+      secure: cookieOptions.secure,
       path: '/api/auth/oauth',
       ...(AUTH_COOKIE_DOMAIN ? { domain: AUTH_COOKIE_DOMAIN } : {})
     });

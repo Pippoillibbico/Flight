@@ -1,22 +1,3 @@
-/**
- * QuotaUsageBar
- *
- * Displays a compact usage summary for the current billing period.
- * Shows bars for search, decision, and alerts counters.
- *
- * Props:
- *   quota        — object from GET /api/billing/quota
- *   planId       — 'free' | 'pro' | 'creator'
- *   onUpgrade    — callback to open the upgrade modal
- *   compact      — when true, renders a single-line summary instead of full bars
- */
-
-const COUNTER_LABELS = {
-  search:   'Searches',
-  decision: 'AI Decisions',
-  alerts:   'Alerts'
-};
-
 function pct(used, limit) {
   if (!limit || limit <= 0) return 0;
   return Math.min(100, Math.round((used / limit) * 100));
@@ -28,7 +9,15 @@ function barClass(ratio) {
   return 'qub-bar--ok';
 }
 
-function QuotaUsageBar({ quota, planId, onUpgrade, compact = false }) {
+function QuotaUsageBar({ quota, planId, onUpgrade, compact = false, t: tProp }) {
+  const tFn = typeof tProp === 'function' ? tProp : (key, fallback) => fallback || key;
+
+  const COUNTER_LABELS = {
+    search: tFn('quotaCounterSearch', 'Searches'),
+    decision: tFn('quotaCounterDecision', 'AI Decisions'),
+    alerts: tFn('quotaCounterAlerts', 'Alerts')
+  };
+
   if (!quota || !quota.counters) return null;
 
   const isFree = planId === 'free';
@@ -38,7 +27,7 @@ function QuotaUsageBar({ quota, planId, onUpgrade, compact = false }) {
     const search = quota.counters.search || {};
     const ratio = pct(search.used, search.limit);
     return (
-      <div className="qub-compact" title={`${search.used} / ${search.limit} searches used this month`}>
+      <div className="qub-compact" title={`${search.used} / ${search.limit} ${tFn('quotaSearchesUsedHint', 'searches used this month')}`}>
         <div className="qub-compact-inner">
           <div
             className={`qub-compact-fill ${barClass(ratio)}`}
@@ -49,10 +38,10 @@ function QuotaUsageBar({ quota, planId, onUpgrade, compact = false }) {
             role="progressbar"
           />
         </div>
-        <span className="qub-compact-label">{search.used}/{search.limit} searches</span>
+        <span className="qub-compact-label">{search.used}/{search.limit} {tFn('quotaSearchesLabel', 'searches')}</span>
         {isFree && ratio >= 70 && onUpgrade ? (
           <button type="button" className="qub-upgrade-chip" onClick={() => onUpgrade('pro', 'quota_bar')}>
-            Upgrade
+            {tFn('quotaUpgradeCta', 'Upgrade')}
           </button>
         ) : null}
       </div>
@@ -62,11 +51,11 @@ function QuotaUsageBar({ quota, planId, onUpgrade, compact = false }) {
   return (
     <div className="qub-panel">
       <div className="qub-header">
-        <span className="qub-title">Usage this month</span>
+        <span className="qub-title">{tFn('quotaUsageTitle', 'Usage this month')}</span>
         {quota.periodKey ? <span className="qub-period">{quota.periodKey}</span> : null}
       </div>
 
-      <ul className="qub-list" aria-label="Monthly quota usage">
+      <ul className="qub-list" aria-label={tFn('quotaUsageTitle', 'Monthly quota usage')}>
         {shown.map((counter) => {
           const info = quota.counters[counter];
           if (!info) return null;
@@ -92,9 +81,9 @@ function QuotaUsageBar({ quota, planId, onUpgrade, compact = false }) {
 
       {isFree && onUpgrade ? (
         <div className="qub-footer">
-          <p className="qub-footer-hint">Upgrade for higher limits and AI features.</p>
+          <p className="qub-footer-hint">{tFn('quotaUpgradeHint', 'Upgrade for higher limits and AI features.')}</p>
           <button type="button" className="qub-cta" onClick={() => onUpgrade('pro', 'quota_bar')}>
-            View plans
+            {tFn('quotaViewPlans', 'View plans')}
           </button>
         </div>
       ) : null}

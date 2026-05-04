@@ -10,8 +10,9 @@ Source of truth: implemented checks in `server/lib/runtime-config.js` + runtime 
 | `JWT_SECRET` | Yes | Auth/Security | Min length and non-placeholder required. |
 | `AUDIT_LOG_HMAC_KEY` | Yes | Security/Audit | Required for immutable audit integrity. |
 | `INTERNAL_INGEST_TOKEN` | Yes | Internal API Security | Required for protected ingest flows. |
-| `FRONTEND_ORIGIN` | Yes | CORS/Security | Must be valid URL. |
-| `CORS_ORIGIN` or `CORS_ALLOWLIST` (or equivalent valid origin set) | Yes | CORS/Security | Prod startup blocks if allowlist is effectively empty. |
+| `FRONTEND_ORIGIN` | Yes | CORS/Security | Must be valid HTTPS URL and not localhost in production. |
+| `CORS_ALLOWED_ORIGINS` | Yes | CORS/Security | Required in production; comma-separated HTTPS origins only, no localhost/http. |
+| `CORS_ORIGIN` or `CORS_ALLOWLIST` (support vars) | Optional support | CORS/Security | If set in production they must still be HTTPS and not localhost. |
 | `DATABASE_URL` | Yes | Data | Primary SQL DB URL required. |
 | `REDIS_URL` | Yes | Rate limit/cache | Required by production runtime checks. |
 | `BILLING_PROVIDER` | Yes | Billing | Must be `stripe` in this codebase. |
@@ -21,15 +22,24 @@ Source of truth: implemented checks in `server/lib/runtime-config.js` + runtime 
 | `STRIPE_PRICE_PRO` | Cond. Yes | Billing | Required in prod when Stripe is active. |
 | `STRIPE_PRICE_CREATOR` | Cond. Yes | Billing | Required in prod when Stripe is active. |
 | `STRIPE_ALLOW_INLINE_PRICE_DATA` | Yes (when Stripe active in prod) | Billing | Must be `false` in production. |
+| `ALLOW_MOCK_BILLING_UPGRADES` | Yes (`false`) | Billing/Security | Mock upgrades must remain disabled in production. |
 | `AI_ALLOW_FREE_USERS` | Yes (`false`) | AI Security | Must stay disabled in production to prevent free AI access. |
 | `AI_ALLOWED_PLAN_TYPES` | Yes | AI Security | Must not include `free` in production. |
 | `DUFFEL_API_KEY` | Cond. Yes | Provider | Required if `ENABLE_PROVIDER_DUFFEL=true`. |
+| `ENABLE_PROVIDER_DUFFEL`/`ENABLE_PROVIDER_KIWI`/`ENABLE_PROVIDER_SKYSCANNER` | Yes (at least one live provider) | Provider | Production must enable at least one live provider with valid credentials. |
+| `BACKOFFICE_JWT_SECRET` | Yes (if BO enabled) | Backoffice Security | Dedicated strong JWT secret for BO sessions. |
+| `BACKOFFICE_TRUST_PROXY` | Yes (if BO enabled) | Backoffice Security | Must be explicitly configured in production. |
+| `BACKOFFICE_REQUIRE_MFA` | Yes (`true`) | Backoffice Security | MFA for BO admins must remain enabled in production. |
+| `BACKOFFICE_ADMIN_CREDENTIALS` | Yes (if BO enabled) | Backoffice Security | Per-admin credentials required in production. |
+| `BACKOFFICE_ADMIN_TOTP_SECRETS` | Yes (if BO enabled) | Backoffice Security | Per-admin TOTP base32 secrets required when MFA is enabled. |
 
 ## 2. Strongly Recommended Variables
 
 | Variable | Area | Why |
 |---|---|---|
 | `OUTBOUND_CLICK_SECRET` | Security | Must be distinct from `JWT_SECRET`; protects outbound link signatures. |
+| `IP_HASH_SALT` | Privacy/Security | Required in production to avoid predictable hashing of IP-derived identifiers. |
+| `BACKUP_ENCRYPTION_KEY` | Data Security | Required to encrypt backup artifacts at rest. |
 | `LOG_HASH_SALT` | Security/Privacy | Salt for pseudonymized identifiers in logs/audit trails. |
 | `TRUST_PROXY` | Security/Infra | Should be explicitly set in production proxy topologies. |
 | `AUTH_REQUIRE_TRUSTED_ORIGIN` | Auth Security | Enforces trusted Origin/Referer on non-GET auth routes. |
@@ -89,6 +99,9 @@ Source of truth: implemented checks in `server/lib/runtime-config.js` + runtime 
 3. Legal placeholders in company/contact fields (`TODO: ...`).
 4. Production without explicit CORS origin coverage.
 5. `FRONTEND_URL` left to localhost.
+6. `FRONTEND_ORIGIN` / `CORS_ALLOWED_ORIGINS` with `http://` or `localhost`.
+7. Missing live-flight provider credentials while `NODE_ENV=production`.
+8. `ALLOW_INSECURE_STARTUP_FOR_TESTS=true` or `ALLOW_INSECURE_STARTUP_IN_PRODUCTION=true` in real production runtime.
 
 ## 6. Current External Configuration Gaps To Track
 

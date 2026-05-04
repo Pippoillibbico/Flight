@@ -5,6 +5,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import pg from 'pg';
 
 const ALLOWED_ORIGIN = 'https://app.flightsuite.test';
 
@@ -58,6 +59,12 @@ async function waitForExit(child, timeoutMs = 7000) {
 }
 
 function buildServerEnv({ port, jsonDbFile, sqliteDbFile, auditLogFile, envOverrides = {} }) {
+  const localDatabaseUrl =
+    String(process.env.SECURITY_COMPLIANCE_LOCAL_DATABASE_URL || '').trim() ||
+    'postgresql://flight:flight@localhost:5432/flight';
+  const localRedisUrl =
+    String(process.env.SECURITY_COMPLIANCE_LOCAL_REDIS_URL || '').trim() ||
+    'redis://localhost:6379';
   return {
     ...process.env,
     PORT: String(port),
@@ -67,19 +74,34 @@ function buildServerEnv({ port, jsonDbFile, sqliteDbFile, auditLogFile, envOverr
     INTERNAL_INGEST_TOKEN: 'InternalIngestTokenSecurityCompliance123456789',
     FRONTEND_ORIGIN: ALLOWED_ORIGIN,
     FRONTEND_URL: ALLOWED_ORIGIN,
+    CORS_ALLOWED_ORIGINS: ALLOWED_ORIGIN,
     CORS_ORIGIN: ALLOWED_ORIGIN,
     CORS_ALLOWLIST: ALLOWED_ORIGIN,
     TRUST_PROXY: '1',
     RUN_STARTUP_TASKS: 'false',
     BILLING_PROVIDER: 'stripe',
     STRIPE_SECRET_KEY: 'sk_live_test_1234567890abcdef',
+    STRIPE_PUBLISHABLE_KEY: 'pk_live_test_1234567890abcdef',
+    STRIPE_WEBHOOK_SECRET: 'whsec_test_1234567890abcdef',
+    STRIPE_PRICE_PRO: 'price_test_pro_12eur',
+    STRIPE_PRICE_CREATOR: 'price_test_creator_22eur',
+    SOFT_LAUNCH_AFFILIATE_PROFILE: 'baseline',
+    SMTP_HOST: 'smtp.test.local',
+    SMTP_USER: 'smtp-user',
+    SMTP_PASS: 'smtp-pass',
+    RL_LOGIN_ATTEMPTS_15M: '200',
+    RL_AUTH_PER_MINUTE: '120',
+    ENABLE_PROVIDER_DUFFEL: 'true',
+    DUFFEL_API_KEY: 'duffel_test_key_123456789',
     FLIGHT_DB_FILE: jsonDbFile,
     SQLITE_DB_FILE: sqliteDbFile,
     AUDIT_LOG_FILE: auditLogFile,
     ALLOW_INSECURE_STARTUP_FOR_TESTS: 'true',
     ALLOW_INSECURE_STARTUP_IN_PRODUCTION: 'true',
-    DATABASE_URL: '',
-    REDIS_URL: '',
+    ALLOW_INSECURE_STARTUP_TEST_CONTEXT: 'true',
+    DATABASE_URL: localDatabaseUrl,
+    REDIS_URL: localRedisUrl,
+    IP_HASH_SALT: 'Q8mR2pL6vN4xS9kD1cF7tH5z',
     GOOGLE_CLIENT_ID: 'google_test_client',
     ADMIN_ALLOWLIST_EMAILS: 'admin@example.com',
     ...envOverrides
@@ -131,8 +153,15 @@ async function startMainServer({ envOverrides = {} } = {}) {
     return `[stdout]\n${out}\n[stderr]\n${err}`;
   };
 
-  await waitForHealth(baseUrl, { child, getLogs });
-  return { child, sandboxDir, jsonDbFile, baseUrl, getLogs };
+  try {
+    await waitForHealth(baseUrl, { child, getLogs });
+    return { child, sandboxDir, jsonDbFile, baseUrl, getLogs };
+  } catch (error) {
+    child.kill('SIGTERM');
+    await waitForExit(child, 4000);
+    await rm(sandboxDir, { recursive: true, force: true });
+    throw error;
+  }
 }
 
 async function stopMainServer(state) {
@@ -174,6 +203,22 @@ async function registerUser(serverState, jar, { email = uniqueEmail('user') } = 
   return JSON.parse(rawBody || '{}');
 }
 
+async function setConsent(serverState, jar, csrfToken, categories) {
+  const response = await requestWithJar(serverState, jar, '/api/consent', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-csrf-token': String(csrfToken || '')
+    },
+    body: JSON.stringify({ categories })
+  });
+  const body = await response.text();
+  if (response.status !== 200) {
+    assert.fail(`set consent failed: status=${response.status} body=${body}`);
+  }
+  return JSON.parse(body || '{}');
+}
+
 function getRedirectReason(response) {
   const location = String(response.headers.get('location') || '');
   if (!location) return '';
@@ -192,7 +237,7 @@ test(
     const state = await startMainServer();
     try {
       const jar = new Map();
-      await registerUser(state, jar);
+      const registerPayload = await registerUser(state, jar);
 
       const scanStatus = await requestWithJar(state, jar, '/api/system/flight-scan/status');
       assert.equal(scanStatus.status, 403);
@@ -216,6 +261,37 @@ test(
 
       const reportCsv = await requestWithJar(state, jar, '/api/outbound/report.csv');
       assert.equal(reportCsv.status, 403);
+
+      const affiliateStats = await requestWithJar(state, jar, '/api/admin/affiliate-stats');
+      assert.equal(affiliateStats.status, 403);
+
+      const providerCoverage = await requestWithJar(state, jar, '/api/admin/provider-coverage');
+      assert.equal(providerCoverage.status, 403);
+
+      const recomputeEngine = await requestWithJar(state, jar, '/api/engine/recompute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      assert.equal(recomputeEngine.status, 403);
+
+      const telemetryResponse = await requestWithJar(state, jar, '/api/admin/telemetry', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-csrf-token': String(registerPayload?.session?.csrfToken || '')
+        },
+        body: JSON.stringify({
+          eventType: 'upgrade_primary_cta_clicked',
+          sourceContext: 'admin_backoffice',
+          planType: 'elite',
+          source: 'spoof_source',
+          surface: 'results',
+          itineraryId: 'itin_123',
+          correlationId: 'corr_telemetry_123'
+        })
+      });
+      assert.equal(telemetryResponse.status, 403);
     } finally {
       await stopMainServer(state);
     }
@@ -330,7 +406,8 @@ test(
     const state = await startMainServer();
     try {
       const jar = new Map();
-      await registerUser(state, jar);
+      const registerPayload = await registerUser(state, jar);
+      const csrfToken = String(registerPayload?.session?.csrfToken || '');
 
       const resolveParams = new URLSearchParams({
         partner: 'tde_booking',
@@ -347,7 +424,7 @@ test(
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ eventName: 'booking_clicked', url: resolveUrl })
       });
-      assert.equal([400, 403].includes(clickBeforeResolve.status), true);
+      assert.equal(clickBeforeResolve.status, 204);
 
       let resolveResponse = await requestWithJar(state, jar, resolveUrl, {
         method: 'GET',
@@ -371,7 +448,16 @@ test(
       }
       if (resolveResponse.status === 302) {
         assert.equal(String(resolveResponse.headers.get('location') || '').startsWith('/go/'), true);
-
+        await setConsent(state, jar, csrfToken, {
+          analytics: true,
+          marketing: false,
+          personalization: false
+        });
+        resolveResponse = await requestWithJar(state, jar, resolveUrl, {
+          method: 'GET',
+          redirect: 'manual'
+        });
+        assert.equal(resolveResponse.status, 302);
         const validClick = await requestWithJar(state, jar, '/api/outbound/click', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -406,12 +492,20 @@ test(
   'admin telemetry stores trusted server-derived context instead of spoofed client fields',
   { timeout: 120000 },
   async () => {
-    const state = await startMainServer();
+    const adminEmail = uniqueEmail('admin');
+    const state = await startMainServer({
+      envOverrides: { ADMIN_ALLOWLIST_EMAILS: adminEmail }
+    });
     try {
       const jar = new Map();
-      const registerPayload = await registerUser(state, jar, { email: uniqueEmail('telemetry') });
+      const registerPayload = await registerUser(state, jar, { email: adminEmail });
       const csrfToken = String(registerPayload?.session?.csrfToken || '');
       assert.equal(csrfToken.length > 10, true);
+      await setConsent(state, jar, csrfToken, {
+        analytics: true,
+        marketing: false,
+        personalization: false
+      });
 
       const telemetryResponse = await requestWithJar(state, jar, '/api/admin/telemetry', {
         method: 'POST',
@@ -431,8 +525,29 @@ test(
       });
       assert.equal(telemetryResponse.status, 201);
 
-      const dbPayload = JSON.parse(await readFile(state.jsonDbFile, 'utf8'));
-      const lastEvent = (dbPayload.clientTelemetryEvents || []).slice(-1)[0];
+      const localDatabaseUrl =
+        String(process.env.SECURITY_COMPLIANCE_LOCAL_DATABASE_URL || '').trim() ||
+        'postgresql://flight:flight@localhost:5432/flight';
+      const pool = new pg.Pool({ connectionString: localDatabaseUrl });
+      let lastEvent = null;
+      try {
+        const telemetryRow = await pool.query(
+          `SELECT payload
+           FROM telemetry_events
+           WHERE correlation_id = $1
+           ORDER BY created_at DESC
+           LIMIT 1`,
+          ['corr_telemetry_123']
+        );
+        lastEvent = telemetryRow.rows?.[0]?.payload || null;
+      } finally {
+        await pool.end();
+      }
+      if (!lastEvent) {
+        const dbPayload = JSON.parse(await readFile(state.jsonDbFile, 'utf8'));
+        lastEvent = (dbPayload.clientTelemetryEvents || []).slice(-1)[0] || null;
+      }
+      assert.equal(Boolean(lastEvent), true);
       assert.equal(lastEvent.sourceContext, 'web_app');
       assert.equal(lastEvent.planType, 'free');
       assert.equal(lastEvent.trustLevel, 'session_bound_client');
@@ -527,6 +642,8 @@ test(
       env: {
         ...process.env,
         NODE_ENV: 'production',
+        DATABASE_URL: String(process.env.SECURITY_COMPLIANCE_LOCAL_DATABASE_URL || '').trim() || 'postgresql://flight:flight@localhost:5432/flight',
+        REDIS_URL: String(process.env.SECURITY_COMPLIANCE_LOCAL_REDIS_URL || '').trim() || 'redis://localhost:6379',
         BACKOFFICE_PORT: String(port),
         BACKOFFICE_JWT_SECRET: 'BackofficeJwtValueForProdTests1234567890ABCDE',
         ADMIN_ALLOWLIST_EMAILS: 'admin@example.com',

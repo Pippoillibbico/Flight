@@ -219,7 +219,7 @@ function LandingSection(props) {
 
           <button
             type="button"
-            className="landing-ctrl-btn landing-theme-btn"
+            className="landing-ctrl-btn landing-theme-btn app-header-control-btn"
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => setDarkMode((d) => !d)}
             aria-label={darkMode ? t('themeSwitchToLight') : t('themeSwitchToDark')}
@@ -314,6 +314,12 @@ function LandingSection(props) {
           <p className="eyebrow">{t('landingHeroEyebrow')}</p>
           <h1 className="landing-hero-title">{t('landingHeroTitle')}</h1>
           <p className="hero-sub">{t('landingHeroSub')}</p>
+          <p className="hero-sub landing-hero-smart-departure-copy">
+            {t(
+              'landingSmartDepartureValue',
+              'Non ti mostriamo solo dove andare. Ti mostriamo anche da dove conviene partire.'
+            )}
+          </p>
           <div className="landing-hero-cta">
             <button
               type="button"
@@ -601,4 +607,3 @@ function LandingSection(props) {
 }
 
 export default LandingSection;
-

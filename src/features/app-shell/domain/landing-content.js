@@ -24,8 +24,13 @@ export function createLandingValueCards(t) {
 
 export function createLandingPricingPlans({ t, formatEur, onChooseFreePlan, onChoosePremiumPlan, backendPricing = null }) {
   // Use live backend prices when available, fall back to hardcoded defaults.
-  const proMonthly  = backendPricing?.pro?.priceMonthlyEur   ?? 7;
-  const eliteMonthly = backendPricing?.creator?.priceMonthlyEur ?? backendPricing?.elite?.priceMonthlyEur ?? 19;
+  const proMonthly = backendPricing?.pro?.monthlyEur ?? backendPricing?.pro?.priceMonthlyEur ?? 12;
+  const eliteMonthly =
+    backendPricing?.elite?.monthlyEur ??
+    backendPricing?.elite?.priceMonthlyEur ??
+    backendPricing?.creator?.monthlyEur ??
+    backendPricing?.creator?.priceMonthlyEur ??
+    22;
   const proAnnual   = +(proMonthly   * 12 * 0.75 / 12).toFixed(2);
   const eliteAnnual = +(eliteMonthly * 12 * 0.75 / 12).toFixed(2);
 

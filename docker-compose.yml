@@ -2,6 +2,7 @@ services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    command: ["postgres", "-c", "statement_timeout=15s"]
     environment:
       POSTGRES_DB: flight
       POSTGRES_USER: flight

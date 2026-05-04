@@ -5,7 +5,7 @@
  *   activateFreePlan: Function,
  *   upgradeToPremium: Function,
  *   chooseElitePlan: Function,
- *   backendPricing?: { pro?: { monthlyEur?: number }, creator?: { monthlyEur?: number } }
+ *   backendPricing?: { pro?: { monthlyEur?: number }, elite?: { monthlyEur?: number }, creator?: { monthlyEur?: number } }
  * }} options
  */
 export function createPremiumPackages({
@@ -18,8 +18,8 @@ export function createPremiumPackages({
   backendPricing = null
 }) {
   // Prices from backend are authoritative; fallback only if backend is unavailable
-  const proMonthlyEur = Number(backendPricing?.pro?.monthlyEur) || 12.99;
-  const eliteMonthlyEur = Number(backendPricing?.creator?.monthlyEur) || 29.99;
+  const proMonthlyEur = Number(backendPricing?.pro?.monthlyEur) || 12;
+  const eliteMonthlyEur = Number(backendPricing?.elite?.monthlyEur ?? backendPricing?.creator?.monthlyEur) || 22;
 
   // Annual pricing: 30% discount applied to the monthly price
   const ANNUAL_DISCOUNT = 0.30;

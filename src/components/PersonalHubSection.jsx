@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
+import { useAppContext } from '../context/AppContext';
 import { validateProps } from '../utils/validateProps';
 import { localizeClusterDisplayName } from '../utils/localizePlace';
 import QuotaUsageBar from './QuotaUsageBar';
@@ -54,6 +55,7 @@ function normalizeSlug(value) {
 }
 
 function PersonalHubSection(props) {
+  const { t } = useAppContext();
   const {
     clusters,
     language,
@@ -130,9 +132,9 @@ function PersonalHubSection(props) {
       }
       setTrackedRouteSlugs(readTrackedRouteSlugs());
       setSavedItineraries(readSavedItineraries());
-      setClearMessage('Local travel data cleared on this device.');
+      setClearMessage(t('hubClearSuccess'));
     } catch {
-      setClearMessage('Unable to clear local data in this browser.');
+      setClearMessage(t('hubClearError'));
     }
   }
 
@@ -141,32 +143,32 @@ function PersonalHubSection(props) {
   const trackedLimitReached = normalizedTrackedLimit !== null && trackedRouteSlugs.length >= normalizedTrackedLimit;
   const savedLimitReached = normalizedSavedLimit !== null && savedItineraries.length >= normalizedSavedLimit;
   const shouldShowUpgradeBanner = planType !== 'elite' && (trackedLimitReached || savedLimitReached || planType === 'free');
-  const radarTierLabel = radarMessagingTier === 'priority' ? 'Priority radar' : radarMessagingTier === 'advanced' ? 'Advanced radar' : 'Basic radar';
+  const radarTierLabel = radarMessagingTier === 'priority' ? t('hubRadarTierPriority') : radarMessagingTier === 'advanced' ? t('hubRadarTierAdvanced') : t('hubRadarTierBasic');
   const upgradeMessage = trackedLimitReached
-    ? `You\u2019re tracking ${trackedRouteSlugs.length}/${normalizedTrackedLimit} routes. Track more routes and never miss a drop.`
+    ? t('hubUpgradeTrackedLimitMsg').replace('{tracked}', trackedRouteSlugs.length).replace('{limit}', normalizedTrackedLimit)
     : savedLimitReached
-      ? `You saved ${savedItineraries.length}/${normalizedSavedLimit} itineraries. Unlock more saves and keep every opportunity in view.`
-      : 'Unlock priority deals before others and get stronger radar intelligence.';
+      ? t('hubUpgradeSavedLimitMsg').replace('{saved}', savedItineraries.length).replace('{limit}', normalizedSavedLimit)
+      : t('hubUpgradeGenericMsg');
 
   return (
     <section className="panel personal-hub-panel" data-testid="personal-hub-panel">
       <div className="panel-head">
-        <h2>My Travel Intelligence</h2>
+        <h2>{t('hubTitle')}</h2>
       </div>
-      <p className="muted personal-hub-intro">Your control center for tracked routes, recent itineraries, and radar status.</p>
+      <p className="muted personal-hub-intro">{t('hubIntro')}</p>
       <article className="personal-hub-plan-banner" data-testid="personal-hub-plan-banner">
         <div className="personal-hub-plan-main">
-          <p className="personal-hub-plan-label">Active plan</p>
+          <p className="personal-hub-plan-label">{t('hubActivePlan')}</p>
           <h3 data-testid="personal-hub-plan-type">{String(planType || 'free').toUpperCase()}</h3>
           <p className="muted">{radarTierLabel}</p>
         </div>
         <div className="personal-hub-plan-usage">
           <p className="personal-hub-plan-usage-line">
-            Tracked routes: {trackedRouteSlugs.length}
+            {t('hubTrackedRoutesStat')} {trackedRouteSlugs.length}
             {normalizedTrackedLimit !== null ? `/${normalizedTrackedLimit}` : ''}
           </p>
           <p className="personal-hub-plan-usage-line">
-            Saved itineraries: {savedItineraries.length}
+            {t('hubSavedItinerariesStat')} {savedItineraries.length}
             {normalizedSavedLimit !== null ? `/${normalizedSavedLimit}` : ''}
           </p>
           {quota ? (
@@ -175,12 +177,13 @@ function PersonalHubSection(props) {
               planId={planType}
               onUpgrade={onUpgradePro}
               compact
+              t={t}
             />
           ) : null}
         </div>
         <div className="item-actions personal-hub-actions personal-hub-privacy-actions">
           <button type="button" className="ghost" onClick={clearLocalData} data-testid="personal-hub-clear-local-data">
-            Clear local travel data
+            {t('hubClearLocalData')}
           </button>
         </div>
         {clearMessage ? <p className="muted personal-hub-clear-message">{clearMessage}</p> : null}
@@ -189,10 +192,10 @@ function PersonalHubSection(props) {
             <p className="muted">{upgradeMessage}</p>
             <div className="item-actions personal-hub-actions">
               <button type="button" onClick={() => onUpgradePro?.()} data-testid="personal-hub-upgrade-pro">
-                Upgrade to PRO
+                {t('hubUpgradePro')}
               </button>
               <button type="button" className="ghost" onClick={() => onUpgradeElite?.()} data-testid="personal-hub-upgrade-elite">
-                Go ELITE
+                {t('hubGoElite')}
               </button>
             </div>
           </div>
@@ -201,9 +204,9 @@ function PersonalHubSection(props) {
 
       <div className="personal-hub-grid">
         <section className="personal-hub-card" data-testid="personal-hub-tracked-routes">
-          <h3>Tracked routes</h3>
+          <h3>{t('hubTrackedRoutesTitle')}</h3>
           {trackedRouteSlugs.length === 0 ? (
-            <p className="muted" data-testid="personal-hub-tracked-empty">No routes tracked yet. Open any opportunity and tap &ldquo;Track this route&rdquo; to monitor it here.</p>
+            <p className="muted" data-testid="personal-hub-tracked-empty">{t('hubTrackedEmpty')}</p>
           ) : (
             <ul className="personal-hub-list">
               {trackedRouteSlugs.map((slug) => {
@@ -212,7 +215,7 @@ function PersonalHubSection(props) {
                   <li key={slug} className="personal-hub-item" data-testid={`personal-hub-tracked-route-${slug}`}>
                     <div className="personal-hub-item-main">
                       <strong>{routeName}</strong>
-                      <span className="personal-hub-pill">Tracking active</span>
+                      <span className="personal-hub-pill">{t('hubTrackingActive')}</span>
                     </div>
                     <div className="item-actions personal-hub-actions">
                       <button
@@ -221,7 +224,7 @@ function PersonalHubSection(props) {
                         onClick={() => viewDealsForRoute(slug)}
                         data-testid={`personal-hub-view-deals-${slug}`}
                       >
-                        View deals
+                        {t('hubViewDeals')}
                       </button>
                       <button
                         type="button"
@@ -229,7 +232,7 @@ function PersonalHubSection(props) {
                         onClick={() => untrackRoute(slug)}
                         data-testid={`personal-hub-untrack-${slug}`}
                       >
-                        Untrack
+                        {t('hubUntrack')}
                       </button>
                     </div>
                   </li>
@@ -240,9 +243,9 @@ function PersonalHubSection(props) {
         </section>
 
         <section className="personal-hub-card" data-testid="personal-hub-saved-itineraries">
-          <h3>Saved itineraries</h3>
+          <h3>{t('hubSavedItinerariesTitle')}</h3>
           {savedItineraries.length === 0 ? (
-            <p className="muted" data-testid="personal-hub-saved-empty">No saved itineraries yet. Generate an itinerary from any opportunity to keep it here.</p>
+            <p className="muted" data-testid="personal-hub-saved-empty">{t('hubSavedEmpty')}</p>
           ) : (
             <ul className="personal-hub-list">
               {savedItineraries.map((itinerary) => (
@@ -250,7 +253,7 @@ function PersonalHubSection(props) {
                   <div className="personal-hub-item-main">
                     <strong>{itinerary.routeLabel}</strong>
                     <p className="personal-hub-price">{formatPrice(itinerary.price, itinerary.currency)}</p>
-                    <span className="personal-hub-pill">{itinerary.label || 'Recently viewed'}</span>
+                    <span className="personal-hub-pill">{itinerary.label || t('hubRecentlyViewed')}</span>
                   </div>
                   <div className="item-actions personal-hub-actions">
                     <button
@@ -260,7 +263,7 @@ function PersonalHubSection(props) {
                       onClick={() => openSavedItinerary(itinerary)}
                       data-testid={`personal-hub-open-itinerary-${itinerary.key}`}
                     >
-                      Open itinerary
+                      {t('hubOpenItinerary')}
                     </button>
                     <button
                       type="button"
@@ -268,7 +271,7 @@ function PersonalHubSection(props) {
                       onClick={() => removeItinerary(itinerary.key)}
                       data-testid={`personal-hub-remove-itinerary-${itinerary.key}`}
                     >
-                      Remove
+                      {t('hubRemove')}
                     </button>
                   </div>
                 </li>
@@ -278,16 +281,16 @@ function PersonalHubSection(props) {
         </section>
 
         <section className="personal-hub-card personal-hub-radar-card" data-testid="personal-hub-radar-status">
-          <h3>Radar status</h3>
+          <h3>{t('hubRadarStatusTitle')}</h3>
           {radarSessionActivated ? (
             <>
-              <p className="personal-hub-radar-title" data-testid="personal-hub-radar-active">Radar is active</p>
-              <p className="muted">We&apos;re scanning for opportunities based on your activity.</p>
+              <p className="personal-hub-radar-title" data-testid="personal-hub-radar-active">{t('hubRadarActive')}</p>
+              <p className="muted">{t('hubRadarActiveDesc')}</p>
             </>
           ) : (
             <>
-              <p className="personal-hub-radar-title" data-testid="personal-hub-radar-inactive">Radar not active</p>
-              <p className="muted">Activate radar to keep monitoring high-signal opportunities in this session.</p>
+              <p className="personal-hub-radar-title" data-testid="personal-hub-radar-inactive">{t('hubRadarInactive')}</p>
+              <p className="muted">{t('hubRadarInactiveDesc')}</p>
               <div className="item-actions personal-hub-actions">
                 <button
                   type="button"
@@ -295,7 +298,7 @@ function PersonalHubSection(props) {
                   onClick={onActivateRadar}
                   data-testid="personal-hub-activate-radar"
                 >
-                  Activate radar
+                  {t('hubActivateRadar')}
                 </button>
               </div>
             </>

@@ -1,5 +1,6 @@
 import { useCallback, useEffect } from 'react';
 import { isConsentGiven } from '../../../utils/cookieConsent';
+import { TELEMETRY_EVENTS } from '../../../shared/telemetry/events.js';
 
 function withTelemetryEnvelope(payload) {
   const base = payload && typeof payload === 'object' ? payload : {};
@@ -36,7 +37,11 @@ export function useAdminTelemetryBridge({
     (payload) => {
       if (!isAuthenticated) return;
       if (!isConsentGiven('analytics')) return;
-      adminDashboardApi.trackTelemetryEvent(token || undefined, withTelemetryEnvelope(payload)).catch(() => {});
+      adminDashboardApi.trackTelemetryEvent(token || undefined, withTelemetryEnvelope(payload)).catch((error) => {
+        if (import.meta?.env?.DEV) {
+          console.warn('admin_telemetry_event_failed', error);
+        }
+      });
     },
     [adminDashboardApi, isAuthenticated, token]
   );
@@ -83,6 +88,9 @@ export function useAdminTelemetryBridge({
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    if (isAuthenticated && isConsentGiven('analytics')) {
+      sendAdminTelemetryEvent({ eventType: 'homepage_viewed' });
+    }
     const handleFunnelTelemetry = (event) => {
       const payload = mapFunnelEventToAdminTelemetry(event?.detail);
       if (!payload) return;
@@ -93,11 +101,29 @@ export function useAdminTelemetryBridge({
         isTrackRoute;
       if (!shouldCollect) return;
       sendAdminTelemetryEvent(payload);
+      if (payload.eventType === 'itinerary_opened') {
+        sendAdminTelemetryEvent({
+          ...payload,
+          eventType: TELEMETRY_EVENTS.OPPORTUNITY_OPENED
+        });
+      }
     };
     const handleUpgradeTelemetry = (event) => {
       const payload = mapUpgradeEventToAdminTelemetry(event?.detail);
       if (!payload) return;
       sendAdminTelemetryEvent(payload);
+      if (payload.eventType === 'checkout_started') {
+        sendAdminTelemetryEvent({
+          ...payload,
+          eventType: 'upgrade_started'
+        });
+      }
+      if (payload.eventType === 'checkout_completed') {
+        sendAdminTelemetryEvent({
+          ...payload,
+          eventType: 'upgrade_completed'
+        });
+      }
     };
     window.addEventListener('flight_funnel_event', handleFunnelTelemetry);
     window.addEventListener('flight_upgrade_event', handleUpgradeTelemetry);
@@ -105,7 +131,7 @@ export function useAdminTelemetryBridge({
       window.removeEventListener('flight_funnel_event', handleFunnelTelemetry);
       window.removeEventListener('flight_upgrade_event', handleUpgradeTelemetry);
     };
-  }, [mapFunnelEventToAdminTelemetry, mapUpgradeEventToAdminTelemetry, sendAdminTelemetryEvent]);
+  }, [isAuthenticated, mapFunnelEventToAdminTelemetry, mapUpgradeEventToAdminTelemetry, sendAdminTelemetryEvent]);
 
   return {
     sendAdminTelemetryEvent,

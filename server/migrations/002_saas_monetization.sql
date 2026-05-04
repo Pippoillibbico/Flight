@@ -16,8 +16,8 @@ CREATE TABLE IF NOT EXISTS plans (
 
 INSERT INTO plans (id, name, monthly_credits, price_monthly_eur, features) VALUES
   ('free',    'Free',    50,    0.00,  '{"search":true,"alerts":1,"justGo":false,"aiSearch":false,"csvExport":false,"apiAccess":false}'),
-  ('pro',     'Pro',     500,   12.99, '{"search":true,"alerts":10,"justGo":true,"aiSearch":true,"csvExport":false,"apiAccess":false}'),
-  ('creator', 'Creator', 2000,  29.99, '{"search":true,"alerts":50,"justGo":true,"aiSearch":true,"csvExport":true,"apiAccess":true}')
+  ('pro',     'Pro',     500,   12.00, '{"search":true,"alerts":10,"justGo":true,"aiSearch":true,"csvExport":false,"apiAccess":false}'),
+  ('creator', 'Creator', 2000,  22.00, '{"search":true,"alerts":50,"justGo":true,"aiSearch":true,"csvExport":true,"apiAccess":true}')
 ON CONFLICT (id) DO NOTHING;
 
 -- One subscription per user

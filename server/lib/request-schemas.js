@@ -1,4 +1,9 @@
 import { z } from 'zod';
+import {
+  TELEMETRY_EVENTS,
+  TELEMETRY_EVENT_LEGACY_ALIASES,
+  resolveTelemetryEventType
+} from '../../src/shared/telemetry/events.js';
 
 export const REGION_ENUM = ['all', 'eu', 'asia', 'america', 'oceania'];
 export const CABIN_ENUM = ['economy', 'premium', 'business'];
@@ -316,10 +321,14 @@ export const destinationInsightSchema = z
     }
   });
 
-export const ADMIN_TELEMETRY_EVENT_TYPES = [
+const ADMIN_TELEMETRY_EXTENDED_EVENT_TYPES = [
+  'homepage_viewed',
+  'teaser_deal_viewed',
+  'signup_started',
+  'signup_completed',
+  'paywall_viewed',
+  'no_deals_viewed',
   'result_interaction_clicked',
-  'itinerary_opened',
-  'booking_clicked',
   'live_deal_feed_view',
   'live_deal_card_click',
   'live_deal_detail_open',
@@ -328,23 +337,35 @@ export const ADMIN_TELEMETRY_EVENT_TYPES = [
   'live_deal_return_view',
   'live_deal_save_route_click',
   'live_deal_alert_click',
+  'alternative_departure_viewed',
+  'alternative_departure_expanded',
+  'alternative_departure_clicked',
+  'savings_hint_viewed',
   'upgrade_cta_shown',
-  'upgrade_cta_clicked',
-  'elite_cta_clicked',
   'upgrade_modal_opened',
   'elite_modal_opened',
   'upgrade_primary_cta_clicked',
-  'checkout_started',
-  'checkout_completed',
-  'radar_activated',
+  'upgrade_prompt_shown',
+  'upgrade_prompt_dismissed',
   'trial_banner_shown',
   'trial_upgrade_clicked'
 ];
+export const ADMIN_TELEMETRY_EVENT_TYPES = [
+  ...new Set([
+    ...Object.values(TELEMETRY_EVENTS),
+    ...Object.keys(TELEMETRY_EVENT_LEGACY_ALIASES),
+    ...ADMIN_TELEMETRY_EXTENDED_EVENT_TYPES
+  ])
+];
+const ADMIN_TELEMETRY_EVENT_TYPE_SET = new Set(ADMIN_TELEMETRY_EVENT_TYPES);
 
 const ADMIN_TELEMETRY_SOURCE_CONTEXT = ['web_app', 'admin_backoffice', 'api_client'];
 
 export const adminTelemetryEventSchema = z.object({
-  eventType: z.enum(ADMIN_TELEMETRY_EVENT_TYPES),
+  eventType: z
+    .string()
+    .transform((value) => resolveTelemetryEventType(value))
+    .refine((value) => ADMIN_TELEMETRY_EVENT_TYPE_SET.has(value), { message: 'Invalid telemetry event type.' }),
   at: z.string().datetime().optional(),
   eventId: z.string().regex(/^[a-z0-9_-]{8,80}$/i).optional(),
   fingerprint: z.string().regex(/^[a-z0-9_-]{12,128}$/i).optional(),
@@ -360,5 +381,5 @@ export const adminTelemetryEventSchema = z.object({
   dealId: z.string().max(120).optional(),
   sessionId: z.string().max(120).optional(),
   price: z.number().positive().max(100000).optional(),
-  planType: z.enum(['free', 'pro', 'elite']).optional()
+  planType: z.enum(['free', 'pro', 'elite', 'creator']).optional()
 }).strict();

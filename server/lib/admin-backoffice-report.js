@@ -1,3 +1,6 @@
+import { normalizePlanType } from './plans/normalize-plan-type.js';
+import { TELEMETRY_EVENTS, resolveTelemetryEventType } from '../../src/shared/telemetry/events.js';
+
 function toIso(value) {
   const date = new Date(value || Date.now());
   if (Number.isNaN(date.getTime())) return new Date().toISOString();
@@ -6,6 +9,18 @@ function toIso(value) {
 
 function toLower(value) {
   return String(value || '').trim().toLowerCase();
+}
+
+function sanitizeReportText(value, maxLength = 120) {
+  const raw = String(value || '')
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, Math.max(10, Number(maxLength) || 120));
+  if (!raw) return '';
+  return raw
+    .replace(/bearer\s+[a-z0-9._-]+/ig, 'bearer [redacted]')
+    .replace(/(token|secret|password|cookie)=([^\s;,&]+)/ig, '$1=[redacted]');
 }
 
 function toCountMap(items, keyResolver) {
@@ -50,11 +65,75 @@ function toRouteKey(origin, destinationIata) {
   return `${from}-${to}`;
 }
 
+function parseRouteSlug(routeSlug) {
+  const text = String(routeSlug || '').trim().toUpperCase();
+  const match = text.match(/^([A-Z]{3})[-_ ]([A-Z]{3})$/);
+  if (!match) return null;
+  return { origin: match[1], destinationIata: match[2] };
+}
+
+function bookingEventFingerprint(event) {
+  const atRaw = String(event?.at || event?.clickedAt || event?.createdAt || '').trim();
+  const at = atRaw || 'no_ts';
+  return [
+    String(event?.userId || ''),
+    String(event?.sessionId || ''),
+    String(event?.itineraryId || event?.dealId || event?.correlationId || ''),
+    String(event?.origin || ''),
+    String(event?.destinationIata || ''),
+    String(event?.surface || ''),
+    at
+  ].join('|');
+}
+
+function mergeBookingClickedEvents(outboundEvents, telemetryEvents) {
+  const normalizedOutbound = (Array.isArray(outboundEvents) ? outboundEvents : [])
+    .filter((event) => resolveTelemetryEventType(event?.eventName || TELEMETRY_EVENTS.BOOKING_CLICKED) === TELEMETRY_EVENTS.BOOKING_CLICKED)
+    .map((event) => ({
+      at: event?.at || event?.clickedAt || event?.createdAt || null,
+      userId: event?.userId || null,
+      sessionId: event?.sessionId || null,
+      itineraryId: event?.itineraryId || null,
+      dealId: event?.dealId || event?.clickId || null,
+      correlationId: event?.correlationId || null,
+      origin: event?.origin || null,
+      destinationIata: event?.destinationIata || null,
+      surface: event?.surface || null
+    }));
+
+  const normalizedTelemetry = (Array.isArray(telemetryEvents) ? telemetryEvents : [])
+    .filter((event) => {
+      const type = resolveTelemetryEventType(event?.eventType);
+      return type === TELEMETRY_EVENTS.BOOKING_CLICKED;
+    })
+    .map((event) => {
+      const parsedRoute = parseRouteSlug(event?.routeSlug);
+      return {
+        at: event?.at || null,
+        userId: event?.userId || null,
+        sessionId: event?.sessionId || null,
+        itineraryId: event?.itineraryId || null,
+        dealId: event?.dealId || null,
+        correlationId: event?.correlationId || null,
+        origin: parsedRoute?.origin || null,
+        destinationIata: parsedRoute?.destinationIata || null,
+        surface: event?.surface || null
+      };
+    });
+
+  const deduped = [];
+  const seen = new Set();
+  for (const item of [...normalizedOutbound, ...normalizedTelemetry]) {
+    const key = bookingEventFingerprint(item);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(item);
+  }
+  return deduped;
+}
+
 function parsePlanType(value) {
-  const plan = toLower(value);
-  if (plan === 'elite' || plan === 'creator') return 'elite';
-  if (plan === 'pro') return 'pro';
-  return 'free';
+  return normalizePlanType(value);
 }
 
 function isRecent(event, sinceMs) {
@@ -63,7 +142,7 @@ function isRecent(event, sinceMs) {
 }
 
 function mapActivityEvent(event) {
-  const eventType = toLower(event?.eventType);
+  const eventType = resolveTelemetryEventType(event?.eventType);
   const action = toLower(event?.action);
   const source = String(event?.source || '').trim();
   const itineraryId = String(event?.itineraryId || '').trim();
@@ -87,11 +166,11 @@ function mapActivityEvent(event) {
       meta: surface ? `surface: ${surface}` : ''
     };
   }
-  if (eventType === 'booking_clicked') {
+  if (eventType === TELEMETRY_EVENTS.BOOKING_CLICKED) {
     return {
       id: String(event?.id || ''),
       at: toIso(event?.at),
-      type: 'booking_clicked',
+      type: TELEMETRY_EVENTS.BOOKING_CLICKED,
       label: `Booking clicked: ${itineraryId || 'unknown itinerary'}`,
       meta: surface ? `surface: ${surface}` : ''
     };
@@ -195,7 +274,7 @@ export function buildAdminBackofficeReport({
     (event) => toLower(event?.eventType) === 'result_interaction_clicked' && toLower(event?.action) === 'track_route'
   );
   const itineraryOpenedEvents = telemetryWindow.filter((event) => toLower(event?.eventType) === 'itinerary_opened');
-  const bookingClickedEvents = outboundWindow.filter((event) => toLower(event?.eventName || 'booking_clicked') === 'booking_clicked');
+  const bookingClickedEvents = mergeBookingClickedEvents(outboundWindow, telemetryWindow);
   const upgradeClickEvents = telemetryWindow.filter((event) => {
     const eventType = toLower(event?.eventType);
     return eventType === 'upgrade_cta_clicked' || eventType === 'elite_cta_clicked';
@@ -206,13 +285,17 @@ export function buildAdminBackofficeReport({
   const trackedRouteMap = toCountMap(trackRouteEvents, (event) => event?.routeSlug);
   const itineraryMap = toCountMap(itineraryOpenedEvents, (event) => event?.itineraryId);
   const upgradeSourceMap = toCountMap(
-    telemetryWindow.filter((event) => toLower(event?.eventType).includes('upgrade') || toLower(event?.eventType).includes('elite')),
+    telemetryWindow.filter(
+      (event) => toLower(event?.eventType).includes('upgrade') || toLower(event?.eventType).includes('elite')
+    ),
     (event) => event?.source
   );
 
   const planCountMap = toCountMap(users, (user) => parsePlanType(user?.planType || (user?.isPremium ? 'pro' : 'free')));
 
-  const redirectFailures24h = outbound24h.filter((event) => toLower(event?.eventName) === 'outbound_redirect_failed');
+  const redirectFailures24h = outbound24h.filter(
+    (event) => resolveTelemetryEventType(event?.eventName) === TELEMETRY_EVENTS.OUTBOUND_REDIRECT_FAILED
+  );
   const authFailures24h = authEvents.filter((event) => isRecent(event, since24hMs) && isAuthFailureEvent(event));
   const rateLimitEvents24h =
     authFailures24h.filter((event) => toLower(event?.type).includes('limit')).length +
@@ -223,13 +306,13 @@ export function buildAdminBackofficeReport({
       id: String(event?.id || ''),
       at: toIso(event?.at),
       scope: 'auth',
-      message: String(event?.type || 'auth_failure')
+      message: sanitizeReportText(event?.type || 'auth_failure')
     })),
     ...redirectFailures24h.map((event) => ({
       id: String(event?.id || ''),
       at: toIso(event?.at),
       scope: 'outbound',
-      message: String(event?.errorCode || event?.failureReason || 'outbound_redirect_failed')
+      message: sanitizeReportText(event?.errorCode || event?.failureReason || 'outbound_redirect_failed')
     }))
   ]
     .sort((left, right) => new Date(right.at).getTime() - new Date(left.at).getTime())
@@ -249,7 +332,7 @@ export function buildAdminBackofficeReport({
   });
 
   const proInterestCount = upgradePrimaryEvents.filter((event) => parsePlanType(event?.planType) === 'pro').length;
-  const eliteInterestCount = upgradePrimaryEvents.filter((event) => parsePlanType(event?.planType) === 'elite').length;
+  const creatorInterestCount = upgradePrimaryEvents.filter((event) => parsePlanType(event?.planType) === 'creator').length;
 
   // Upgrade conversion funnel: shown → clicked → checkout_started → checkout_completed
   const ctaShownEvents = telemetryWindow.filter((event) => toLower(event?.eventType) === 'upgrade_cta_shown');
@@ -343,7 +426,8 @@ export function buildAdminBackofficeReport({
       upgradeClicked: upgradeClickEvents.length,
       planDistribution: toTopItems(planCountMap, 3, (plan) => String(plan || 'free').toUpperCase()),
       proInterestCount,
-      eliteInterestCount,
+      creatorInterestCount,
+      eliteInterestCount: creatorInterestCount,
       triggerSurfaces: toTopItems(upgradeSourceMap, 8, (surface) => surface || 'unknown'),
       conversionFunnel,
       trial: {
