@@ -209,8 +209,12 @@ function getWslPrefixArgs() {
   return WSL_DISTRO ? ['-d', WSL_DISTRO, '--'] : [];
 }
 
+function getWindowsPathForWslpath() {
+  return process.cwd().replaceAll('\\', '/');
+}
+
 function getWslProjectPath() {
-  const args = [...getWslPrefixArgs(), 'wslpath', '-a', process.cwd()];
+  const args = [...getWslPrefixArgs(), 'wslpath', '-a', getWindowsPathForWslpath()];
   const result = runSyncCapture(WSL_BIN, args);
   if ((result.status ?? 1) !== 0) {
     const error = new Error('wsl_path_resolution_failed');
