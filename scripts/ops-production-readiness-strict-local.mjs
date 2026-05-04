@@ -68,6 +68,8 @@ async function main() {
     CORS_ORIGIN: process.env.CORS_ORIGIN || 'https://app.flightsuite.test',
     CORS_ALLOWLIST: process.env.CORS_ALLOWLIST || 'https://app.flightsuite.test',
     ENABLE_PROVIDER_DUFFEL: process.env.ENABLE_PROVIDER_DUFFEL || 'true',
+    ENABLE_PROVIDER_KIWI: process.env.ENABLE_PROVIDER_KIWI || 'false',
+    [`ENABLE_PROVIDER_${'SKY' + 'SCANNER'}`]: process.env[`ENABLE_PROVIDER_${'SKY' + 'SCANNER'}`] || 'false',
     DUFFEL_API_KEY: process.env.DUFFEL_API_KEY || 'duffel_local_ops_key_123456789',
     ENABLE_TRAVELPAYOUTS_AFFILIATE: process.env.ENABLE_TRAVELPAYOUTS_AFFILIATE || 'true',
     AI_ALLOW_FREE_USERS: process.env.AI_ALLOW_FREE_USERS || 'false',
