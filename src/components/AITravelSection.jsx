@@ -57,14 +57,19 @@ function AITravelSection(props) {
   const totalItems = Number(result?.totalItems || items.length);
   const visibleItemsCount = items.length;
   const shouldShowLimitedPrompt = planType === 'free' && truncatedByPlan && totalItems > visibleItemsCount;
+  const isFreePlan = planType === 'free';
 
   return (
     <section className="panel ai-travel-panel" data-testid="ai-travel-panel">
       <div className="ai-travel-header">
         <div className="panel-head">
-          <h2>{tt('aiTravelPageTitle', "Find your next trip with AI")}</h2>
+          <h2>{isFreePlan ? 'Public cached trip ideas' : tt('aiTravelPageTitle', 'Find your next trip with AI')}</h2>
         </div>
-        <p className="muted">{tt('aiTravelPageSubtitle', 'Describe what you are looking for and let the system find real opportunities already in the feed.')}</p>
+        <p className="muted">
+          {isFreePlan
+            ? 'Free uses public cached opportunities, basic route insights, and price trend previews.'
+            : tt('aiTravelPageSubtitle', 'Describe what you are looking for and let the system find real opportunities already in the feed.')}
+        </p>
       </div>
 
       <section className="ai-travel-input-card">
@@ -78,20 +83,24 @@ function AITravelSection(props) {
             placeholder={tt('aiTravelPromptPlaceholder', 'I want to leave with 400 EUR in November.')}
           />
         </label>
-        <p className="muted">{tt('aiTravelPageHelper', 'AI interprets your request and filters real opportunities only, without inventing flights or prices.')}</p>
-        {planType === 'free' ? (
+        <p className="muted">
+          {isFreePlan
+            ? 'No AI runs on Free. Upgrade for live scans, AI tools, and route alerts when delivery is enabled.'
+            : tt('aiTravelPageHelper', 'AI interprets your request and filters real opportunities only, without inventing flights or prices.')}
+        </p>
+        {isFreePlan ? (
           <p className="muted ai-travel-plan-note" data-testid="ai-travel-plan-note">
-            Free plan does not include AI travel generation. Upgrade to Pro or Elite to use AI.
+            Free shows public cached opportunities. Upgrade for live scans, AI tools, and route alerts when delivery is enabled.
           </p>
         ) : null}
         <div className="item-actions ai-travel-actions">
-          <button type="button" data-testid="ai-travel-run" onClick={onRun} disabled={loading || !canUseAiTravel}>
-            {loading ? tt('aiTravelRunLoading', 'Analyzing...') : tt('aiTravelRunCta', 'Ask AI')}
+          <button type="button" data-testid="ai-travel-run" onClick={isFreePlan ? onUpgradePro : onRun} disabled={loading || (!canUseAiTravel && !isFreePlan)}>
+            {loading ? tt('aiTravelRunLoading', 'Analyzing...') : isFreePlan ? 'Upgrade for live scans and AI tools' : tt('aiTravelRunCta', 'Ask AI')}
           </button>
         </div>
       </section>
 
-      {!canUseAiTravel ? (
+      {!canUseAiTravel && !isFreePlan ? (
         <p className="error">{tt('aiTravelEliteOnly', 'AI Travel is available on Pro and Elite plans.')}</p>
       ) : null}
       {error ? <p className="error">{error}</p> : null}

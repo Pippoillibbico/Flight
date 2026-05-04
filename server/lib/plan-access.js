@@ -1,11 +1,60 @@
 const PLAN_TYPES = ['free', 'pro', 'elite'];
 const PLAN_STATUS = ['active', 'past_due', 'canceled'];
+export const FREE_AI_ENABLED = false;
 
 // ── Per-plan feature limits (active entity counts, not monthly quotas) ────────
 export const PLAN_LIMITS = {
-  free:  { maxFollows: 5,  maxRadarOrigins: 0,  maxSavedSearches: 3  },
-  pro:   { maxFollows: 50, maxRadarOrigins: 3,  maxSavedSearches: 20 },
-  elite: { maxFollows: null, maxRadarOrigins: null, maxSavedSearches: null }
+  free: {
+    maxFollows: 1,
+    maxRadarOrigins: 0,
+    maxSavedSearches: 3,
+    aiEnabled: false,
+    liveProviderSearchEnabled: false,
+    liveSearchesPerDay: 0,
+    trackedRoutes: 1,
+    publicDealsLimit: 10,
+    radarUsesCachedDataOnly: true,
+    instantAlerts: false,
+    deepScan: false,
+    multiCityLive: false,
+    perUserJobs: false,
+    priceHistoryDays: 14,
+    refreshIntervalHours: 24
+  },
+  pro: {
+    maxFollows: 10,
+    maxRadarOrigins: 3,
+    maxSavedSearches: 20,
+    aiEnabled: true,
+    liveProviderSearchEnabled: true,
+    liveSearchesPerDay: 50,
+    trackedRoutes: 10,
+    publicDealsLimit: 100,
+    radarUsesCachedDataOnly: false,
+    instantAlerts: true,
+    deepScan: true,
+    multiCityLive: true,
+    perUserJobs: true,
+    priceHistoryDays: 180,
+    refreshIntervalHours: 6
+  },
+  elite: {
+    maxFollows: 50,
+    maxRadarOrigins: null,
+    maxSavedSearches: null,
+    aiEnabled: true,
+    liveProviderSearchEnabled: true,
+    liveSearchesPerDay: 200,
+    trackedRoutes: 50,
+    publicDealsLimit: 500,
+    radarUsesCachedDataOnly: false,
+    instantAlerts: true,
+    deepScan: true,
+    multiCityLive: true,
+    perUserJobs: true,
+    priceHistoryDays: 365,
+    refreshIntervalHours: 1
+  }
 };
 
 // ── Runtime economic limits per plan (Redis rate-limit + provider cost control) ─
@@ -44,6 +93,11 @@ export function getPlanRuntimeLimits(planTypeRaw) {
   return PLAN_RUNTIME_LIMITS[key] || PLAN_RUNTIME_LIMITS.free;
 }
 
+export function getPlanCostLimits(planTypeRaw) {
+  const key = normalizePlanType(planTypeRaw, false);
+  return PLAN_LIMITS[key] || PLAN_LIMITS.free;
+}
+
 export function normalizePlanType(value, fallbackPremium = false) {
   const raw = String(value || '').trim().toLowerCase();
   if (raw === 'creator') return 'elite';
@@ -75,6 +129,26 @@ export function canUseRadar(user) {
 export function canUseAITravel(user) {
   const { planType } = resolveUserPlan(user);
   return planType === 'pro' || planType === 'elite';
+}
+
+export function isFreePlan(userOrPlan) {
+  if (typeof userOrPlan === 'string') return normalizePlanType(userOrPlan, false) === 'free';
+  return resolveUserPlan(userOrPlan).planType === 'free';
+}
+
+export function isFreeAiFeatureFlagEnabled(env = process.env) {
+  const isProduction = String(env?.NODE_ENV || '').trim().toLowerCase() === 'production';
+  if (isProduction) return false;
+  return String(env?.FREE_AI_ENABLED ?? String(FREE_AI_ENABLED)).trim().toLowerCase() === 'true';
+}
+
+export function buildFreeAiBlockedPayload() {
+  return {
+    code: 'AI_NOT_AVAILABLE_ON_FREE',
+    error: 'AI_NOT_AVAILABLE_ON_FREE',
+    message: 'Free includes public cached deals and basic route insights. AI tools are available on paid plans.',
+    upgrade_context: 'ai_travel_limit'
+  };
 }
 
 export function canViewRareOpportunities(user) {

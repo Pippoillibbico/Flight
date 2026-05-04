@@ -9,9 +9,9 @@ const PLAN_RANK: Record<UserPlan, number> = {
 const PLAN_ENTITLEMENTS: Record<UserPlan, PlanEntitlements> = {
   free: {
     plan: 'free',
-    trackedRoutesLimit: 3,
+    trackedRoutesLimit: 1,
     savedItinerariesLimit: 3,
-    aiTravelCandidatesLimit: 3,
+    aiTravelCandidatesLimit: 0,
     radarMessagingTier: 'basic',
     hasPriorityDealsMessaging: false
   },

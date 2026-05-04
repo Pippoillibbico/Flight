@@ -3,7 +3,7 @@ import type { PlanComparisonRow } from '../types/index.ts';
 const PLAN_COMPARISON_ROWS: PlanComparisonRow[] = [
   {
     feature: 'Tracked routes',
-    free: 'Up to 3',
+    free: 'Up to 1',
     pro: 'Up to 10',
     elite: 'Unlimited'
   },
@@ -21,7 +21,7 @@ const PLAN_COMPARISON_ROWS: PlanComparisonRow[] = [
   },
   {
     feature: 'AI Travel suggestions',
-    free: 'Top 3 candidates',
+    free: 'Not included',
     pro: 'Full generation',
     elite: 'Full + priority intelligence'
   }

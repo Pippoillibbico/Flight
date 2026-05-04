@@ -1,4 +1,6 @@
 import { getSaasPool } from '../lib/saas-db.js';
+import { buildFreeAiBlockedPayload } from '../lib/plan-access.js';
+import { recordFreeAiBlocked } from '../lib/free-cost-metrics.js';
 
 export function createAuthRuntime({
   constants,
@@ -386,14 +388,12 @@ export function createAuthRuntime({
     const planIdRaw = String(sub?.planId || 'free').toLowerCase();
     const planId = planIdRaw === 'creator' ? 'elite' : planIdRaw;
     if (planId === 'free') {
+      recordFreeAiBlocked();
       return {
         allowed: false,
-        status: 402,
-        error: 'upgrade_required',
-        extra: {
-          message: 'AI workflows are not available on the Free plan.',
-          upgrade_context: 'ai_travel_limit'
-        }
+        status: 403,
+        error: 'AI_NOT_AVAILABLE_ON_FREE',
+        extra: buildFreeAiBlockedPayload()
       };
     }
     if (planId !== 'pro' && planId !== 'elite') {

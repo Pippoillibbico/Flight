@@ -282,6 +282,18 @@ const CHECKS = [
     detailOnPass: 'configured'
   },
   {
+    key: 'FREE_AI_ENABLED',
+    label: 'Free-plan AI disabled in production',
+    severity: 'blocking',
+    validator: (value, env) => {
+      const isProduction = String(env?.NODE_ENV || '').trim().toLowerCase() === 'production';
+      if (!isProduction) return true;
+      return !parseFlag(value, false);
+    },
+    detailOnFail: 'FREE_AI_ENABLED=true is not allowed in production',
+    detailOnPass: 'configured'
+  },
+  {
     key: 'AI_BUDGET_FAIL_OPEN',
     label: 'AI budget guard fail-open disabled in production',
     severity: 'blocking',
@@ -387,6 +399,8 @@ const CHECKS = [
 export function getRuntimeConfigAudit(env = process.env) {
   const checks = CHECKS.map((check) => evaluateCheck(check, env));
   const isProduction = String(env.NODE_ENV || '').trim().toLowerCase() === 'production';
+  const launchMode = String(env.LAUNCH_MODE || 'public').trim().toLowerCase() === 'soft' ? 'soft' : 'public';
+  const isSoftLaunch = launchMode === 'soft';
   const duffelEnabled = parseFlag(env.ENABLE_PROVIDER_DUFFEL, false);
   const scanEnabled = parseFlag(env.FLIGHT_SCAN_ENABLED, false);
   const providerCollectionEnabled = parseFlag(env.PROVIDER_COLLECTION_ENABLED, false);
@@ -422,17 +436,35 @@ export function getRuntimeConfigAudit(env = process.env) {
   checks.push(
     evaluateCheck(
       {
+        key: 'LAUNCH_MODE',
+        label: 'Launch mode',
+        severity: 'recommended',
+        validator: (value) => {
+          const normalized = String(value || 'public').trim().toLowerCase();
+          return !normalized || normalized === 'soft' || normalized === 'public' || normalized === 'production';
+        },
+        detailOnFail: 'LAUNCH_MODE must be soft or public',
+        detailOnPass: `configured (${launchMode})`
+      },
+      env
+    )
+  );
+
+  checks.push(
+    evaluateCheck(
+      {
         key: 'LIVE_FLIGHT_PROVIDER_REQUIRED',
         label: 'Live flight provider required in production',
-        severity: isProduction ? 'blocking' : 'recommended',
+        severity: isProduction && !isSoftLaunch ? 'blocking' : 'recommended',
         validator: (_value, envContext) => {
           const nodeEnv = String(envContext?.NODE_ENV || '').trim().toLowerCase();
           if (nodeEnv !== 'production') return true;
+          if (String(envContext.LAUNCH_MODE || '').trim().toLowerCase() === 'soft') return true;
           return isLiveFlightProviderEnabled(envContext);
         },
         detailOnFail:
           'production requires at least one live provider configured: duffel (ENABLE_PROVIDER_DUFFEL + DUFFEL_API_KEY), kiwi (ENABLE_PROVIDER_KIWI + KIWI_TEQUILA_API_KEY), or skyscanner (ENABLE_PROVIDER_SKYSCANNER + SKYSCANNER_API_KEY)',
-        detailOnPass: 'configured'
+        detailOnPass: isSoftLaunch ? 'soft launch may run cached-only' : 'configured'
       },
       env
     )
@@ -483,17 +515,18 @@ export function getRuntimeConfigAudit(env = process.env) {
     evaluateCheck(
       {
         key: 'SOFT_LAUNCH_PROVIDER_PROFILE',
-        label: 'Soft-launch provider profile (Duffel only)',
-        severity: isProduction ? 'blocking' : 'recommended',
+        label: 'Soft-launch provider profile',
+        severity: isSoftLaunch ? 'blocking' : 'recommended',
         validator: (_value, envContext) => {
           const duffel = parseFlag(envContext.ENABLE_PROVIDER_DUFFEL, false);
           const kiwi = parseFlag(envContext.ENABLE_PROVIDER_KIWI, false);
           const skyscanner = parseFlag(envContext.ENABLE_PROVIDER_SKYSCANNER, false);
-          return duffel && !kiwi && !skyscanner;
+          const duffelReady = !duffel || (hasMinLength(envContext.DUFFEL_API_KEY, 8) && !valueLooksPlaceholder(envContext.DUFFEL_API_KEY));
+          return duffelReady && !kiwi && !skyscanner;
         },
         detailOnFail:
-          'soft-launch requires ENABLE_PROVIDER_DUFFEL=true, ENABLE_PROVIDER_KIWI=false, ENABLE_PROVIDER_SKYSCANNER=false',
-        detailOnPass: 'provider profile matches soft-launch constraints'
+          'soft-launch allows cached-only or Duffel; Kiwi/Skyscanner must be disabled and Duffel needs DUFFEL_API_KEY when enabled',
+        detailOnPass: duffelEnabled ? 'Duffel profile configured' : 'cached-only provider profile'
       },
       env
     )
@@ -567,6 +600,7 @@ export function getRuntimeConfigAudit(env = process.env) {
 
   return {
     ok: blockingFailed.length === 0,
+    launchMode,
     summary: {
       total: checks.length,
       passed: checks.filter((item) => item.ok).length,

@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { parseFlag } from './env-flags.js';
 import { assertLiveFlightProviderInProduction } from './live-flight-provider.js';
+import { normalizeLaunchMode } from './launch-mode.js';
 
 function isStrongOutboundClickSecret(secretValue, jwtSecretValue) {
   const secret = String(secretValue || '').trim();
@@ -162,6 +163,18 @@ export function loadServerRuntimeConfig({ env = process.env, logger }) {
   const JSON_BODY_LIMIT = String(env.BODY_JSON_LIMIT || '256kb').trim() || '256kb';
   const BUILD_VERSION = String(env.BUILD_VERSION || env.npm_package_version || '0.0.0-dev').trim();
   const NODE_ENV = String(env.NODE_ENV || 'development').trim().toLowerCase();
+  const LAUNCH_MODE = normalizeLaunchMode(env.LAUNCH_MODE);
+
+  if (NODE_ENV === 'production' && parseFlag(env.FREE_AI_ENABLED, false)) {
+    logger.fatal(
+      {
+        envKey: 'FREE_AI_ENABLED',
+        reason: 'free_plan_ai_enabled_in_production'
+      },
+      'startup_blocked_free_plan_ai_enabled'
+    );
+    throw new Error('[FATAL] FREE_AI_ENABLED=true is not allowed in production');
+  }
 
   const OUTBOUND_CLICK_SECRET = resolveOutboundClickSecret({ env, nodeEnv: NODE_ENV, logger });
   const OUTBOUND_CLICK_TTL_SECONDS = Number(env.OUTBOUND_CLICK_TTL_SECONDS || 300);
@@ -288,18 +301,28 @@ export function loadServerRuntimeConfig({ env = process.env, logger }) {
     throw new Error('startup_blocked_missing_ip_hash_salt');
   }
   enforceStripeBillingEnvInProduction({ env, nodeEnv: NODE_ENV, logger });
-  try {
-    assertLiveFlightProviderInProduction(env);
-  } catch (error) {
-    logger.fatal(
+  if (LAUNCH_MODE !== 'soft') {
+    try {
+      assertLiveFlightProviderInProduction(env);
+    } catch (error) {
+      logger.fatal(
+        {
+          reason: 'missing_live_flight_provider',
+          supportedProviders: ['duffel'],
+          requiredFlags: ['ENABLE_PROVIDER_DUFFEL']
+        },
+        'startup_blocked_missing_live_flight_provider'
+      );
+      throw error;
+    }
+  } else if (NODE_ENV === 'production') {
+    logger.warn(
       {
-        reason: 'missing_live_flight_provider',
-        supportedProviders: ['duffel'],
-        requiredFlags: ['ENABLE_PROVIDER_DUFFEL']
+        launchMode: LAUNCH_MODE,
+        liveProviderRequired: false
       },
-      'startup_blocked_missing_live_flight_provider'
+      'startup_soft_launch_cached_provider_profile_allowed'
     );
-    throw error;
   }
 
   if (NODE_ENV === 'production' && CORS_ALLOWLIST.size === 0) {
@@ -382,6 +405,7 @@ export function loadServerRuntimeConfig({ env = process.env, logger }) {
     JSON_BODY_LIMIT,
     BUILD_VERSION,
     NODE_ENV,
+    LAUNCH_MODE,
     OUTBOUND_CLICK_SECRET,
     OUTBOUND_CLICK_TTL_SECONDS,
     ADMIN_TELEMETRY_MAX_BODY_BYTES,

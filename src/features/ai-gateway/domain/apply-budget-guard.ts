@@ -4,11 +4,11 @@ import type { AiGatewayBlockReason } from '../types/ai-response.ts';
 
 export const DEFAULT_AI_BUDGET_POLICY_BY_PLAN: AiBudgetPolicyByPlan = {
   free: {
-    maxRequestsPerSession: 8,
-    maxEstimatedCostPerSession: 0.12,
-    maxOutputTokensPerRequest: 500,
+    maxRequestsPerSession: 0,
+    maxEstimatedCostPerSession: 0,
+    maxOutputTokensPerRequest: 1,
     maxTaskExecutionsPerPlan: {
-      itinerary_generation: 6,
+      itinerary_generation: 0,
       premium_analysis: 0
     }
   },

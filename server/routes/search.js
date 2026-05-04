@@ -3,7 +3,13 @@ import { hashValueForLogs } from '../lib/log-redaction.js';
 import { parseFlag } from '../lib/env-flags.js';
 import { applyPricingToOffer, computeEconomics, guardOffer, sanitizeOfferForClient } from '../lib/pricing/index.js';
 import { logEconomicEvent } from '../lib/observability/index.js';
-import { getPlanRuntimeLimits } from '../lib/plan-access.js';
+import { buildFreeAiBlockedPayload, getPlanRuntimeLimits } from '../lib/plan-access.js';
+import {
+  recordAiCallByPlan,
+  recordFreeAiBlocked,
+  recordFreeProviderCallBlocked,
+  recordProviderCallByPlan
+} from '../lib/free-cost-metrics.js';
 import { isLiveFlightProviderEnabled } from '../lib/live-flight-provider.js';
 import { z } from 'zod';
 
@@ -37,6 +43,25 @@ function isSmartDealCandidate(flight) {
   if (Boolean(flight?.isSmartDeal) || Boolean(flight?.smartDeal)) return true;
   const dealPriority = Number(flight?.dealPriority);
   return Number.isFinite(dealPriority) && dealPriority >= 3;
+}
+
+function resolvedFreeAiRequest(req, aiProvider) {
+  const provider = String(aiProvider || 'none').trim().toLowerCase();
+  const rawPlan = req.user?.planType || req.user?.plan;
+  if (!rawPlan) return false;
+  const plan = String(rawPlan).trim().toLowerCase();
+  return plan === 'free' && provider !== 'none';
+}
+
+function hasAuthMaterial(req) {
+  return Boolean(String(req.headers.authorization || '').trim() || String(req.headers.cookie || '').trim());
+}
+
+function rejectAnonymousAiProviderRequest(req, res, next) {
+  const provider = String(req.body?.aiProvider || 'none').trim().toLowerCase();
+  if (provider === 'none' || hasAuthMaterial(req)) return next();
+  recordFreeAiBlocked();
+  return res.status(403).json(buildFreeAiBlockedPayload());
 }
 
 export function buildSearchRouter({
@@ -182,6 +207,15 @@ export function buildSearchRouter({
     // Provider gating: free users (and anonymous, when present) never trigger live Duffel search.
     const enableLiveSearch = Boolean(req.user) && !isFreeUser;
     const isMultiCityMode = searchPayload.mode === 'multi_city' && Array.isArray(searchPayload.segments) && searchPayload.segments.length >= 2;
+    if (isFreeUser && isMultiCityMode) {
+      recordFreeProviderCallBlocked();
+      return res.status(403).json({
+        code: 'MULTI_CITY_LIVE_REQUIRES_PRO',
+        error: 'MULTI_CITY_LIVE_REQUIRES_PRO',
+        message: 'Free uses cached public scans. Pro unlocks multi-city live search.',
+        upgrade_context: 'multi_city_live'
+      });
+    }
     const firstSegment = isMultiCityMode ? searchPayload.segments[0] : null;
     const lastSegment = isMultiCityMode ? searchPayload.segments[searchPayload.segments.length - 1] : null;
     const searchInput = isMultiCityMode
@@ -196,6 +230,9 @@ export function buildSearchRouter({
 
     const result = searchFlights(searchInput);
     const syntheticFlights = Array.isArray(result.flights) ? result.flights : [];
+    if (isFreeUser && syntheticFlights.length > 0) {
+      recordFreeProviderCallBlocked();
+    }
 
     // ── Real-first strategy ───────────────────────────────────────────────────
     // 1. Collect unique destination IATAs from the synthetic candidate list.
@@ -243,6 +280,7 @@ export function buildSearchRouter({
       // per-minute budget is exhausted, degrade gracefully to synthetic results
       // instead of generating unbounded Duffel API spend.
       try {
+        recordProviderCallByPlan(resolvedPlanId);
         const liveResult = await liveFlightService.searchLiveFlights({
           originIata: String(searchInput.origin || '').toUpperCase(),
           destinations: uniqueDests,
@@ -556,13 +594,18 @@ export function buildSearchRouter({
     return res.json(safeResult);
   });
 
-  router.post('/decision/just-go', authGuard, csrfGuard, requireApiScope('search'), quotaGuard({ counter: 'decision', amount: 1 }), async (req, res) => {
+  router.post('/decision/just-go', rejectAnonymousAiProviderRequest, authGuard, csrfGuard, requireApiScope('search'), quotaGuard({ counter: 'decision', amount: 1 }), async (req, res) => {
     const parsed = justGoSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid payload.' });
 
     const payload = parsed.data;
+    if (resolvedFreeAiRequest(req, payload.aiProvider)) {
+      recordFreeAiBlocked();
+      return res.status(403).json(buildFreeAiBlockedPayload());
+    }
     const aiAccess = await ensureAiPremiumAccess(req, payload.aiProvider || 'none');
     if (!aiAccess.allowed) return sendMachineError(req, res, aiAccess.status, aiAccess.error, aiAccess.extra || {});
+    if (String(payload.aiProvider || 'none').toLowerCase() !== 'none') recordAiCallByPlan(req.user?.planType || req.user?.plan || 'free');
     const result = decideTrips({
       origin: payload.origin,
       region: payload.region || 'all',
@@ -618,13 +661,18 @@ export function buildSearchRouter({
     });
   });
 
-  router.post('/decision/intake', authGuard, csrfGuard, requireApiScope('search'), quotaGuard({ counter: 'decision', amount: 1 }), async (req, res) => {
+  router.post('/decision/intake', rejectAnonymousAiProviderRequest, authGuard, csrfGuard, requireApiScope('search'), quotaGuard({ counter: 'decision', amount: 1 }), async (req, res) => {
     const parsed = decisionIntakeSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid payload.' });
 
     const payload = parsed.data;
+    if (resolvedFreeAiRequest(req, payload.aiProvider)) {
+      recordFreeAiBlocked();
+      return res.status(403).json(buildFreeAiBlockedPayload());
+    }
     const aiAccess = await ensureAiPremiumAccess(req, payload.aiProvider || 'none');
     if (!aiAccess.allowed) return sendMachineError(req, res, aiAccess.status, aiAccess.error, aiAccess.extra || {});
+    if (String(payload.aiProvider || 'none').toLowerCase() !== 'none') recordAiCallByPlan(req.user?.planType || req.user?.plan || 'free');
     const result = await parseIntentWithAi({
       prompt: payload.prompt,
       aiProvider: payload.aiProvider || 'none',

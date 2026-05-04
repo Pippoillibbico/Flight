@@ -83,6 +83,9 @@ test('opportunities feed returns localized-agnostic upgrade message key for capp
     assert.equal(Array.isArray(body.items), true);
     assert.equal(typeof body.access, 'object');
     assert.equal(body.access.planType, 'free');
+    assert.equal(body.access.publicDealsLimit, 10);
+    assert.equal(body.access.radarUsesCachedDataOnly, true);
+    assert.equal(body.access.refreshIntervalHours, 24);
     if (body.access.showUpgradePrompt) {
       assert.equal(body.access.upgradeMessageKey, 'upgradePromptUnlockAll');
     }
@@ -133,7 +136,7 @@ test('opportunities follows allow re-saving an existing follow when free limit i
     }
   });
 
-  const seedSlugs = ['japan', 'spain', 'greece', 'thailand', 'canary-islands'];
+  const seedSlugs = ['japan'];
   await withServer(app, async (baseUrl) => {
     for (const slug of seedSlugs) {
       const createRes = await fetch(`${baseUrl}/api/opportunities/follows`, {
@@ -204,13 +207,13 @@ test('radar preferences persist across PUT and GET', async () => {
   });
 });
 
-test('AI query is gated when user plan is not ELITE', async () => {
+test('AI query is gated for anonymous requests before any AI work', async () => {
   const { app } = createRouterApp({
     user: {
-      id: 'u2',
-      planType: 'free',
+      id: 'u-anon-ai',
+      planType: 'pro',
       planStatus: 'active',
-      isPremium: false
+      isPremium: true
     }
   });
   await withServer(app, async (baseUrl) => {
@@ -222,9 +225,34 @@ test('AI query is gated when user plan is not ELITE', async () => {
         limit: 5
       })
     });
-    assert.equal(res.status, 402);
+    assert.equal(res.status, 403);
     const body = await res.json();
-    assert.equal(body.error, 'premium_required');
+    assert.equal(body.code, 'AI_NOT_AVAILABLE_ON_FREE');
+  });
+});
+
+test('AI query is gated when authenticated user plan is free', async () => {
+  const { app } = createRouterApp({
+    user: {
+      id: 'u2',
+      planType: 'free',
+      planStatus: 'active',
+      isPremium: false
+    }
+  });
+  await withServer(app, async (baseUrl) => {
+    const res = await fetch(`${baseUrl}/api/opportunities/ai/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test-session' },
+      body: JSON.stringify({
+        prompt: 'Tokyo da Roma con 500 euro',
+        limit: 5
+      })
+    });
+    assert.equal(res.status, 403);
+    const body = await res.json();
+    assert.equal(body.code, 'AI_NOT_AVAILABLE_ON_FREE');
+    assert.equal(body.error, 'AI_NOT_AVAILABLE_ON_FREE');
   });
 });
 

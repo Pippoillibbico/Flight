@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { canUseRadar, canUseSmartAlerts, getUpgradeContext, resolveUserPlan } from '../lib/plan-access.js';
+import { recordFreeProviderCallBlocked, recordUpgradePromptShown } from '../lib/free-cost-metrics.js';
 
 // Pro users get a limited number of active price alerts per month.
 const SMART_ALERTS_PRO_LIMIT = Number(process.env.SMART_ALERTS_PRO_LIMIT ?? 3);
@@ -131,6 +132,20 @@ export function buildAlertsRouter({
     }
     return res.status(500).json({ error: message });
   };
+  async function isFreeRequestUser(req) {
+    const user = await fetchCurrentUser(req.user.sub);
+    if (!user) return { isFree: false, user: null };
+    return { isFree: resolveUserPlan(user).planType === 'free', user };
+  }
+
+  function sendFreeRefreshBlocked(res) {
+    recordFreeProviderCallBlocked();
+    recordUpgradePromptShown();
+    return res.status(403).json({
+      code: 'LIVE_REFRESH_REQUIRES_PRO',
+      message: 'Free uses cached public scans. Pro unlocks live scans, AI tools, and route alerts when delivery is enabled.'
+    });
+  }
 
   router.get('/watchlist', authGuard, requireApiScope('read'), quotaGuard({ counter: 'read', amount: 1 }), async (req, res) => {
     let items = [];
@@ -196,7 +211,8 @@ export function buildAlertsRouter({
       return db;
     });
 
-    await scanSubscriptionsOnce();
+    const { isFree } = await isFreeRequestUser(req);
+    if (!isFree) await scanSubscriptionsOnce();
     return res.status(201).json({ item });
   });
 
@@ -225,11 +241,22 @@ export function buildAlertsRouter({
   router.post('/alerts/subscriptions', authGuard, csrfGuard, requireApiScope('alerts'), quotaGuard({ counter: 'alerts', amount: 1 }), async (req, res) => {
     const parsed = alertSubscriptionSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid subscription payload.' });
+    const requestUser = await fetchCurrentUser(req.user.sub);
+    if (!requestUser) return sendMachineError(req, res, 404, 'user_not_found');
+    const { planType } = resolveUserPlan(requestUser);
+    if (planType === 'free') {
+      recordFreeProviderCallBlocked();
+      recordUpgradePromptShown();
+      return res.status(403).json({
+        code: 'INSTANT_ALERTS_REQUIRE_PRO',
+        message: 'Free uses cached public scans. Pro unlocks live scans, AI tools, and route alerts when delivery is enabled.',
+        upgrade_context: getUpgradeContext(requestUser, 'radar'),
+        request_id: req.id || null
+      });
+    }
     const isDurationMode = !Number.isFinite(parsed.data.targetPrice);
     if (isDurationMode) {
-      const user = await fetchCurrentUser(req.user.sub);
-      if (!user) return sendMachineError(req, res, 404, 'user_not_found');
-      if (!canUseRadar(user)) return sendMachineError(req, res, 402, 'premium_required');
+      if (!canUseRadar(requestUser)) return sendMachineError(req, res, 402, 'premium_required');
     }
 
     const subscription = {
@@ -368,6 +395,8 @@ export function buildAlertsRouter({
 
   router.post('/alerts/price-alerts/scan', authGuard, csrfGuard, requireApiScope('alerts'), quotaGuard({ counter: 'notifications', amount: 1 }), async (req, res) => {
     try {
+      const { isFree } = await isFreeRequestUser(req);
+      if (isFree) return sendFreeRefreshBlocked(res);
       const result = await scanPriceAlertsOnce({ reason: 'manual' });
       return res.json({ ok: true, result });
     } catch (error) {
@@ -450,7 +479,9 @@ export function buildAlertsRouter({
     return res.status(204).send();
   });
 
-  router.post('/notifications/scan', authGuard, csrfGuard, requireApiScope('alerts'), quotaGuard({ counter: 'notifications', amount: 1 }), async (_req, res) => {
+  router.post('/notifications/scan', authGuard, csrfGuard, requireApiScope('alerts'), quotaGuard({ counter: 'notifications', amount: 1 }), async (req, res) => {
+    const { isFree } = await isFreeRequestUser(req);
+    if (isFree) return sendFreeRefreshBlocked(res);
     await scanSubscriptionsOnce();
     return res.json({ ok: true });
   });

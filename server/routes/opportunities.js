@@ -20,10 +20,18 @@ import {
   canViewRareOpportunities,
   canViewUnlimitedOpportunities,
   canConfigureRadar,
+  buildFreeAiBlockedPayload,
+  getPlanCostLimits,
   getFollowsLimit,
   getUpgradeContext,
+  isFreePlan,
   resolveUserPlan
 } from '../lib/plan-access.js';
+import {
+  recordFreeAiBlocked,
+  recordFreeCacheHit,
+  recordUpgradePromptShown
+} from '../lib/free-cost-metrics.js';
 import { getCacheClient } from '../lib/free-cache.js';
 import { followMetadataSchema } from '../lib/follow-metadata.js';
 
@@ -93,6 +101,65 @@ const budgetExploreSchema = z.object({
 
 const OPPORTUNITY_FEED_SOURCE = 'travel_opportunities';
 
+function readNumberFromItem(item, keys) {
+  for (const key of keys) {
+    const value = Number(item?.[key]);
+    if (Number.isFinite(value) && value > 0) return value;
+  }
+  return null;
+}
+
+export function calculateDealConfidence(price, baselinePrice, ageHours) {
+  const safePrice = Number(price);
+  const safeBaseline = Number(baselinePrice);
+  const safeAge = Math.max(0, Number(ageHours) || 0);
+  if (!Number.isFinite(safePrice) || !Number.isFinite(safeBaseline) || safePrice <= 0 || safeBaseline <= 0) {
+    return 'medium';
+  }
+  const savingPercent = Math.round(((safeBaseline - safePrice) / safeBaseline) * 100);
+  if (savingPercent >= 30 && safeAge <= 12) return 'high';
+  if (savingPercent >= 15 && safeAge <= 24) return 'medium';
+  if (safeAge > 24) return 'low';
+  return 'medium';
+}
+
+export function buildBasicRouteInsight(route) {
+  if (Number(route?.savingPercent || 0) >= 25) {
+    return 'This route is currently well below its recent baseline.';
+  }
+  if (Number(route?.ageHours || 0) > 24) {
+    return 'This deal is based on an older scan. Pro users can refresh it more often.';
+  }
+  return 'This route is available from the latest public scan.';
+}
+
+function calculateAgeHours(item) {
+  const raw = item?.source_observed_at || item?.observed_at || item?.updated_at || item?.published_at || item?.created_at;
+  const timestamp = raw ? Date.parse(String(raw)) : NaN;
+  if (!Number.isFinite(timestamp)) return 24;
+  return Math.max(0, Math.round((Date.now() - timestamp) / 36_000) / 100);
+}
+
+function enrichPublicDealForFree(item) {
+  const price = readNumberFromItem(item, ['price', 'min_price', 'totalPrice']);
+  const baselinePrice = readNumberFromItem(item, ['baseline_price', 'baselinePrice', 'avg_price', 'average_price', 'avg_2024']);
+  const ageHours = calculateAgeHours(item);
+  const savingPercent = Number.isFinite(Number(item?.saving_percent))
+    ? Math.round(Number(item.saving_percent))
+    : price && baselinePrice
+      ? Math.max(0, Math.round(((baselinePrice - price) / baselinePrice) * 100))
+      : 0;
+  const confidence = calculateDealConfidence(price, baselinePrice, ageHours);
+  return {
+    ...item,
+    savingPercent,
+    confidence,
+    basicRouteInsight: buildBasicRouteInsight({ savingPercent, ageHours }),
+    freeDataSource: 'public_cached_deal_feed',
+    refreshIntervalHours: 24
+  };
+}
+
 function buildDefaultRadarPreference(userId) {
   return {
     id: nanoid(12),
@@ -122,6 +189,19 @@ async function loadUserFromStore(withDb, userId) {
     return null;
   });
   return user;
+}
+
+function hasAuthMaterial(req) {
+  return Boolean(String(req.headers.authorization || '').trim() || String(req.headers.cookie || '').trim());
+}
+
+function rejectAnonymousAiRequest(req, res, next) {
+  if (hasAuthMaterial(req)) return next();
+  recordFreeAiBlocked();
+  return res.status(403).json({
+    ...buildFreeAiBlockedPayload(),
+    request_id: req.id || null
+  });
 }
 
 async function readCachedJson(cache, key) {
@@ -226,31 +306,53 @@ export function buildOpportunitiesRouter({
       const user = await loadUserFromStore(withDb, auth?.sub);
 
       if (!user) {
-        return res.json({ source: OPPORTUNITY_FEED_SOURCE, items: sourceItems });
+        recordFreeCacheHit(true);
+        return res.json({
+          source: OPPORTUNITY_FEED_SOURCE,
+          items: sourceItems.slice(0, 10).map(enrichPublicDealForFree),
+          access: {
+            planType: 'free',
+            publicDealsLimit: 10,
+            radarUsesCachedDataOnly: true,
+            refreshIntervalHours: 24,
+            showUpgradePrompt: sourceItems.length > 10,
+            upgradeMessage: 'Free shows public cached opportunities. Upgrade for live scans, AI tools, and route alerts when delivery is enabled.'
+          }
+        });
       }
 
       const plan = resolveUserPlan(user);
+      const costLimits = getPlanCostLimits(plan.planType);
       const allowRare = canViewRareOpportunities(user);
       const filtered = allowRare ? sourceItems : sourceItems.filter((item) => String(item.opportunity_level || '').trim() !== 'Rare opportunity');
       const isUnlimited = canViewUnlimitedOpportunities(user);
-      const cappedItems = isUnlimited ? filtered : filtered.slice(0, 3);
+      const publicDealsLimit = Number(costLimits.publicDealsLimit || 10);
+      const cappedItems = isUnlimited ? filtered : filtered.slice(0, publicDealsLimit);
       const visibleCount = cappedItems.length;
       const totalCount = filtered.length;
       const showUpgradePrompt = !isUnlimited && totalCount > visibleCount;
+      if (isFreePlan(user)) recordFreeCacheHit(true);
+      if (showUpgradePrompt) recordUpgradePromptShown();
 
       return res.json({
         source: OPPORTUNITY_FEED_SOURCE,
-        items: cappedItems,
+        items: isFreePlan(user) ? cappedItems.map(enrichPublicDealForFree) : cappedItems,
         access: {
           planType: plan.planType,
           planStatus: plan.planStatus,
           isUnlimited,
           allowRare,
-          dailyLimit: isUnlimited ? null : 3,
+          dailyLimit: isUnlimited ? null : publicDealsLimit,
+          publicDealsLimit: isUnlimited ? null : publicDealsLimit,
+          radarUsesCachedDataOnly: Boolean(costLimits.radarUsesCachedDataOnly),
+          refreshIntervalHours: costLimits.refreshIntervalHours,
           visibleCount,
           totalCount,
           showUpgradePrompt,
-          upgradeMessageKey: showUpgradePrompt ? 'upgradePromptUnlockAll' : null
+          upgradeMessageKey: showUpgradePrompt ? 'upgradePromptUnlockAll' : null,
+          upgradeMessage: showUpgradePrompt
+            ? 'Free shows public cached opportunities. Upgrade for live scans, AI tools, and route alerts when delivery is enabled.'
+            : null
         }
       });
     } catch (error) {
@@ -446,7 +548,7 @@ export function buildOpportunitiesRouter({
     return res.json({ items });
   });
 
-  router.post('/ai/query', authGuard, csrfGuard, requireApiScope('search'), quotaGuard({ counter: 'decision', amount: 1 }), async (req, res, next) => {
+  router.post('/ai/query', rejectAnonymousAiRequest, authGuard, csrfGuard, requireApiScope('search'), quotaGuard({ counter: 'decision', amount: 1 }), async (req, res, next) => {
     const parsed = aiQuerySchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid payload.' });
     try {
@@ -457,10 +559,17 @@ export function buildOpportunitiesRouter({
         return null;
       });
       if (!user) return res.status(404).json({ error: 'User not found.' });
+      if (isFreePlan(user)) {
+        recordFreeAiBlocked();
+        return res.status(403).json({
+          ...buildFreeAiBlockedPayload(),
+          request_id: req.id || null
+        });
+      }
       if (!canUseAITravel(user)) {
         return res.status(402).json({
           error: 'premium_required',
-          message: 'AI Travel is available on the ELITE plan.',
+          message: 'AI Travel is available on Pro and Elite plans.',
           upgrade_context: getUpgradeContext(user, 'ai_travel'),
           request_id: req.id || null
         });

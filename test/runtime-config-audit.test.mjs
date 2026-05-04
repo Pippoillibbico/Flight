@@ -169,6 +169,31 @@ test('runtime config audit blocks production when AI_ALLOWED_PLAN_TYPES includes
   assert.ok(audit.blockingFailedKeys.includes('AI_ALLOWED_PLAN_TYPES'));
 });
 
+test('runtime config audit blocks production when FREE_AI_ENABLED is true', () => {
+  const audit = getRuntimeConfigAudit({
+    NODE_ENV: 'production',
+    BILLING_PROVIDER: 'stripe',
+    STRIPE_SECRET_KEY: 'sk_live_example_key_1234567890',
+    STRIPE_WEBHOOK_SECRET: 'whsec_live_example_1234567890',
+    STRIPE_PUBLISHABLE_KEY: 'pk_live_example_key_1234567890',
+    STRIPE_PRICE_PRO: 'price_live_pro_12345',
+    STRIPE_PRICE_CREATOR: 'price_live_creator_12345',
+    AI_ALLOW_FREE_USERS: 'false',
+    FREE_AI_ENABLED: 'true',
+    ALLOW_MOCK_BILLING_UPGRADES: 'false',
+    JWT_SECRET: 'a'.repeat(48),
+    OUTBOUND_CLICK_SECRET: 'z'.repeat(32),
+    AUDIT_LOG_HMAC_KEY: 'b'.repeat(32),
+    INTERNAL_INGEST_TOKEN: 'c'.repeat(32),
+    FRONTEND_ORIGIN: 'https://app.flightsuite.test',
+    DATABASE_URL: 'postgresql://user:pass@db.flightsuite.internal:5432/flight',
+    REDIS_URL: 'redis://cache.flightsuite.internal:6379'
+  });
+
+  assert.equal(audit.ok, false);
+  assert.ok(audit.blockingFailedKeys.includes('FREE_AI_ENABLED'));
+});
+
 test('runtime config audit blocks production when Stripe inline price-data fallback is enabled', () => {
   const audit = getRuntimeConfigAudit({
     NODE_ENV: 'production',

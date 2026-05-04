@@ -8,7 +8,6 @@ import {
   createEmptyAiUsageState,
   createMockAiAdapter,
   createOpenAiAdapter,
-  DEFAULT_AI_BUDGET_POLICY_BY_PLAN,
   estimateAiCost,
   selectModelForTask,
   selectProviderForTask,
@@ -75,24 +74,23 @@ test('estimateAiCost is monotonic by model and tokens', () => {
 
 test('applyBudgetGuard blocks token overflow and task limits', () => {
   const usage = createEmptyAiUsageState();
-  usage.taskExecutionCount.itinerary_generation = 6;
-  const tokenBlocked = applyBudgetGuard(usage, {
+  const requestBlocked = applyBudgetGuard(usage, {
     planType: 'free',
     taskType: 'itinerary_generation',
-    requestedOutputTokens: 900,
+    requestedOutputTokens: 1,
+    estimatedCost: 0.01
+  });
+  assert.equal(requestBlocked.blocked, true);
+  assert.equal(requestBlocked.blockReason, 'max_requests_per_session');
+
+  const tokenBlocked = applyBudgetGuard(usage, {
+    planType: 'pro',
+    taskType: 'itinerary_generation',
+    requestedOutputTokens: 2000,
     estimatedCost: 0.01
   });
   assert.equal(tokenBlocked.blocked, true);
   assert.equal(tokenBlocked.blockReason, 'max_output_tokens_per_request');
-
-  const taskBlocked = applyBudgetGuard(usage, {
-    planType: 'free',
-    taskType: 'itinerary_generation',
-    requestedOutputTokens: 400,
-    estimatedCost: 0.01
-  });
-  assert.equal(taskBlocked.blocked, true);
-  assert.equal(taskBlocked.blockReason, 'max_task_executions_per_plan');
 });
 
 test('gateway uses fallback adapter when primary provider fails', async () => {
@@ -131,51 +129,36 @@ test('gateway uses fallback adapter when primary provider fails', async () => {
   assert.equal(result.error, null);
 });
 
-test('gateway returns controlled blocked result when plan budget is exhausted', async () => {
+test('gateway blocks free itinerary generation before any provider adapter runs', async () => {
+  let providerCalls = 0;
   const gateway = createAiGateway({
     adapters: {
-      mock: createMockAiAdapter({
-        handlers: {
-          itinerary_generation: async () => ({ ok: true, data: validItineraryOutput() })
+      openai: createOpenAiAdapter({
+        async runner() {
+          providerCalls += 1;
+          return { ok: true, data: validItineraryOutput() };
         }
       })
     },
     providerAvailability: {
-      openai: false,
+      openai: true,
       anthropic: false,
-      mock: true
-    },
-    budgetPolicyByPlan: {
-      ...DEFAULT_AI_BUDGET_POLICY_BY_PLAN,
-      free: {
-        ...DEFAULT_AI_BUDGET_POLICY_BY_PLAN.free,
-        maxTaskExecutionsPerPlan: {
-          itinerary_generation: 1
-        }
-      }
+      mock: false
     }
   });
 
-  const first = await gateway.execute({
+  const result = await gateway.execute({
     taskType: 'itinerary_generation',
     planType: 'free',
-    input: { prompt: 'first' },
-    maxOutputTokens: 350,
+    input: { prompt: 'blocked' },
+    maxOutputTokens: 1,
     schemaKey: 'itinerary_generation'
   });
-  assert.equal(first.ok, true);
-
-  const second = await gateway.execute({
-    taskType: 'itinerary_generation',
-    planType: 'free',
-    input: { prompt: 'second' },
-    maxOutputTokens: 350,
-    schemaKey: 'itinerary_generation'
-  });
-  assert.equal(second.ok, false);
-  assert.equal(second.error?.code, 'blocked_by_policy');
-  assert.equal(second.telemetry.blockedByPolicy, true);
-  assert.equal(second.telemetry.blockReason, 'max_task_executions_per_plan');
+  assert.equal(result.ok, false);
+  assert.equal(result.error?.code, 'blocked_by_policy');
+  assert.equal(result.telemetry.blockedByPolicy, true);
+  assert.equal(result.telemetry.blockReason, 'max_requests_per_session');
+  assert.equal(providerCalls, 0);
 });
 
 test('structured output validation rejects malformed itinerary payload', () => {

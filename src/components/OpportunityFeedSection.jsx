@@ -58,7 +58,7 @@ const OpportunityFeedSectionPropsSchema = z
     onUpgradePro: z.function(),
     onUpgradeElite: z.function(),
     // 'live' = prices from real providers; 'synthetic' = internal historical dataset.
-    // Drives copy transparency — never show "live fares" when data is synthetic.
+    // Drives copy transparency for cached vs provider-backed inventory.
     dataSource: z.enum(['live', 'synthetic', 'internal']).optional().default('synthetic')
   })
   .passthrough();
@@ -110,26 +110,37 @@ function OpportunityFeedSection(props) {
   const isEnglish = String(language || 'it').toLowerCase().startsWith('en');
   const locale = String(language || 'it').toLowerCase().startsWith('en') ? 'en-US' : 'it-IT';
   const isLiveData = dataSource === 'live';
+  const isFreePlan = planType === 'free';
   const labels = {
-    eyebrow: isLiveData
-      ? tt('opportunityFeedEyebrow', 'Live radar intelligence')
+    eyebrow: isFreePlan
+      ? 'Public cached deals'
+      : isLiveData
+      ? tt('opportunityFeedEyebrow', 'Provider-validated opportunities')
       : tt('opportunityFeedEyebrowSynthetic', 'Radar intelligence'),
     heroTitle: tt('opportunityFeedHeroTitle', 'Your travel opportunity radar'),
-    heroSub: isLiveData
+    heroSub: isFreePlan
+      ? 'Public cached deals, basic route insights, cached radar preview, and price trend preview.'
+      : isLiveData
       ? tt('opportunityFeedHeroSub', 'Our radar scans millions of routes in real time to surface hidden travel opportunities before they disappear.')
       : tt('opportunityFeedHeroSubSynthetic', 'We rank pricing signals, route patterns, and timing windows so you can inspect the best opportunities first.'),
-    liveSignalActive: isLiveData
-      ? tt('opportunityFeedLiveSignalActive', 'Live radar active - scanning routes now')
+    liveSignalActive: isFreePlan
+      ? 'Cached radar preview active'
+      : isLiveData
+      ? tt('opportunityFeedLiveSignalActive', 'Provider checks active when configured')
       : tt('opportunityFeedSignalActive', 'Radar active - analysing routes'),
-    liveSignalCount: isLiveData
+    liveSignalCount: isFreePlan
+      ? (count) => `${count} public cached deals`
+      : isLiveData
       ? (count) => tt('opportunityFeedLiveSignalCount', `${count} real fares detected in this scan`).replace('{count}', count)
       : (count) => tt('opportunityFeedSignalCount', `${count} opportunities in current analysis`).replace('{count}', count),
     updatedRecently: tt('opportunityFeedUpdatedRecently', 'Updated recently'),
-    discoverCta: isLiveData
+    discoverCta: isFreePlan
+      ? 'Explore public cached deals'
+      : isLiveData
       ? tt('opportunityFeedDiscoverCta', 'Explore live deals')
       : tt('opportunityFeedDiscoverCtaSynthetic', 'Explore opportunities'),
-    activateRadarCta: tt('opportunityFeedActivateRadarCta', 'Activate radar'),
-    refreshCta: tt('opportunityFeedRefreshCta', 'Refresh feed'),
+    activateRadarCta: isFreePlan ? 'Cached radar preview' : tt('opportunityFeedActivateRadarCta', 'Activate radar'),
+    refreshCta: isFreePlan ? 'Upgrade for live refresh' : tt('opportunityFeedRefreshCta', 'Refresh feed'),
     topDealTitle: isLiveData
       ? tt('opportunityFeedTopDealTitle', '\ud83d\udd25 Best deal live now')
       : tt('opportunityFeedTopDealTitleSynthetic', 'Top opportunity'),
@@ -148,12 +159,16 @@ function OpportunityFeedSection(props) {
       'opportunityFeedUrgencyNoteSynthetic',
       isEnglish ? 'Historical signal: verify current fare before booking.' : 'Segnale storico: verifica la tariffa live prima di prenotare.'
     ),
-    topRailTitle: tt('opportunityFeedTopRailTitle', 'Also moving now'),
+    topRailTitle: isFreePlan ? 'More public cached deals' : tt('opportunityFeedTopRailTitle', 'Also moving now'),
     topRailCta: tt('opportunityFeedTopRailCta', 'Open deal'),
-    todayTitle: isLiveData
+    todayTitle: isFreePlan
+      ? 'Public cached deals'
+      : isLiveData
       ? tt('opportunityFeedTodayTitle', 'Live opportunity feed')
       : tt('opportunityFeedTodayTitleSynthetic', 'Opportunity feed'),
-    todaySub: isLiveData
+    todaySub: isFreePlan
+      ? 'Cached public scans with deterministic price signals. Upgrade for live scans, AI tools, and route alerts when delivery is enabled.'
+      : isLiveData
       ? tt('opportunityFeedTodaySub', 'Real fares from the latest radar scans, prioritized by value.')
       : tt('opportunityFeedTodaySubSynthetic', 'Ranked opportunities from pricing history and route signals. Confirm the live fare before booking.'),
     clusterTitle: tt('opportunityFeedClusterTitle', 'Opportunity clusters'),
@@ -198,7 +213,7 @@ function OpportunityFeedSection(props) {
     baggageUnknown: tt('opportunityFeedBaggageUnknown', 'Bagaglio da verificare'),
     stopsSuffix: tt('opportunityFeedStopsSuffix', 'scali'),
     viewItineraryCta: tt('opportunityFeedViewItineraryCta', 'Vedi itinerario'),
-    activateAlertCta: tt('opportunityFeedActivateAlertCta', isEnglish ? 'Activate alert' : 'Monitora'),
+    activateAlertCta: isFreePlan ? 'Upgrade for alerts' : tt('opportunityFeedActivateAlertCta', isEnglish ? 'Activate alert' : 'Monitora'),
     followDestinationCta: tt('opportunityFeedFollowDestinationCta', isEnglish ? 'Follow destination' : 'Segui nel radar'),
     departurePrefix: tt('opportunityFeedDeparturePrefix', 'Partenza'),
     flexibleDates: tt('opportunityFeedFlexibleDates', 'Date flessibili'),

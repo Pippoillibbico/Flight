@@ -232,18 +232,18 @@ function buildOppsApp(user) {
   return app;
 }
 
-test('POST /opportunities/follows — free user at limit (5 follows) → 402 premium_required', async () => {
+test('POST /opportunities/follows — free user at limit (1 follow) → 402 premium_required', async () => {
   // The gate reads listUserFollows from opportunity-store (DB). We verify the gate
   // fires by checking the plan cap logic through the plan-access module directly.
   const { getFollowsLimit } = await import('../server/lib/plan-access.js');
   const freeLimit = getFollowsLimit(FREE_USER);
-  assert.equal(freeLimit, 5, 'free plan should have a 5-follow limit');
+  assert.equal(freeLimit, 1, 'free plan should have a 1-follow limit');
 
   const proLimit = getFollowsLimit(PRO_USER);
-  assert.equal(proLimit, 50, 'pro plan should have a 50-follow limit');
+  assert.equal(proLimit, 10, 'pro plan should have a 10-follow limit');
 
   const eliteLimit = getFollowsLimit(ELITE_USER);
-  assert.equal(eliteLimit, null, 'elite plan should have unlimited follows');
+  assert.equal(eliteLimit, 50, 'elite plan should have a 50-follow limit');
 });
 
 // ── Opportunities: radar preferences (PUT — Pro+ only) ───────────────────────

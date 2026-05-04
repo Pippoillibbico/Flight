@@ -26,6 +26,7 @@ import { quotaGuard, apiKeyAuth, requireApiScope } from './middleware/quotaGuard
 import { buildApiKeysRouter } from './routes/apikeys.js';
 import { buildBillingRouter } from './routes/billing.js';
 import { buildUsageRouter } from './routes/usage.js';
+import { buildFreeRouter } from './routes/free.js';
 import { buildFreeFoundationRouter } from './routes/free-foundation.js';
 import { buildDealEngineRouter } from './routes/deal-engine.js';
 import { buildDiscoveryRouter } from './routes/discovery.js';
@@ -81,6 +82,8 @@ import { getDiscoveryFeedRuntimeMetrics } from './lib/discovery-feed-service.js'
 import { getRuntimeConfigAudit } from './lib/runtime-config.js';
 import { evaluateStartupReadiness } from './lib/startup-readiness.js';
 import { getAiCacheMetrics, getAiCostGuardMetrics } from './lib/ai/index.js';
+import { getFreeCostMetrics } from './lib/free-cost-metrics.js';
+import { getSoftLaunchFeatureMatrix } from './lib/launch-mode.js';
 import { loadServerRuntimeConfig } from './lib/server-runtime-config.js';
 import { TelemetryRepo } from './repositories/telemetry-repo.js';
 import { OutboundRepo } from './repositories/outbound-repo.js';
@@ -724,6 +727,7 @@ app.use('/api/outbound', outboundBurstLimiter, outboundPathLimiter);
 app.use('/api/search', costlyPublicBurstLimiter, costlyPublicLimiter);
 app.use('/api/discovery', costlyPublicBurstLimiter, costlyPublicLimiter);
 app.use('/api/opportunities', costlyPublicBurstLimiter, costlyPublicLimiter);
+app.use('/api/free', costlyPublicBurstLimiter, costlyPublicLimiter);
 app.use('/api', standardApiLimiter);
 app.use('/api', apiKeyAuth);
 app.use(
@@ -976,6 +980,8 @@ app.use(
     getLiveFlightCacheMetrics: () => liveFlightService.getCacheMetrics?.() || {},
     getAiCacheMetrics,
     getAiCostGuardMetrics,
+    getFreeCostMetrics,
+    getLaunchReadiness: () => getSoftLaunchFeatureMatrix(process.env),
     getProviderCostGuardMetrics,
     getRuntimeConfigAudit,
     evaluateStartupReadiness,
@@ -1320,6 +1326,7 @@ app.use('/api/push',    buildPushRouter({ authGuard, csrfGuard }));
 app.use('/api/keys',    buildApiKeysRouter({ authGuard, csrfGuard }));
 app.use('/api/billing', buildBillingRouter({ authGuard, requireSessionAuth, csrfGuard }));
 app.use('/api/usage',   buildUsageRouter({ authGuard }));
+app.use('/api/free',    buildFreeRouter());
 app.use('/api',         buildUserExportRouter({ authGuard, requireSessionAuth, quotaGuard, withDb, readDb, fetchCurrentUser, appendImmutableAudit }));
 app.use('/', buildDealEngineRouter({ authGuard, optionalAuth, requireSessionAuth, adminGuard, attachUserConsent, canTrack, outboundRepo }));
 app.use('/api/discovery', buildDiscoveryRouter({ authGuard, csrfGuard, quotaGuard, requireApiScope }));

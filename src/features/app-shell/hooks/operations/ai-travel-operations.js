@@ -21,6 +21,13 @@ export function createAiTravelOperations({
   async function runAiTravelQuery() {
     if (!isAuthenticated) return setAiTravelError(t('loginRequiredAlert'));
     if (!String(aiTravelPrompt || '').trim()) return;
+    if (String(userPlanType || 'free').toLowerCase() === 'free') {
+      const content = getUpgradeTriggerContent(userPlanType, 'ai_travel_limit');
+      setAiTravelResult(null);
+      setAiTravelError('Free includes public cached deals and basic route insights. AI tools are available on paid plans.');
+      setSubMessage(content.message);
+      return;
+    }
 
     setAiTravelLoading(true);
     setAiTravelError('');

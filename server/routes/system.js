@@ -40,6 +40,8 @@ export function buildSystemRouter({
   getLiveFlightCacheMetrics = () => ({}),
   getAiCacheMetrics = () => ({}),
   getAiCostGuardMetrics = () => ({}),
+  getFreeCostMetrics = () => ({}),
+  getLaunchReadiness = () => ({}),
   getProviderCostGuardMetrics = () => ({}),
   getRuntimeConfigAudit,
   evaluateStartupReadiness,
@@ -176,6 +178,7 @@ export function buildSystemRouter({
    */
   router.get('/api/system/capabilities', (_req, res) => {
     const env = process.env;
+    const launch = getLaunchReadiness?.() || {};
     const parseFlag = (v, def = false) => {
       if (v === undefined || v === null || v === '') return def;
       return ['true', '1', 'yes'].includes(String(v).trim().toLowerCase());
@@ -212,6 +215,7 @@ export function buildSystemRouter({
 
     res.json({
       generated_at: new Date().toISOString(),
+      launch,
       capabilities: {
         // Data infrastructure
         database_postgres:    cap(dbReady,    'DATABASE_URL not configured — using JSON file store'),
@@ -220,7 +224,8 @@ export function buildSystemRouter({
         // Flight data
         live_flight_providers: cap(liveProvidersReady, 'No live provider configured (ENABLE_PROVIDER_DUFFEL with credentials)'),
         flight_scan:           cap(flightScanEnabled && liveProvidersReady, flightScanEnabled ? 'Flight scan enabled but no live provider configured' : 'FLIGHT_SCAN_ENABLED=false'),
-        data_source:           liveProvidersReady ? 'live' : 'synthetic',
+        data_source:           liveProvidersReady ? 'live' : 'internal',
+        provider_readiness:     launch.provider?.status || (liveProvidersReady ? 'PROVIDER_READY' : 'PROVIDER_NOT_READY'),
 
         // AI features
         ai_features:           cap(aiReady, 'No AI API key configured (OPENAI_API_KEY or ANTHROPIC_API_KEY)'),
@@ -234,6 +239,7 @@ export function buildSystemRouter({
         // Communications
         email_smtp:            cap(smtpReady,   'SMTP_HOST/USER/PASS not configured — emails not sent, accounts auto-verified'),
         push_notifications:    cap(pushReady || vapidReady, 'Neither PUSH_WEBHOOK_URL nor VAPID keys configured — alerts saved to dead-letter only'),
+        alert_delivery:         launch.alerts?.status || ((smtpReady || pushReady || vapidReady) ? 'ALERT_DELIVERY_READY' : 'ALERT_DELIVERY_NOT_READY'),
         vapid_push:            cap(vapidReady,  'VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY not configured — browser push not available'),
         push_webhook:          cap(pushReady,   'PUSH_WEBHOOK_URL not configured'),
 
@@ -415,6 +421,7 @@ export function buildSystemRouter({
     const liveFlightCache = getLiveFlightCacheMetrics?.() || {};
     const aiCache = getAiCacheMetrics?.() || {};
     const aiCostGuard = getAiCostGuardMetrics?.() || {};
+    const freeCost = getFreeCostMetrics?.() || {};
     const providerCostGuard = getProviderCostGuardMetrics?.() || {};
     const db = await readDb();
     const totalProviderSearches = providerRuntime.reduce((sum, item) => sum + Number(item.totalSearches || 0), 0);
@@ -429,6 +436,7 @@ export function buildSystemRouter({
       liveFlightCache,
       aiCache,
       aiCostGuard,
+      freeCost,
       providerCostGuard,
       scan: {
         enabled: Boolean(FLIGHT_SCAN_ENABLED),
