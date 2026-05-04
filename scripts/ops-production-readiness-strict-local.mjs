@@ -15,8 +15,9 @@ const DOCKER_BIN = process.env.DOCKER_BIN || 'docker';
 function spawnStep(label, cmd, args, env = process.env) {
   return new Promise((resolveStep, rejectStep) => {
     console.log(`\n==> ${label}`);
+    const needsWindowsCmdShim = process.platform === 'win32' && /^(npm|npx)$/i.test(cmd);
     const child =
-      process.platform === 'win32'
+      needsWindowsCmdShim
         ? spawn(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', `${cmd} ${args.join(' ')}`], {
             stdio: 'inherit',
             shell: false,
