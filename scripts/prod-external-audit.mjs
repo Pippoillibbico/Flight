@@ -280,14 +280,14 @@ async function run() {
   assertNoMisleadingCopy(freeRefresh.payload?.message || '', '/api/free/radar/refresh message');
   logCheck('free-radar-refresh-blocked', true);
 
-  const anonymousAi = await fetchJson(`${origin}/api/search/decision/just-go`, {
+  const anonymousAi = await fetchJson(`${origin}/api/decision/just-go`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ aiProvider: 'openai' }),
     expectStatuses: [403]
   });
   if (anonymousAi.payload?.code !== 'AI_NOT_AVAILABLE_ON_FREE') {
-    fail('/api/search/decision/just-go anonymous AI was not blocked as Free-cost guard', JSON.stringify(anonymousAi.payload || {}));
+    fail('/api/decision/just-go anonymous AI was not blocked as Free-cost guard', JSON.stringify(anonymousAi.payload || {}));
   }
   logCheck('anonymous-ai-blocked', true);
 
