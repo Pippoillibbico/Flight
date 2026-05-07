@@ -4,19 +4,22 @@ import process from 'node:process';
 import { setTimeout as delay } from 'node:timers/promises';
 import Redis from 'ioredis';
 import pg from 'pg';
+import { buildTestSafeEnv, ensureTestMigrations } from './lib/test-infra.mjs';
 
 const DOCKER_BIN = process.env.DOCKER_BIN || 'docker';
 const WSL_BIN = process.env.WSL_BIN || 'wsl';
 const WSL_DISTRO = String(process.env.WSL_DISTRO || '').trim();
 const INFRA_MODE = normalizeInfraMode(process.env.INFRA_MODE || 'auto');
-const ALLOW_DOCKER_DESKTOP_FALLBACK = String(process.env.ALLOW_DOCKER_DESKTOP_FALLBACK || '').trim().toLowerCase() === 'true';
 const HEALTHCHECK_TIMEOUT_MS = 10_000;
 const INFRA_READY_ATTEMPTS = Math.max(1, Number(process.env.INFRA_READY_ATTEMPTS || 12));
 const INFRA_READY_DELAY_MS = Math.max(250, Number(process.env.INFRA_READY_DELAY_MS || 5_000));
 const LOCAL_DATABASE_URL = 'postgresql://flight:flight@127.0.0.1:5432/flight';
 const LOCAL_REDIS_URL = 'redis://127.0.0.1:6379';
-const effectiveDatabaseUrl = String(process.env.DATABASE_URL || LOCAL_DATABASE_URL).trim();
-const effectiveRedisUrl = String(process.env.REDIS_URL || LOCAL_REDIS_URL).trim();
+let resolvedDatabaseUrl =
+  INFRA_MODE === 'external' ? String(process.env.DATABASE_URL || '').trim() : LOCAL_DATABASE_URL;
+let resolvedRedisUrl =
+  INFRA_MODE === 'external' ? String(process.env.REDIS_URL || '').trim() : LOCAL_REDIS_URL;
+let cachedWslDockerHost = null;
 const externalDatabaseUrl = String(process.env.DATABASE_URL || '').trim();
 const externalRedisUrl = String(process.env.REDIS_URL || '').trim();
 const dockerDesktopErrorPatterns = [
@@ -51,6 +54,28 @@ function normalizeInfraMode(value) {
   const normalized = String(value || '').trim().toLowerCase();
   if (['auto', 'docker-desktop', 'wsl-docker', 'external'].includes(normalized)) return normalized;
   throw new Error(`invalid_infra_mode:${value}`);
+}
+
+function resolveWslDockerHost() {
+  if (cachedWslDockerHost) return cachedWslDockerHost;
+  const override = String(process.env.WSL_DOCKER_HOST || '').trim();
+  if (override) {
+    cachedWslDockerHost = override;
+    return cachedWslDockerHost;
+  }
+  const probe = runWslShellCapture('hostname -I');
+  if ((probe.status ?? 1) === 0) {
+    const host = String(probe.stdout || '')
+      .trim()
+      .split(/\s+/)
+      .find(Boolean);
+    if (host) {
+      cachedWslDockerHost = host;
+      return cachedWslDockerHost;
+    }
+  }
+  cachedWslDockerHost = '127.0.0.1';
+  return cachedWslDockerHost;
 }
 
 function commandForWindows(step) {
@@ -129,6 +154,7 @@ export async function checkPostgres(databaseUrl) {
     connectionTimeoutMillis: HEALTHCHECK_TIMEOUT_MS,
     idleTimeoutMillis: 1_000
   });
+  pool.on('error', () => {});
   try {
     await withTimeout('Postgres healthcheck', async () => {
       const client = await pool.connect();
@@ -170,7 +196,7 @@ export async function checkRedis(redisUrl) {
   }
 }
 
-async function checkInfraHealth({ databaseUrl = effectiveDatabaseUrl, redisUrl = effectiveRedisUrl } = {}) {
+async function checkInfraHealth({ databaseUrl = resolvedDatabaseUrl, redisUrl = resolvedRedisUrl } = {}) {
   await checkPostgres(databaseUrl);
   await checkRedis(redisUrl);
 }
@@ -238,6 +264,21 @@ function makeWslStep(name, command) {
   };
 }
 
+function startWslKeepAlive() {
+  const child = spawn(WSL_BIN, [...getWslPrefixArgs(), 'sh', '-lc', 'while true; do sleep 3600; done'], {
+    stdio: 'ignore',
+    shell: false,
+    windowsHide: true
+  });
+  child.unref?.();
+  return child;
+}
+
+function stopWslKeepAlive(child) {
+  if (!child || child.killed) return;
+  child.kill('SIGTERM');
+}
+
 function runWslShellCapture(command) {
   return runSyncCapture(WSL_BIN, [...getWslPrefixArgs(), 'sh', '-lc', command]);
 }
@@ -271,6 +312,13 @@ function assertWslDockerEngineAvailable() {
 }
 
 async function startDockerDesktopInfra() {
+  try {
+    await checkInfraHealth();
+    return {
+      startedByGate: false,
+      stop: async () => {}
+    };
+  } catch {}
   assertDockerDesktopAvailable();
   console.log('\n[release-prod-gate] infra: docker-desktop');
   const stopStep = {
@@ -300,6 +348,19 @@ async function startDockerDesktopInfra() {
 async function startWslDockerInfra() {
   console.log('\n[release-prod-gate] infra: wsl-docker');
   assertWslDockerEngineAvailable();
+  const host = resolveWslDockerHost();
+  resolvedDatabaseUrl = `postgresql://flight:flight@${host}:5432/flight`;
+  resolvedRedisUrl = `redis://${host}:6379`;
+  const keepAlive = startWslKeepAlive();
+  try {
+    await checkInfraHealth();
+    return {
+      startedByGate: false,
+      stop: async () => {
+        stopWslKeepAlive(keepAlive);
+      }
+    };
+  } catch {}
   await runStep(makeWslStep('wsl-docker-info', 'docker info'));
   const stopStep = makeWslStep('wsl-docker-stop-postgres-redis', 'docker compose stop postgres redis');
   let started = false;
@@ -309,17 +370,24 @@ async function startWslDockerInfra() {
     await waitForInfraHealth();
   } catch (error) {
     if (started) await runStep(stopStep).catch(() => {});
+    stopWslKeepAlive(keepAlive);
     throw error;
   }
   return {
     startedByGate: true,
-    stop: () => runStep(stopStep)
+    stop: async () => {
+      try {
+        await runStep(stopStep);
+      } finally {
+        stopWslKeepAlive(keepAlive);
+      }
+    }
   };
 }
 
 async function useExternalInfra({ allowDefaults = false } = {}) {
-  const databaseUrl = allowDefaults ? effectiveDatabaseUrl : externalDatabaseUrl;
-  const redisUrl = allowDefaults ? effectiveRedisUrl : externalRedisUrl;
+  const databaseUrl = allowDefaults ? resolvedDatabaseUrl : externalDatabaseUrl;
+  const redisUrl = allowDefaults ? resolvedRedisUrl : externalRedisUrl;
   if (!databaseUrl || !redisUrl) {
     throw new Error('external_infra_requires_DATABASE_URL_and_REDIS_URL');
   }
@@ -350,6 +418,7 @@ function printInfraFailureGuidance(failures) {
 
 const requiresLocalInfra = new Set(['unit-tests', 'typed-tests', 'security-go-live-gate']);
 let infraController = null;
+let gateTestEnv = null;
 
 function readTrackedGitStatus() {
   const result = spawnSync('git', ['status', '--porcelain', '--untracked-files=no'], {
@@ -399,18 +468,13 @@ async function ensureLocalInfra() {
   } else if (INFRA_MODE === 'wsl-docker') {
     if (await tryMode('wsl-docker', startWslDockerInfra)) return;
   } else {
-    if (await tryMode('existing-services', () => useExternalInfra({ allowDefaults: true }))) return;
-    if (await tryMode('wsl-docker', startWslDockerInfra)) return;
-    if (ALLOW_DOCKER_DESKTOP_FALLBACK) {
-      const desktopOk = await tryMode('docker-desktop', startDockerDesktopInfra);
-      if (desktopOk) return;
-      const desktopFailure = failures.find((failure) => failure.mode === 'docker-desktop');
-      if (desktopFailure && isDockerDesktopUnavailable(desktopFailure.message)) {
-        console.warn('[release-prod-gate] Docker Desktop looks unhealthy; use WSL Docker Engine or external services.');
-      }
-    } else {
-      console.warn('[release-prod-gate] auto mode did not try Docker Desktop because ALLOW_DOCKER_DESKTOP_FALLBACK is not true.');
+    if (await tryMode('docker-desktop', startDockerDesktopInfra)) return;
+    const desktopFailure = failures.find((failure) => failure.mode === 'docker-desktop');
+    if (desktopFailure && isDockerDesktopUnavailable(desktopFailure.message)) {
+      console.warn('[release-prod-gate] Docker Desktop looks unhealthy; trying WSL Docker Engine next.');
     }
+    if (await tryMode('wsl-docker', startWslDockerInfra)) return;
+    if (await tryMode('existing-services', () => useExternalInfra({ allowDefaults: true }))) return;
   }
 
   printInfraFailureGuidance(failures);
@@ -419,8 +483,9 @@ async function ensureLocalInfra() {
 
 async function stopLocalInfra() {
   if (!infraController) return;
-  if (!infraController.startedByGate) return;
-  console.log('\n[release-prod-gate] running: infra-stop-postgres-redis');
+  if (infraController.startedByGate) {
+    console.log('\n[release-prod-gate] running: infra-stop-postgres-redis');
+  }
   try {
     await infraController.stop();
   } finally {
@@ -428,15 +493,32 @@ async function stopLocalInfra() {
   }
 }
 
+async function ensureGateTestEnv() {
+  if (gateTestEnv) return gateTestEnv;
+  gateTestEnv = buildTestSafeEnv(process.env, {
+    databaseUrl: resolvedDatabaseUrl,
+    redisUrl: resolvedRedisUrl
+  });
+  gateTestEnv.TEST_INFRA_MANAGED_EXTERNALLY = 'true';
+  gateTestEnv.INFRA_MODE = INFRA_MODE === 'external' ? 'external' : 'auto';
+  gateTestEnv.SECURITY_GATE_FORCE_LOCAL_OPS_PROFILE = 'true';
+  gateTestEnv.BACKUP_ENCRYPTION_KEY =
+    gateTestEnv.BACKUP_ENCRYPTION_KEY || 'local_release_gate_backup_encryption_key_very_strong_123';
+  await ensureTestMigrations(gateTestEnv);
+  return gateTestEnv;
+}
+
 try {
   const gitStatusBefore = readTrackedGitStatus();
   for (const step of steps) {
+    let stepEnv = process.env;
     if (requiresLocalInfra.has(step.name)) {
       await ensureLocalInfra();
+      stepEnv = await ensureGateTestEnv();
     }
     // Keep output concise and searchable in CI logs.
     console.log(`\n[release-prod-gate] running: ${step.name}`);
-    await runStep(step);
+    await runStep(step, { env: stepEnv });
   }
   const gitStatusAfter = readTrackedGitStatus();
   const newTrackedChanges = diffNewTrackedChanges(gitStatusBefore, gitStatusAfter);

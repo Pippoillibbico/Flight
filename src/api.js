@@ -419,6 +419,12 @@ export const api = {
   listPushSubscriptions(token) {
     return request('/push/subscriptions', { token });
   },
+  getEmailPreferences(token) {
+    return request('/preferences/email', { token });
+  },
+  updateEmailPreferences(token, body) {
+    return request('/preferences/email', { method: 'PUT', token, body });
+  },
   // ── SaaS API keys ──────────────────────────────────────────
   listApiKeys(token) {
     return request('/keys', { token });

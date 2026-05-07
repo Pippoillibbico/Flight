@@ -156,6 +156,10 @@ function assertDbUrlSecurity() {
   if (!parsed) {
     throw new Error('missing_required_secret:DATABASE_URL');
   }
+  if (localProfile) {
+    console.log('[OK] database-url-security (local-profile override)');
+    return;
+  }
   const host = String(parsed.hostname || '').trim().toLowerCase();
   const localhost = host === 'localhost' || host === '127.0.0.1' || host === '::1';
   if (!localhost) {

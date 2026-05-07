@@ -2,6 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
+import { buildTestSafeEnv, ensureTestInfra, ensureTestMigrations, stopTestInfra } from './lib/test-infra.mjs';
 
 function parseArgs() {
   const raw = process.argv.slice(2);
@@ -38,18 +39,31 @@ async function main() {
   const dbFile = resolve(tmpRoot, `db-${process.pid}.json`);
   const auditFile = resolve(tmpRoot, `audit-${process.pid}.ndjson`);
 
-  const env = {
-    ...process.env,
+  const managedExternally = String(process.env.TEST_INFRA_MANAGED_EXTERNALLY || '').trim().toLowerCase() === 'true';
+  const infra = managedExternally ? null : await ensureTestInfra();
+  const env = buildTestSafeEnv(process.env, infra || {});
+  if (!managedExternally) {
+    env.TEST_INFRA_MANAGED_EXTERNALLY = 'true';
+  }
+  env.FLIGHT_DB_FILE = dbFile;
+  env.AUDIT_LOG_FILE = auditFile;
+
+  await ensureTestMigrations(env);
+
+  const commandEnv = {
+    ...env,
     FLIGHT_DB_FILE: dbFile,
     AUDIT_LOG_FILE: auditFile
   };
 
+  let exitCode = 1;
   try {
-    const exitCode = await runCommand(command, args, env);
-    process.exit(exitCode);
+    exitCode = await runCommand(command, args, commandEnv);
   } finally {
     await rm(dirname(dbFile), { recursive: true, force: true }).catch(() => {});
+    if (!managedExternally) await stopTestInfra();
   }
+  process.exit(exitCode);
 }
 
 main().catch((error) => {

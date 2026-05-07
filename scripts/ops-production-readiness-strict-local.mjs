@@ -1,16 +1,5 @@
 import { spawn } from 'node:child_process';
-import { mkdir } from 'node:fs/promises';
-import { resolve } from 'node:path';
-
-const LOCAL_DATABASE_URL =
-  process.env.SECURITY_COMPLIANCE_LOCAL_DATABASE_URL || 'postgresql://flight:flight@127.0.0.1:5432/flight';
-const LOCAL_REDIS_URL = process.env.SECURITY_COMPLIANCE_LOCAL_REDIS_URL || 'redis://127.0.0.1:6379';
-const KEEP_SERVICES_UP =
-  String(process.env.SECURITY_COMPLIANCE_LOCAL_KEEP_SERVICES || 'false')
-    .trim()
-    .toLowerCase() === 'true';
-const LOCAL_DOCKER_CONFIG = process.env.DOCKER_CONFIG || resolve(process.cwd(), '.tmp', 'docker-config');
-const DOCKER_BIN = process.env.DOCKER_BIN || 'docker';
+import { buildTestSafeEnv, ensureTestInfra, ensureTestMigrations, stopTestInfra } from './lib/test-infra.mjs';
 
 function spawnStep(label, cmd, args, env = process.env) {
   return new Promise((resolveStep, rejectStep) => {
@@ -31,25 +20,14 @@ function spawnStep(label, cmd, args, env = process.env) {
   });
 }
 
-async function assertDockerEngineAvailable(env = process.env) {
-  await spawnStep('docker engine availability', DOCKER_BIN, ['info'], env).catch((error) => {
-    console.error('\nDocker Engine is not reachable from this terminal.');
-    console.error('Start a terminal-accessible Docker Engine, then rerun this command.');
-    console.error('On Windows, run from WSL with Docker Engine installed, or set DOCKER_HOST for a remote/rootless engine.');
-    console.error('Docker Desktop is not started by this repository.');
-    throw error;
-  });
-}
-
 async function main() {
-  await mkdir(LOCAL_DOCKER_CONFIG, { recursive: true });
-  const dockerEnv = { ...process.env, DOCKER_CONFIG: LOCAL_DOCKER_CONFIG };
+  const infra = await ensureTestInfra();
+  const baseEnv = buildTestSafeEnv(process.env, infra);
   const strictLocalEnv = {
-    ...process.env,
+    ...baseEnv,
     OPS_READINESS_LOCAL_PROFILE: process.env.OPS_READINESS_LOCAL_PROFILE || 'true',
     OPS_READINESS_STRICT: process.env.OPS_READINESS_STRICT || 'true',
-    DATABASE_URL: process.env.DATABASE_URL || LOCAL_DATABASE_URL,
-    REDIS_URL: process.env.REDIS_URL || LOCAL_REDIS_URL,
+    TEST_INFRA_MANAGED_EXTERNALLY: 'true',
     JWT_SECRET: process.env.JWT_SECRET || 'local_ops_readiness_jwt_secret_32_chars_minimum',
     OUTBOUND_CLICK_SECRET: process.env.OUTBOUND_CLICK_SECRET || 'local_ops_readiness_outbound_secret_very_strong_123',
     IP_HASH_SALT: process.env.IP_HASH_SALT || 'local_ops_readiness_ip_hash_salt_32_chars_min',
@@ -68,7 +46,7 @@ async function main() {
     CORS_ALLOWED_ORIGINS: process.env.CORS_ALLOWED_ORIGINS || 'https://app.flightsuite.test',
     CORS_ORIGIN: process.env.CORS_ORIGIN || 'https://app.flightsuite.test',
     CORS_ALLOWLIST: process.env.CORS_ALLOWLIST || 'https://app.flightsuite.test',
-    ENABLE_PROVIDER_DUFFEL: process.env.ENABLE_PROVIDER_DUFFEL || 'true',
+    ENABLE_PROVIDER_DUFFEL: process.env.OPS_STRICT_LOCAL_ENABLE_PROVIDER_DUFFEL || 'true',
     ENABLE_PROVIDER_KIWI: process.env.ENABLE_PROVIDER_KIWI || 'false',
     [`ENABLE_PROVIDER_${'SKY' + 'SCANNER'}`]: process.env[`ENABLE_PROVIDER_${'SKY' + 'SCANNER'}`] || 'false',
     DUFFEL_API_KEY: process.env.DUFFEL_API_KEY || 'duffel_local_ops_key_123456789',
@@ -90,15 +68,12 @@ async function main() {
     LEGAL_PRIVACY_EMAIL: process.env.LEGAL_PRIVACY_EMAIL || 'privacy@flightsuite.it'
   };
 
-  await assertDockerEngineAvailable(dockerEnv);
-  await spawnStep('docker compose up -d postgres redis', DOCKER_BIN, ['compose', 'up', '-d', 'postgres', 'redis'], dockerEnv);
+  await ensureTestMigrations(strictLocalEnv);
   try {
     await spawnStep('ops production readiness strict (local profile)', 'node', ['scripts/ops-production-readiness.mjs', '--strict'], strictLocalEnv);
     console.log('\nops-production-readiness-strict-local: PASS');
   } finally {
-    if (!KEEP_SERVICES_UP) {
-      await spawnStep('docker compose stop postgres redis', DOCKER_BIN, ['compose', 'stop', 'postgres', 'redis'], dockerEnv);
-    }
+    await stopTestInfra();
   }
 }
 

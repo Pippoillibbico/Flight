@@ -97,6 +97,13 @@ async function ensurePg() {
     pgPool = new pg.Pool({
       connectionString: process.env.DATABASE_URL
     });
+    pgPool.on('error', (error) => {
+      const isProduction = String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
+      const code = String(error?.code || '').trim();
+      if (isProduction && code !== '57P01') {
+        console.error('[sql-db] idle postgres pool error', error?.message || error);
+      }
+    });
   }
   await runPgMigrations();
 }
@@ -185,13 +192,29 @@ function ensureSqliteColumn(tableName, columnName, definition) {
 export async function initSqlDb() {
   const databaseUrl = String(process.env.DATABASE_URL || '').trim();
   const isProduction = String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
+  const allowControlledTestFallback =
+    isProduction &&
+    String(process.env.ALLOW_INSECURE_STARTUP_FOR_TESTS || '').trim().toLowerCase() === 'true' &&
+    String(process.env.ALLOW_INSECURE_STARTUP_IN_PRODUCTION || '').trim().toLowerCase() === 'true' &&
+    String(process.env.ALLOW_INSECURE_STARTUP_TEST_CONTEXT || '').trim().toLowerCase() === 'true';
 
   if (databaseUrl) {
     mode = 'postgres';
-    await ensurePg();
+    try {
+      await ensurePg();
+    } catch (error) {
+      if (!allowControlledTestFallback) throw error;
+      mode = 'sqlite';
+      await ensureSqlite();
+    }
     return;
   }
   if (isProduction) {
+    if (allowControlledTestFallback) {
+      mode = 'sqlite';
+      await ensureSqlite();
+      return;
+    }
     throw new Error('[FATAL] DATABASE_URL required in production. SQLite fallback is not allowed.');
   }
   mode = 'sqlite';

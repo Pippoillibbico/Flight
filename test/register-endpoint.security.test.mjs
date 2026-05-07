@@ -68,6 +68,22 @@ function createLegacySqliteSchema(dbFile) {
 }
 
 async function startServer({ envOverrides = {}, legacySqliteSchema = false } = {}) {
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      return await startServerOnce({ envOverrides, legacySqliteSchema });
+    } catch (error) {
+      const message = String(error?.message || '');
+      const transientInfra =
+        /Server exited before healthcheck/i.test(message) &&
+        /(ECONNREFUSED|ECONNRESET|startup_init_sql_db_failed|redis_error|redis_connect_failed)/i.test(message);
+      if (!transientInfra || attempt === 3) throw error;
+      await delay(400 * attempt);
+    }
+  }
+  throw new Error('start_server_unreachable');
+}
+
+async function startServerOnce({ envOverrides = {}, legacySqliteSchema = false } = {}) {
   const sandboxDir = await mkdtemp(join(tmpdir(), 'flight-register-security-'));
   const jsonDbFile = join(sandboxDir, 'db.json');
   const sqliteDbFile = join(sandboxDir, 'app.db');
@@ -77,9 +93,7 @@ async function startServer({ envOverrides = {}, legacySqliteSchema = false } = {
 
   const port = 3300 + Math.floor(Math.random() * 2000);
   const baseUrl = `http://127.0.0.1:${port}`;
-  const localDatabaseUrl =
-    String(process.env.SECURITY_COMPLIANCE_LOCAL_DATABASE_URL || '').trim() ||
-    'postgresql://flight:flight@localhost:5432/flight';
+  const localDatabaseUrl = String(process.env.SECURITY_COMPLIANCE_LOCAL_DATABASE_URL || '').trim();
   const localRedisUrl =
     String(process.env.SECURITY_COMPLIANCE_LOCAL_REDIS_URL || '').trim() ||
     'redis://localhost:6379';

@@ -43,7 +43,7 @@ test('notification scan service creates and dedupes smart-duration notifications
       }
     ],
     notifications: [],
-    users: [{ id: 'u1', email: 'u1@example.com' }]
+    users: [{ id: 'u1', email: 'u1@example.com', planType: 'pro', emailPreferences: { alert: true } }]
   };
 
   const cache = createMemoryCache();

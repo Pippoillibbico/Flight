@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import pg from 'pg';
+import Redis from 'ioredis';
 
 const ALLOWED_ORIGIN = 'https://app.flightsuite.test';
 
@@ -61,7 +62,7 @@ async function waitForExit(child, timeoutMs = 7000) {
 function buildServerEnv({ port, jsonDbFile, sqliteDbFile, auditLogFile, envOverrides = {} }) {
   const localDatabaseUrl =
     String(process.env.SECURITY_COMPLIANCE_LOCAL_DATABASE_URL || '').trim() ||
-    'postgresql://flight:flight@localhost:5432/flight';
+    'postgresql://flight:flight@127.0.0.1:5432/flight';
   const localRedisUrl =
     String(process.env.SECURITY_COMPLIANCE_LOCAL_REDIS_URL || '').trim() ||
     'redis://localhost:6379';
@@ -108,6 +109,53 @@ function buildServerEnv({ port, jsonDbFile, sqliteDbFile, auditLogFile, envOverr
   };
 }
 
+async function waitForPrimaryInfraReady({
+  retries = 20,
+  intervalMs = 500
+} = {}) {
+  const databaseUrl =
+    String(process.env.SECURITY_COMPLIANCE_LOCAL_DATABASE_URL || '').trim() ||
+    'postgresql://flight:flight@127.0.0.1:5432/flight';
+  const redisUrl =
+    String(process.env.SECURITY_COMPLIANCE_LOCAL_REDIS_URL || '').trim() ||
+    'redis://127.0.0.1:6379';
+  let lastError = null;
+  for (let attempt = 1; attempt <= retries; attempt += 1) {
+    const pool = new pg.Pool({
+      connectionString: databaseUrl,
+      max: 1,
+      connectionTimeoutMillis: 2_000,
+      idleTimeoutMillis: 1_000
+    });
+    const redis = new Redis(redisUrl, {
+      connectTimeout: 2_000,
+      commandTimeout: 2_000,
+      lazyConnect: true,
+      maxRetriesPerRequest: 0,
+      retryStrategy: null
+    });
+    try {
+      const client = await pool.connect();
+      try {
+        await client.query('select 1 as ok');
+      } finally {
+        client.release();
+      }
+      await redis.connect();
+      const pong = await redis.ping();
+      if (pong !== 'PONG') throw new Error(`redis_ping_unexpected:${pong}`);
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt < retries) await delay(intervalMs);
+    } finally {
+      redis.disconnect();
+      await pool.end().catch(() => {});
+    }
+  }
+  throw new Error(`primary_infra_not_ready:${lastError?.message || lastError}`);
+}
+
 async function waitForHealth(baseUrl, { child, getLogs, retries = 80, intervalMs = 250 } = {}) {
   for (let index = 0; index < retries; index += 1) {
     if (child && child.exitCode !== null) {
@@ -125,6 +173,23 @@ async function waitForHealth(baseUrl, { child, getLogs, retries = 80, intervalMs
 }
 
 async function startMainServer({ envOverrides = {} } = {}) {
+  await waitForPrimaryInfraReady();
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      return await startMainServerOnce({ envOverrides });
+    } catch (error) {
+      const message = String(error?.message || '');
+      const transientInfra =
+        /Server exited before healthcheck/i.test(message) &&
+        /(ECONNREFUSED|ECONNRESET|startup_init_sql_db_failed|redis_error|redis_connect_failed)/i.test(message);
+      if (!transientInfra || attempt === 3) throw error;
+      await delay(400 * attempt);
+    }
+  }
+  throw new Error('start_main_server_unreachable');
+}
+
+async function startMainServerOnce({ envOverrides = {} } = {}) {
   const sandboxDir = await mkdtemp(join(tmpdir(), 'flight-security-remediation-'));
   const jsonDbFile = join(sandboxDir, 'db.json');
   const sqliteDbFile = join(sandboxDir, 'app.db');
@@ -526,22 +591,23 @@ test(
       assert.equal(telemetryResponse.status, 201);
 
       const localDatabaseUrl =
-        String(process.env.SECURITY_COMPLIANCE_LOCAL_DATABASE_URL || '').trim() ||
-        'postgresql://flight:flight@localhost:5432/flight';
-      const pool = new pg.Pool({ connectionString: localDatabaseUrl });
+        String(process.env.SECURITY_COMPLIANCE_LOCAL_DATABASE_URL || '').trim();
       let lastEvent = null;
-      try {
-        const telemetryRow = await pool.query(
-          `SELECT payload
-           FROM telemetry_events
-           WHERE correlation_id = $1
-           ORDER BY created_at DESC
-           LIMIT 1`,
-          ['corr_telemetry_123']
-        );
-        lastEvent = telemetryRow.rows?.[0]?.payload || null;
-      } finally {
-        await pool.end();
+      if (localDatabaseUrl) {
+        const pool = new pg.Pool({ connectionString: localDatabaseUrl });
+        try {
+          const telemetryRow = await pool.query(
+            `SELECT payload
+             FROM telemetry_events
+             WHERE correlation_id = $1
+             ORDER BY created_at DESC
+             LIMIT 1`,
+            ['corr_telemetry_123']
+          );
+          lastEvent = telemetryRow.rows?.[0]?.payload || null;
+        } finally {
+          await pool.end();
+        }
       }
       if (!lastEvent) {
         const dbPayload = JSON.parse(await readFile(state.jsonDbFile, 'utf8'));
@@ -642,7 +708,7 @@ test(
       env: {
         ...process.env,
         NODE_ENV: 'production',
-        DATABASE_URL: String(process.env.SECURITY_COMPLIANCE_LOCAL_DATABASE_URL || '').trim() || 'postgresql://flight:flight@localhost:5432/flight',
+        DATABASE_URL: String(process.env.SECURITY_COMPLIANCE_LOCAL_DATABASE_URL || '').trim(),
         REDIS_URL: String(process.env.SECURITY_COMPLIANCE_LOCAL_REDIS_URL || '').trim() || 'redis://localhost:6379',
         BACKOFFICE_PORT: String(port),
         BACKOFFICE_JWT_SECRET: 'BackofficeJwtValueForProdTests1234567890ABCDE',

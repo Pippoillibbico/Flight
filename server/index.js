@@ -41,6 +41,7 @@ import { buildAuthSessionRouter } from './routes/auth-session.js';
 import { buildAuthLocalRouter } from './routes/auth-local.js';
 import { buildAuthOAuthRouter } from './routes/auth-oauth.js';
 import { buildPushRouter } from './routes/push.js';
+import { buildEmailPreferencesRouter } from './routes/email-preferences.js';
 import { buildAdminTelemetryRouter } from './routes/admin-telemetry.js';
 import { buildPublicUtilityRouter } from './routes/public-utility.js';
 import { buildConsentRouter } from './routes/consent.js';
@@ -1323,6 +1324,7 @@ app.use(
 // ── SaaS routes ───────────────────────────────────────────────────
 // Mount routers (they receive authGuard/csrfGuard from closure)
 app.use('/api/push',    buildPushRouter({ authGuard, csrfGuard }));
+app.use('/api',         buildEmailPreferencesRouter({ authGuard, csrfGuard, withDb }));
 app.use('/api/keys',    buildApiKeysRouter({ authGuard, csrfGuard }));
 app.use('/api/billing', buildBillingRouter({ authGuard, requireSessionAuth, csrfGuard }));
 app.use('/api/usage',   buildUsageRouter({ authGuard }));

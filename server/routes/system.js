@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { computeFlightDisplayPrice } from '../lib/pricing-engine.js';
+import { getEmailReadiness } from '../lib/email/email-readiness.js';
+import { getEmailMetrics } from '../lib/email/email-metrics.js';
 
 const pricingSimulationSchema = z
   .object({
@@ -152,7 +154,15 @@ export function buildSystemRouter({
 
   router.get('/readyz', async (req, res) => {
     const checks = await runReadinessChecks();
-    const ready = checks.postgres.ok && checks.redis.ok;
+    const emailReadiness = getEmailReadiness(process.env);
+    checks.email = {
+      ok: emailReadiness.status === 'EMAIL_READY' || emailReadiness.status === 'EMAIL_DRY_RUN',
+      status: emailReadiness.status,
+      provider: emailReadiness.provider,
+      dryRun: emailReadiness.dryRun,
+      detail: emailReadiness.reason
+    };
+    const ready = checks.postgres.ok && checks.redis.ok && checks.email.ok;
     return res.status(ready ? 200 : 503).json({
       ok: ready,
       checks,
@@ -190,7 +200,8 @@ export function buildSystemRouter({
       );
     const ready = (v, min = 4) => hasValue(v, min) && notPlaceholder(v);
 
-    const smtpReady = ready(env.SMTP_HOST) && ready(env.SMTP_USER) && ready(env.SMTP_PASS);
+    const emailReadiness = getEmailReadiness(env);
+    const smtpReady = emailReadiness.status === 'EMAIL_READY';
     const googleReady = ready(env.GOOGLE_CLIENT_ID) || ready(env.GOOGLE_CLIENT_IDS);
     const appleReady = ready(env.APPLE_CLIENT_ID) || ready(env.APPLE_CLIENT_IDS);
     const facebookReady = ready(env.FACEBOOK_CLIENT_ID) || ready(env.FACEBOOK_CLIENT_IDS);
@@ -237,9 +248,12 @@ export function buildSystemRouter({
         billing_mock_mode:     allowMockBilling,
 
         // Communications
+        email_readiness:        emailReadiness.status,
+        email_dry_run:          emailReadiness.dryRun,
+        email_provider:         emailReadiness.provider,
         email_smtp:            cap(smtpReady,   'SMTP_HOST/USER/PASS not configured — emails not sent, accounts auto-verified'),
         push_notifications:    cap(pushReady || vapidReady, 'Neither PUSH_WEBHOOK_URL nor VAPID keys configured — alerts saved to dead-letter only'),
-        alert_delivery:         launch.alerts?.status || ((smtpReady || pushReady || vapidReady) ? 'ALERT_DELIVERY_READY' : 'ALERT_DELIVERY_NOT_READY'),
+        alert_delivery:         launch.alerts?.status || (smtpReady ? 'ALERT_DELIVERY_READY' : 'ALERT_DELIVERY_NOT_READY'),
         vapid_push:            cap(vapidReady,  'VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY not configured — browser push not available'),
         push_webhook:          cap(pushReady,   'PUSH_WEBHOOK_URL not configured'),
 
@@ -248,6 +262,7 @@ export function buildSystemRouter({
         oauth_apple:     cap(appleReady,    'APPLE_CLIENT_ID not configured'),
         oauth_facebook:  cap(facebookReady, 'FACEBOOK_CLIENT_ID not configured'),
         email_verification: cap(smtpReady,  'SMTP not configured — new accounts are auto-verified'),
+        email_metrics: getEmailMetrics(),
 
         // User features
         search_history_persist: cap(searchHistoryEnabled, 'SEARCH_HISTORY_PERSIST_ENABLED not set — searches not stored'),

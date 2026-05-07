@@ -68,11 +68,17 @@ test('dev funnel helpers expose runtime health and recent telemetry', async () =
 
 test('redirect endpoint tracks click and issues 302 with monetized destination', async () => {
   const app = express();
+  const sessionId = `redirect-test-${randomUUID()}`;
   app.use(express.json());
+  app.use((req, _res, next) => {
+    req.sessionID = sessionId;
+    next();
+  });
   app.use(buildDealEngineRouter());
 
   await withServer(app, async (baseUrl) => {
-    const redirectUrl = `${baseUrl}/api/redirect/deal_test_123?o=FCO&d=TYO&dep=2027-07-14&ret=2027-07-22&prc=289&dt=error_fare&dc=88`;
+    const dealId = `deal_test_${randomUUID().slice(0, 8)}`;
+    const redirectUrl = `${baseUrl}/api/redirect/${dealId}?o=FCO&d=TYO&dep=2027-07-14&ret=2027-07-22&prc=289&dt=error_fare&dc=88`;
     const res = await fetch(redirectUrl, { redirect: 'manual' });
     assert.equal(res.status, 302);
     const location = res.headers.get('location') || '';

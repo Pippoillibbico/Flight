@@ -1,5 +1,6 @@
 import { parseFlag } from './env-flags.js';
 import { isLiveFlightProviderEnabled } from './live-flight-provider.js';
+import { getEmailReadiness } from './email/email-readiness.js';
 
 const PLACEHOLDER_PATTERNS = [
   'replace-with',
@@ -417,6 +418,21 @@ export function getRuntimeConfigAudit(env = process.env) {
     String(env.SMTP_PASS || '').trim().length > 0;
   const dealsContentAtLeastOneChannel =
     dealsContentInAppEnabled || dealsContentPushReady || dealsContentSocialReady || dealsContentNewsletterReady;
+  const emailReadiness = getEmailReadiness(env);
+
+  checks.push(
+    evaluateCheck(
+      {
+        key: 'EMAIL_DELIVERY_READINESS',
+        label: 'Email delivery readiness',
+        severity: isProduction && !emailReadiness.dryRun ? 'blocking' : 'recommended',
+        validator: () => emailReadiness.status === 'EMAIL_READY' || emailReadiness.status === 'EMAIL_DRY_RUN',
+        detailOnFail: 'EMAIL_DRY_RUN=false requires EMAIL_PROVIDER=smtp and SMTP_HOST/SMTP_USER/SMTP_PASS configured',
+        detailOnPass: emailReadiness.status
+      },
+      env
+    )
+  );
 
   checks.push(
     evaluateCheck(

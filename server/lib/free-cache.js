@@ -319,6 +319,7 @@ export function getCacheClient() {
   if (singleton) return singleton;
   const redisUrl = String(process.env.REDIS_URL || '').trim();
   const isProduction = String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
+  const isTest = String(process.env.NODE_ENV || '').trim().toLowerCase() === 'test';
   if (!redisUrl) {
     if (isProduction) {
       throw new Error('[FATAL] REDIS_URL required in production. InMemoryCache fallback is not allowed.');
@@ -328,13 +329,23 @@ export function getCacheClient() {
   }
   const redis = new Redis(redisUrl, {
     lazyConnect: true,
-    maxRetriesPerRequest: 2,
+    maxRetriesPerRequest: isTest ? 0 : 2,
     // Allow short startup buffering so workers don't fail before Redis is ready.
-    enableOfflineQueue: true
+    enableOfflineQueue: !isTest,
+    retryStrategy: isTest ? null : undefined,
+    connectTimeout: isTest ? 1_000 : 10_000
   });
   redis.on('error', (error) => {
     logger.warn({ err: error }, 'free_cache_redis_error');
   });
+  if (isTest) {
+    redis.on('connect', () => {
+      redis.connector?.stream?.unref?.();
+    });
+    redis.on('ready', () => {
+      redis.connector?.stream?.unref?.();
+    });
+  }
   redis.connect().catch((error) => {
     logger.warn({ err: error }, 'free_cache_redis_connect_failed');
   });

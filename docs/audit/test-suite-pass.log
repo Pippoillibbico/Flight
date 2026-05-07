@@ -1,0 +1,878 @@
+
+> flight-suite@3.0.0 test
+> node scripts/run-node-tests-isolated.mjs -- node --test --test-concurrency=1 --test-isolation=none test/**/*.test.mjs
+
+[test-infra] INFRA_MODE=auto
+
+[test-infra] infra: existing/external
+[test-infra] healthcheck not ready (1/12): postgres_healthcheck_failed:connect ECONNREFUSED 127.0.0.1:5432
+[test-infra] healthcheck not ready (2/12): postgres_healthcheck_failed:connect ECONNREFUSED 127.0.0.1:5432
+[test-infra] healthcheck not ready (3/12): postgres_healthcheck_failed:connect ECONNREFUSED 127.0.0.1:5432
+[test-infra] healthcheck not ready (4/12): postgres_healthcheck_failed:connect ECONNREFUSED 127.0.0.1:5432
+[test-infra] healthcheck not ready (5/12): postgres_healthcheck_failed:connect ECONNREFUSED 127.0.0.1:5432
+[test-infra] healthcheck not ready (6/12): postgres_healthcheck_failed:connect ECONNREFUSED 127.0.0.1:5432
+[test-infra] healthcheck not ready (7/12): postgres_healthcheck_failed:connect ECONNREFUSED 127.0.0.1:5432
+[test-infra] healthcheck not ready (8/12): postgres_healthcheck_failed:connect ECONNREFUSED 127.0.0.1:5432
+[test-infra] healthcheck not ready (9/12): postgres_healthcheck_failed:connect ECONNREFUSED 127.0.0.1:5432
+[test-infra] healthcheck not ready (10/12): postgres_healthcheck_failed:connect ECONNREFUSED 127.0.0.1:5432
+[test-infra] healthcheck not ready (11/12): postgres_healthcheck_failed:connect ECONNREFUSED 127.0.0.1:5432
+[test-infra] infra mode failed: existing-services :: postgres_healthcheck_failed:connect ECONNREFUSED 127.0.0.1:5432
+[test-infra] infra mode failed: docker-desktop :: failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine; check if the path is correct and if the daemon is running: open //./pipe/dockerDesktopLinuxEngine: Impossibile trovare il file specificato.
+
+[test-infra] infra: wsl-docker
+[test-infra] postgres healthcheck: PASS
+[test-infra] redis healthcheck: PASS
+[test-infra] infra mode selected: wsl-docker
+
+[test-infra] running: db-migrate
+db-migrate: OK
+{"level":30,"time":"2026-05-07T07:29:28.041Z","pid":14480,"hostname":"Clariter_Ste_","namespace":"intent_parse","provider":"chatgpt","route":"decision.intake","model":"gpt-4o-mini","durationMs":0,"estimatedCostEur":0.000039,"cacheKey":"ai:cache:v2:intent_parse:dcace129951c91f54dffe2c182285a6ce6765eed","msg":"ai_cache_miss_completed"}
+{"level":30,"time":"2026-05-07T07:29:28.042Z","pid":14480,"hostname":"Clariter_Ste_","namespace":"intent_parse","provider":"chatgpt","route":"decision.intake","cacheKey":"ai:cache:v2:intent_parse:dcace129951c91f54dffe2c182285a6ce6765eed","msg":"ai_cache_hit"}
+{"level":30,"time":"2026-05-07T07:29:28.043Z","pid":14480,"hostname":"Clariter_Ste_","namespace":"decision_enrich","provider":"claude","route":"decision.just_go","cacheKey":"ai:cache:v2:decision_enrich:b2cc103b90eb44d5297f046eea90b4ecc04183f1","msg":"ai_cache_inflight_deduped"}
+✔ buildAdminBackofficeReport maps cost monitoring payload into admin report (3.0546ms)
+✔ buildBookingUrl always returns internal redirect path (0.2999ms)
+✔ ai-cache dedupes semantic-equivalent prompts (9.6447ms)
+(node:14480) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+{"level":30,"time":"2026-05-07T07:29:28.070Z","pid":14480,"hostname":"Clariter_Ste_","namespace":"decision_enrich","provider":"claude","route":"decision.just_go","model":"claude-3-5-sonnet-20241022","durationMs":27,"estimatedCostEur":0.00042,"cacheKey":"ai:cache:v2:decision_enrich:b2cc103b90eb44d5297f046eea90b4ecc04183f1","msg":"ai_cache_miss_completed"}
+{"level":30,"time":"2026-05-07T07:29:28.071Z","pid":14480,"hostname":"Clariter_Ste_","namespace":"intent_parse","provider":"chatgpt","route":"decision.intake","cacheKey":"ai:cache:v2:intent_parse:213003d25200dee7e56b39544382ab9bf387ea77","msg":"ai_cache_miss_bypassed_live_call"}
+{"level":30,"time":"2026-05-07T07:29:28.071Z","pid":14480,"hostname":"Clariter_Ste_","namespace":"intent_parse","provider":"chatgpt","route":"decision.intake","model":"gpt-4o-mini","durationMs":0,"estimatedCostEur":0.000105,"cacheKey":"ai:cache:v2:intent_parse:e8c66ebf50a0b964cd9eb375a955bdbeedb56612","msg":"ai_cache_miss_completed"}
+{"level":30,"time":"2026-05-07T07:29:28.072Z","pid":14480,"hostname":"Clariter_Ste_","namespace":"intent_parse","provider":"chatgpt","route":"decision.intake","cacheKey":"ai:cache:v2:intent_parse:e8c66ebf50a0b964cd9eb375a955bdbeedb56612","msg":"ai_cache_hit"}
+{"level":40,"time":"2026-05-07T07:29:28.073Z","pid":14480,"hostname":"Clariter_Ste_","route":"decision.intake","userId":"u_1","reason":"global_per_minute_calls_exceeded","used":2,"limit":1,"estimatedTokens":220,"estimatedCostEur":0,"msg":"budget_exceeded_ai"}
+{"level":40,"time":"2026-05-07T07:29:28.082Z","pid":14480,"hostname":"Clariter_Ste_","route":"decision.just_go","userId":"u_2","reason":"global_daily_est_tokens_exceeded","used":560,"limit":500,"estimatedTokens":260,"estimatedCostEur":0,"msg":"budget_exceeded_ai"}
+{"level":40,"time":"2026-05-07T07:29:28.082Z","pid":14480,"hostname":"Clariter_Ste_","route":"decision.intake","msg":"ai_cost_guard_backend_unavailable_fail_closed"}
+{"level":40,"time":"2026-05-07T07:29:28.083Z","pid":14480,"hostname":"Clariter_Ste_","route":"decision.intake","msg":"ai_cost_guard_backend_unavailable_fail_open"}
+{"level":40,"time":"2026-05-07T07:29:28.084Z","pid":14480,"hostname":"Clariter_Ste_","route":"decision.intake","msg":"ai_cost_guard_backend_unavailable_fail_open"}
+{"level":30,"time":"2026-05-07T07:29:28.086Z","pid":14480,"hostname":"Clariter_Ste_","namespace":"intent_parse","provider":"chatgpt","route":"decision.intake","model":"gpt-4o-mini","durationMs":2,"estimatedCostEur":0.000039,"cacheKey":"ai:cache:v2:intent_parse:10007bb57f4612434c37d570d4d55b16b4c3f829","msg":"ai_cache_miss_completed"}
+{"level":40,"time":"2026-05-07T07:29:28.086Z","pid":14480,"hostname":"Clariter_Ste_","route":"decision.intake","msg":"ai_cost_guard_backend_unavailable_fail_open"}
+{"level":30,"time":"2026-05-07T07:29:28.086Z","pid":14480,"hostname":"Clariter_Ste_","namespace":"intent_parse","provider":"chatgpt","route":"decision.intake","cacheKey":"ai:cache:v2:intent_parse:10007bb57f4612434c37d570d4d55b16b4c3f829","msg":"ai_cache_hit"}
+✔ ai-cache dedupes in-flight concurrent misses (27.4537ms)
+✔ ai-cache supports cache-only mode (no live provider call on miss) (0.3691ms)
+✔ ai-cache tracks estimated cost and cache savings (0.4881ms)
+✔ ai-cost-guard blocks when global per-minute budget is exceeded (0.9483ms)
+✔ ai-cost-guard blocks on estimated token budget limits (9.458ms)
+✔ ai-cost-guard fails closed by default when cache backend is unavailable (0.2986ms)
+✔ ai-cost-guard supports explicit fail-open when configured (0.1971ms)
+✔ parseIntentWithAi skips provider call when heuristic confidence is high (0.8177ms)
+✔ parseIntentWithAi uses semantic cache for near-identical prompts (2.3345ms)
+✔ enrichDecisionWithAi blocks non-allowed plans by policy (0.3547ms)
+✔ enrichDecisionWithAi does not allow free users in production even when AI_ALLOW_FREE_USERS=true (0.1259ms)
+✔ createMultiCityLocalActions updates segments and clears retry visibility (0.3173ms)
+✔ createMultiCityLocalActions build payload forwards normalized form values (0.1425ms)
+✔ createApplyLocalPlanChange normalizes and updates user + message (0.1434ms)
+✔ saveRecentItineraryWithPlanGateAction blocks when limit is reached (0.1123ms)
+✔ saveRecentItineraryWithPlanGateAction saves when already saved even at limit (0.0741ms)
+✔ saveRecentItineraryWithPlanGateAction returns not saved when entry cannot be built (0.0711ms)
+✔ activateFreePlanAction triggers auth flow when unauthenticated (0.071ms)
+✔ activateFreePlanAction applies free plan when authenticated (0.0394ms)
+✔ createApplyLocalPlanChange keeps null user unchanged and emits free message (0.0619ms)
+✔ handleTrackedRoutesLimitReachedAction sets upgrade message from trigger content (0.0748ms)
+✔ handleUntrackedRouteFromHubAction clears selected cluster only on same slug (0.1137ms)
+✔ handleUntrackedRouteFromHubAction is a no-op with empty slug (0.0597ms)
+✔ handleClearLocalTravelDataAction resets state and sets success message (0.2229ms)
+✔ handleClearLocalTravelDataAction requests account hint cleanup (0.0974ms)
+✔ handleClearLocalTravelDataAction sets warning message when some keys fail (0.0848ms)
+✔ viewDealsForTrackedRouteAction updates section and cluster and scrolls into view (0.1465ms)
+✔ viewDealsForTrackedRouteAction is a no-op with empty slug (0.0434ms)
+✔ billing mock mode is disabled in production even when capability is true (0.0592ms)
+✔ billing mock mode is enabled only when capability is true and environment is not production (0.0385ms)
+✔ openJsonPayloadInNewTab opens tab and schedules URL revocation (5.339ms)
+✔ downloadTextFile writes anchor and revokes URL (0.3811ms)
+✔ refreshSubscriptions normalizes drafts for each subscription item (0.3337ms)
+✔ refreshNotifications sets unread count and avoids duplicate browser notifications (0.2847ms)
+✔ upgrade mock endpoints are blocked by default in production (21.8981ms)
+✔ upgrade mock endpoints can be enabled explicitly for non-production environments (7.9156ms)
+✔ upgrade mock endpoints reject non-session auth sources (4.0545ms)
+✔ auth refresh invalidates cookies when refresh rotation detects token reuse (5.8977ms)
+✔ mfa enable rejects expired temporary setup secret (16.393ms)
+{"level":30,"time":"2026-05-07T07:29:28.284Z","pid":14480,"hostname":"Clariter_Ste_","recomputed":true,"upsertedRows":68,"baselineRows":68,"updatedRows":68,"msg":"baseline_recompute_worker_completed"}
+✔ baseline recompute worker refreshes coverage stats (139.8133ms)
+{"level":30,"time":"2026-05-07T07:29:28.308Z","pid":14480,"hostname":"Clariter_Ste_","category":"economic","event_type":"subscription_created","user_id_hash":"53f0affaca981014","user_tier":null,"at":null,"origin":null,"destination":null,"trip_type":null,"revenue_eur":null,"provider_cost_eur":null,"stripe_fee_eur":null,"ai_cost_eur":null,"platform_overhead_eur":null,"gross_margin_eur":null,"net_margin_eur":null,"gross_margin_rate":null,"net_margin_rate":null,"offer_count":null,"bookable_count":null,"excluded_count":null,"guard_action":null,"guard_rules":null,"extra":{"stripe_subscription_id":"sub_test_001","stripe_customer_id":"cus_test_001","plan_id":"price_unknown"},"msg":"economic_event: subscription_created"}
+{"level":30,"time":"2026-05-07T07:29:28.317Z","pid":14480,"hostname":"Clariter_Ste_","billing_provider":"stripe","billing_event_id":"evt_test_http_1778138968294","stripe_event_type":"customer.subscription.created","msg":"billing_webhook_processed"}
+✔ billing webhook accepts a valid Stripe signature (26.3566ms)
+{"level":40,"time":"2026-05-07T07:29:28.322Z","pid":14480,"hostname":"Clariter_Ste_","err":{"type":"StripeSignatureVerificationError","message":"No signatures found matching the expected signature for payload. Are you passing the raw request body you received from Stripe? \n If a webhook request is being forwarded by a third-party tool, ensure that the exact request body, including JSON formatting and new line style, is preserved.\n\nLearn more about webhook signing and explore webhook integration examples for various frameworks at https://docs.stripe.com/webhooks/signature\n","stack":"Error: No signatures found matching the expected signature for payload. Are you passing the raw request body you received from Stripe? \n If a webhook request is being forwarded by a third-party tool, ensure that the exact request body, including JSON formatting and new line style, is preserved.\n\nLearn more about webhook signing and explore webhook integration examples for various frameworks at https://docs.stripe.com/webhooks/signature\n\n    at validateComputedSignature (file:///C:/Users/StefanoGiustini/OneDrive%20-%20Clariter%20Group/Desktop/Flight/node_modules/stripe/esm/Webhooks.js:152:19)\n    at Object.verifyHeader (file:///C:/Users/StefanoGiustini/OneDrive%20-%20Clariter%20Group/Desktop/Flight/node_modules/stripe/esm/Webhooks.js:75:13)\n    at Object.constructEvent (file:///C:/Users/StefanoGiustini/OneDrive%20-%20Clariter%20Group/Desktop/Flight/node_modules/stripe/esm/Webhooks.js:13:32)\n    at StripeBillingWebhookService.parseStripeWebhookEvent (file:///C:/Users/StefanoGiustini/OneDrive%20-%20Clariter%20Group/Desktop/Flight/server/lib/billing/stripe-billing-webhook-service.js:67:30)\n    at StripeBillingWebhookService.handleWebhookRequest (file:///C:/Users/StefanoGiustini/OneDrive%20-%20Clariter%20Group/Desktop/Flight/server/lib/billing/stripe-billing-webhook-service.js:319:20)\n    at StripeBillingService.handleWebhook (file:///C:/Users/StefanoGiustini/OneDrive%20-%20Clariter%20Group/Desktop/Flight/server/lib/billing/stripe-billing-service.js:441:32)\n    at file:///C:/Users/StefanoGiustini/OneDrive%20-%20Clariter%20Group/Desktop/Flight/server/routes/billing.js:87:62\n    at Layer.handleRequest (C:\\Users\\StefanoGiustini\\OneDrive - Clariter Group\\Desktop\\Flight\\node_modules\\router\\lib\\layer.js:152:17)\n    at next (C:\\Users\\StefanoGiustini\\OneDrive - Clariter Group\\Desktop\\Flight\\node_modules\\router\\lib\\route.js:157:13)\n    at Route.dispatch (C:\\Users\\StefanoGiustini\\OneDrive - Clariter Group\\Desktop\\Flight\\node_modules\\router\\lib\\route.js:117:3)","header":"t=9999,v1=invalidsignature","payload":"{\"id\":\"evt_bad\",\"type\":\"ping\"}"},"endpoint":"/api/billing/webhook","msg":"stripe_webhook_signature_invalid"}
+✔ billing webhook rejects invalid Stripe signature (4.7407ms)
+{"level":40,"time":"2026-05-07T07:29:28.326Z","pid":14480,"hostname":"Clariter_Ste_","endpoint":"/api/billing/webhook","msg":"stripe_webhook_secret_missing"}
+✔ billing webhook returns 503 in production when Stripe webhook secret is missing (3.3093ms)
+{"level":30,"time":"2026-05-07T07:29:28.339Z","pid":14480,"hostname":"Clariter_Ste_","billing_provider":"stripe","billing_event_id":"evt_dedupe_1778138968327","stripe_event_type":"customer.subscription.updated","msg":"billing_webhook_processed"}
+{"level":30,"time":"2026-05-07T07:29:28.344Z","pid":14480,"hostname":"Clariter_Ste_","billing_provider":"stripe","billing_event_id":"evt_dedupe_1778138968327","stripe_event_type":"customer.subscription.updated","reason":"already_processed","msg":"billing_webhook_deduped"}
+✔ billing webhook deduplicates repeated Stripe events (18.8045ms)
+{"level":40,"time":"2026-05-07T07:29:28.349Z","pid":14480,"hostname":"Clariter_Ste_","endpoint":"/api/billing/webhook","stripe_event_id":"evt_mode_mismatch_1778138968346","stripe_event_type":"customer.subscription.updated","stripe_event_livemode":false,"stripe_key_mode":"live","msg":"stripe_webhook_mode_mismatch"}
+✔ billing webhook rejects livemode mismatch in production with live Stripe key (4.7341ms)
+{"level":30,"time":"2026-05-07T07:29:28.361Z","pid":14480,"hostname":"Clariter_Ste_","category":"economic","event_type":"payment_received","user_id_hash":null,"user_tier":null,"at":null,"origin":null,"destination":null,"trip_type":null,"revenue_eur":12.99,"provider_cost_eur":null,"stripe_fee_eur":0.6767,"ai_cost_eur":null,"platform_overhead_eur":null,"gross_margin_eur":null,"net_margin_eur":12.3133,"gross_margin_rate":null,"net_margin_rate":0.9479,"offer_count":null,"bookable_count":null,"excluded_count":null,"guard_action":null,"guard_rules":null,"extra":{"invoice_id":"in_test_001","stripe_customer_id":"cus_invoice_sync","stripe_subscription_id":"sub_invoice_sync_001","currency":"EUR","amount_paid_minor":1299},"msg":"economic_event: payment_received"}
+{"level":30,"time":"2026-05-07T07:29:28.366Z","pid":14480,"hostname":"Clariter_Ste_","billing_provider":"stripe","billing_event_id":"evt_invoice_succeeded_1778138968351","stripe_event_type":"invoice.payment_succeeded","msg":"billing_webhook_processed"}
+✔ billing webhook syncs subscription state on invoice.payment_succeeded when invoice contains subscription id (16.5542ms)
+{"level":30,"time":"2026-05-07T07:29:28.378Z","pid":14480,"hostname":"Clariter_Ste_","category":"economic","event_type":"payment_failed","user_id_hash":null,"user_tier":null,"at":null,"origin":null,"destination":null,"trip_type":null,"revenue_eur":12.99,"provider_cost_eur":null,"stripe_fee_eur":null,"ai_cost_eur":null,"platform_overhead_eur":null,"gross_margin_eur":null,"net_margin_eur":null,"gross_margin_rate":null,"net_margin_rate":null,"offer_count":null,"bookable_count":null,"excluded_count":null,"guard_action":null,"guard_rules":null,"extra":{"invoice_id":"in_test_002","stripe_customer_id":"cus_invoice_failed_sync","stripe_subscription_id":"sub_invoice_failed_sync_001","currency":"EUR","amount_due_minor":1299},"msg":"economic_event: payment_failed"}
+{"level":30,"time":"2026-05-07T07:29:28.381Z","pid":14480,"hostname":"Clariter_Ste_","billing_provider":"stripe","billing_event_id":"evt_invoice_failed_1778138968367","stripe_event_type":"invoice.payment_failed","msg":"billing_webhook_processed"}
+✔ billing webhook syncs subscription state on invoice.payment_failed when invoice contains subscription id (15.0655ms)
+{"level":30,"time":"2026-05-07T07:29:28.386Z","pid":14480,"hostname":"Clariter_Ste_","category":"economic","event_type":"checkout_created","user_id_hash":"5096a207225ffdc8","user_tier":"pro","at":null,"origin":null,"destination":null,"trip_type":null,"revenue_eur":12,"provider_cost_eur":null,"stripe_fee_eur":0.648,"ai_cost_eur":null,"platform_overhead_eur":null,"gross_margin_eur":null,"net_margin_eur":11.352,"gross_margin_rate":null,"net_margin_rate":0.946,"offer_count":null,"bookable_count":null,"excluded_count":null,"guard_action":null,"guard_rules":null,"extra":{"price_id":"price_pro_test_123","price_source":"env_price_id","session_id":"cs_test_001","customer_id":"cus_test_001"},"msg":"economic_event: checkout_created"}
+✔ billing checkout creates a Stripe checkout session (6.1505ms)
+✔ billing checkout returns 503 when Stripe is not configured (3.6388ms)
+{"level":40,"time":"2026-05-07T07:29:28.395Z","pid":14480,"hostname":"Clariter_Ste_","endpoint":"/api/billing/checkout","msg":"stripe_inline_price_data_forced_off_in_production"}
+✔ billing checkout does not allow inline price-data fallback in production (3.51ms)
+✔ billing portal creates a Stripe customer portal session (3.3173ms)
+✔ billing change-plan updates Stripe subscription price and returns normalized subscription (3.6214ms)
+✔ billing cancel marks subscription cancel_at_period_end when requested (3.8805ms)
+✔ billing resume clears cancel_at_period_end (3.583ms)
+✔ billing client-token endpoint is removed (2.5163ms)
+✔ billing public-config returns publishable key when configured (2.585ms)
+✔ billing router enforces session auth for checkout (2.7285ms)
+✔ capability matrix: all empty env → everything inactive with reasons (0.2519ms)
+✔ capability matrix: SMTP configured → smtp and email_verification active (0.0851ms)
+✔ capability matrix: placeholder SMTP values → smtp inactive (0.0539ms)
+✔ capability matrix: OpenAI key → ai active (0.0548ms)
+✔ capability matrix: Anthropic key → ai active (0.0414ms)
+✔ capability matrix: Stripe secret key → billing active (0.0396ms)
+✔ capability matrix: Stripe selected but no key → billing inactive (0.0332ms)
+✔ capability matrix: Duffel enabled with key → live_providers active (0.054ms)
+✔ capability matrix: flight scan enabled but no provider → scan inactive (0.0556ms)
+✔ capability matrix: scan + duffel provider → data_source is live (0.0543ms)
+✔ capability matrix: SEARCH_HISTORY_PERSIST_ENABLED=true → search_history enabled (0.0432ms)
+✔ capability matrix: SEARCH_HISTORY_PERSIST_ENABLED empty → search_history disabled (0.0306ms)
+✔ capability matrix: push webhook configured → push active (0.0417ms)
+✔ capability matrix: Google client id → oauth_google active (0.0381ms)
+✔ capability matrix: no GOOGLE_CLIENT_ID → oauth_google inactive with reason (0.0425ms)
+✔ capability matrix: FACEBOOK_CLIENT_ID → oauth_facebook active (0.0545ms)
+✔ capability matrix: FACEBOOK_CLIENT_IDS (multi) → oauth_facebook active (0.0467ms)
+✔ capability matrix: no FACEBOOK_CLIENT_ID → oauth_facebook inactive with reason (0.0394ms)
+✔ capability matrix: APPLE_CLIENT_ID → oauth_apple active (0.0393ms)
+✔ capability matrix: no APPLE_CLIENT_ID → oauth_apple inactive with reason (0.0304ms)
+✔ capability matrix: placeholder APPLE_CLIENT_ID → oauth_apple inactive (0.0293ms)
+✔ capability matrix: push webhook missing → push inactive with reason (0.0295ms)
+✔ coverage gate thresholds are stable (0.0681ms)
+✔ readDb recovers from corrupted primary file using backup snapshot (5.6804ms)
+✔ readDb applies retention policy for tmp and corrupt artifacts (8.7776ms)
+✔ readDb prunes aged auth/telemetry/outbound events by retention policy (4.2421ms)
+{"level":30,"time":"2026-05-07T07:29:28.446Z","pid":14480,"hostname":"Clariter_Ste_","providerFlags":{"duffel":false,"kiwi":false,"skyscanner":false,"travelpayoutsAffiliate":true},"msg":"provider_registry_profile"}
+{"level":30,"time":"2026-05-07T07:29:28.490Z","pid":14480,"hostname":"Clariter_Ste_","category":"economic","event_type":"daily_cost_per_user","user_id_hash":null,"user_tier":"all","at":"2026-05-07T07:29:28.490Z","origin":null,"destination":null,"trip_type":null,"revenue_eur":26050.34,"provider_cost_eur":19140,"stripe_fee_eur":null,"ai_cost_eur":9.9,"platform_overhead_eur":null,"gross_margin_eur":6910.34,"net_margin_eur":5830.1836,"gross_margin_rate":0.2653,"net_margin_rate":0.2238,"offer_count":null,"bookable_count":null,"excluded_count":null,"guard_action":null,"guard_rules":null,"extra":{"day_bucket":"20260507","daily_cost_per_user":{"provider":19140,"ai":9.9,"total":19149.9},"daily_calls_per_user":{"search":0,"provider":0,"ai":0},"throttled_search_429":0},"msg":"economic_event: daily_cost_per_user"}
+✔ dev funnel helpers expose runtime health and recent telemetry (56.3942ms)
+{"level":30,"time":"2026-05-07T07:29:28.498Z","pid":14480,"hostname":"Clariter_Ste_","dealId":"deal_test_d1b58372","provider":"tde_booking","origin":"FCO","destination":"TYO","affiliateUrl":"https://booking.travel-decision-engine.com/search","msg":"redirect_destination_resolved"}
+{"level":30,"time":"2026-05-07T07:29:28.500Z","pid":14480,"hostname":"Clariter_Ste_","dealId":"deal_test_d1b58372","provider":"tde_booking","redirectStatus":302,"affiliateUrl":"https://booking.travel-decision-engine.com/search","msg":"redirect_issued"}
+✔ redirect endpoint tracks click and issues 302 with monetized destination (6.1069ms)
+✔ kiwi affiliate link uses Travelpayouts click wrapper when configured (1.3598ms)
+✔ kiwi affiliate link falls back to kiwi search url when wrapper disabled (1.0111ms)
+{"level":30,"time":"2026-05-07T07:29:28.510Z","pid":14480,"hostname":"Clariter_Ste_","origin":"ZZZ","destination":"YYY","departureDate":"2027-02-10","fingerprint":"99b9c653614b52f1a559fb1a7063d42f7fd8f5ebe6133d21011648f92f69d08d","msg":"realtime_processing_triggered"}
+✔ ingestion dedupe blocks duplicate fingerprint (9.004ms)
+{"level":30,"time":"2026-05-07T07:29:28.514Z","pid":14480,"hostname":"Clariter_Ste_","origin":"ZZZ","dest":"YYY","date":"2027-02-10","reason":"below_anomaly_threshold","dealDelta":0,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:28.518Z","pid":14480,"hostname":"Clariter_Ste_","origin":"QWE","destination":"RTY","departureDate":"2027-03-10","fingerprint":"b1f1dfeba91213fd63ad257d26bf2767db2eac9ddb133acf94601457d89e44fb","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:28.522Z","pid":14480,"hostname":"Clariter_Ste_","origin":"QWE","destination":"RTY","departureDate":"2027-03-10","fingerprint":"c86cd560498f8bd5b570736fe1a46c064f283758eb5448674f3da07f8d830b77","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:28.523Z","pid":14480,"hostname":"Clariter_Ste_","origin":"QWE","dest":"RTY","date":"2027-03-10","reason":"below_anomaly_threshold","dealDelta":0.1429,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:28.523Z","pid":14480,"hostname":"Clariter_Ste_","origin":"QWE","dest":"RTY","date":"2027-03-10","price":100,"dealType":"hidden_deal","confidence":41,"delta":0.2857,"baselineSource":"route_baselines","msg":"rt_deal_published"}
+{"level":30,"time":"2026-05-07T07:29:28.525Z","pid":14480,"hostname":"Clariter_Ste_","origin":"QWE","destination":"RTY","departureDate":"2027-03-10","fingerprint":"2939742df6cb71b7dbfd0b7213b170cc76898f09250f64fa5d01680c812156a4","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:28.527Z","pid":14480,"hostname":"Clariter_Ste_","origin":"QWE","dest":"RTY","date":"2027-03-10","reason":"below_anomaly_threshold","dealDelta":0,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:28.528Z","pid":14480,"hostname":"Clariter_Ste_","origin":"QWE","destination":"RTY","departureDate":"2027-03-10","fingerprint":"c82b79e8646d13a5949a24c2f7bdd03263ebe7bdeeecd2dfb2bd829bf40aa480","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:28.530Z","pid":14480,"hostname":"Clariter_Ste_","origin":"QWE","dest":"RTY","date":"2027-03-10","reason":"below_anomaly_threshold","dealDelta":-0.1429,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:28.532Z","pid":14480,"hostname":"Clariter_Ste_","origin":"QWE","destination":"RTY","departureDate":"2027-03-10","fingerprint":"13d154eac5542993d8d0f1dadb520abc3e18b2c36f570650674489c5e90de41a","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:28.534Z","pid":14480,"hostname":"Clariter_Ste_","origin":"QWE","dest":"RTY","date":"2027-03-10","reason":"below_anomaly_threshold","dealDelta":-0.2857,"minDelta":0.18,"msg":"rt_deal_skipped"}
+✔ dealScore rules map to scream and great correctly (28.5931ms)
+✔ deals content engine builds the requested sections and channel outputs (26.6917ms)
+✔ deals content engine delivers push, newsletter and social payloads (4.2787ms)
+✔ detected deals engine stores only realistic high-value deals (3.4611ms)
+✔ detected deals engine promotes near-threshold candidate when no published deals exist (1.33ms)
+✔ detected deals engine boosts shorter itineraries in final score (1.411ms)
+✔ detected deals engine allows bootstrap fallback when historical stats are sparse (1.3261ms)
+✔ detected deals engine enriches bootstrap metadata from travel opportunities when missing savings context (1.5415ms)
+✔ detected deals engine deletes expired rows older than retention window (1.7805ms)
+✔ detected deals pipeline builds feed from flight_quotes and route_price_stats (4.2204ms)
+✔ discovery feed service builds base queries and categories from detected_deals only (2.0491ms)
+✔ discovery feed service filters expired/stale noise and dedupes near-duplicates (1.1412ms)
+✔ discovery feed service filters non-bookable rows and applies destination diversity cap (1.1556ms)
+✔ discovery feed runtime metrics increase after build invocation (0.3459ms)
+✔ discovery feed service keeps offers with unknown duration encoded as zero (0.803ms)
+✔ discovery feed service uses stale fallback only when primary freshness window is empty (1.3237ms)
+✔ discovery feed service can fallback to candidate deals when published feed is empty (1.4371ms)
+✔ discovery feed meta.data_source is "internal" when no live providers configured (0.7909ms)
+✔ discovery feed meta.data_source is "live" when scan enabled with Duffel provider (0.7034ms)
+✔ discovery feed meta.data_source is "internal" when scan enabled but no provider (0.7605ms)
+{"level":30,"time":"2026-05-07T07:29:28.646Z","pid":14480,"hostname":"Clariter_Ste_","origin":null,"maxPrice":0,"limit":5,"sourceRows":0,"validCandidates":0,"nearDuplicateFiltered":0,"destinationDiversityFiltered":0,"totalCandidates":0,"freshnessFallbackUsed":false,"freshnessPrimaryMaxAgeHours":168,"freshnessEffectiveMaxAgeHours":168,"durationMs":29,"rankingVariant":"A","mode":"postgres","msg":"discovery_feed_built_from_detected_deals"}
+✔ discovery router exposes feed and inspiration endpoints (55.027ms)
+{"level":30,"time":"2026-05-07T07:29:28.678Z","pid":14480,"hostname":"Clariter_Ste_","skipped":false,"reason":null,"processed":0,"matched":0,"sentInApp":0,"sentEmail":0,"sentPush":0,"deduped":0,"failed":0,"cursorFrom":null,"cursorTo":null,"checkedAlerts":0,"triggeredAlerts":0,"msg":"price_alerts_scan_completed"}
+✔ discovery router supports price drop alerts CRUD (31.6954ms)
+✔ confidenceForCount maps sample sizes consistently (0.1436ms)
+✔ qualityGateForCount enforces visibility tiers (0.0653ms)
+✔ canonicalScoreFromPercentiles respects badge thresholds and score bounds (0.2586ms)
+✔ legacyLevelFromBadge keeps backward-compatible mapping (0.0768ms)
+✔ normalizeEconomicEventForStorage hashes user id and computes margins (0.1132ms)
+✔ normalizeEconomicEventForStorage keeps unmapped payload in extra and strips raw user ids (0.0758ms)
+✔ EMAIL_DRY_RUN=true does not create or use a real SMTP transport (0.2599ms)
+✔ production real-email mode fails readiness when SMTP credentials are missing (1.4074ms)
+✔ Free users cannot receive instant price alert emails (0.3379ms)
+✔ Free digest uses cached public data only and skips when there is no value (0.7856ms)
+✔ Pro alert email is skipped when email delivery is not ready (0.1616ms)
+✔ Elite higher-frequency alert email requires provider readiness (0.1035ms)
+✔ email workers respect opt-out preferences (0.1003ms)
+✔ alert emails are idempotent by key (0.3006ms)
+✔ SMTP_PASS never appears in provider logs (0.1453ms)
+✔ templates include manage-preferences and privacy links (0.163ms)
+✔ new email workers do not introduce browser push delivery (1.4222ms)
+✔ anomaly-detector flags strong under-baseline deal (0.0997ms)
+✔ deal-ranking-engine v2 returns bounded confidence and reasons (0.0862ms)
+✔ window-finder-engine returns deterministic price-first ordering (2.0445ms)
+✔ core price metrics are derived from local seasonal bands (0.096ms)
+✔ comfort score penalizes night flights and extra stops (0.0682ms)
+✔ searchFlights sorting is deterministic: price asc then saving desc (0.1602ms)
+✔ decideTrips returns top 4 when requested and uses budget field (0.1872ms)
+✔ price-history-store dedupes identical fingerprints (15.2687ms)
+✔ deal-ranking rules classify and bound score (0.1811ms)
+✔ deal-detector flags strong under-baseline prices (40.4188ms)
+✔ free plan cost limits disable AI, live provider search and multi-city live scans (0.1542ms)
+✔ free cost metrics track AI/provider blocks and cache hits by plan (0.1774ms)
+✔ free AI block payload is explicit and non-upgrade-bypassable (0.0664ms)
+✔ free multi-city live search is blocked before provider service (4.5973ms)
+✔ anonymous AI decision request returns 403 and does not call AI provider (3.6109ms)
+✔ GET /api/free/public-deals returns at most 10 cached public deals (3.4786ms)
+✔ GET /api/free/public-deals falls back to declared demo snapshot on cache miss (2.5828ms)
+✔ GET /api/free/route-insight uses cached route data and deterministic templates (3.2304ms)
+✔ GET /api/free/route-insight validates input and never invents live data (3.8472ms)
+✔ POST /api/free/radar/refresh blocks live refresh and records cost guard metrics (2.4822ms)
+✔ buildBasicRouteInsight has deterministic no-AI outputs (0.0787ms)
+✔ smoke /api/health returns ok (5983.298ms)
+✔ createIngestionJob closes stale running jobs of same type before inserting a new run (18.918ms)
+{"level":30,"time":"2026-05-07T07:29:34.790Z","pid":14480,"hostname":"Clariter_Ste_","cacheKey":"live:search:v2:MXP:2026-06-21:ow:1:economy:BCN,JFK","originIata":"MXP","destinations":2,"msg":"cache_miss"}
+{"level":40,"time":"2026-05-07T07:29:34.791Z","pid":14480,"hostname":"Clariter_Ste_","route":"MXP-JFK","userId":"u_budget_1","reason":"global_per_minute_calls_exceeded","used":2,"limit":1,"plannedCalls":1,"msg":"budget_exceeded_provider"}
+{"level":40,"time":"2026-05-07T07:29:34.791Z","pid":14480,"hostname":"Clariter_Ste_","originIata":"MXP","destinationIata":"JFK","reason":"global_per_minute_calls_exceeded","msg":"live_flight_provider_call_blocked_by_budget"}
+{"level":30,"time":"2026-05-07T07:29:34.791Z","pid":14480,"hostname":"Clariter_Ste_","originIata":"MXP","queried":2,"bundleCacheHit":false,"cacheHits":0,"liveFetches":1,"failures":0,"budgetBlocked":1,"budgetReasons":{"global_per_minute_calls_exceeded":1},"bundleTtlSec":120,"msg":"live_flight_search_cache_summary"}
+{"level":30,"time":"2026-05-07T07:29:34.792Z","pid":14480,"hostname":"Clariter_Ste_","cacheKey":"live:search:v2:MXP:2026-06-21:ow:1:economy:BCN,JFK","originIata":"MXP","destinations":2,"msg":"cache_miss"}
+{"level":30,"time":"2026-05-07T07:29:34.792Z","pid":14480,"hostname":"Clariter_Ste_","originIata":"MXP","queried":2,"bundleCacheHit":false,"cacheHits":0,"liveFetches":2,"failures":0,"budgetBlocked":0,"budgetReasons":{},"bundleTtlSec":120,"msg":"live_flight_search_cache_summary"}
+{"level":30,"time":"2026-05-07T07:29:34.792Z","pid":14480,"hostname":"Clariter_Ste_","cacheKey":"live:search:v2:MXP:2026-06-21:ow:1:economy:BCN,JFK","originIata":"MXP","destinations":2,"msg":"cache_hit"}
+{"level":30,"time":"2026-05-07T07:29:34.792Z","pid":14480,"hostname":"Clariter_Ste_","originIata":"MXP","queried":2,"bundleCacheHit":true,"liveFetches":0,"failures":0,"msg":"live_flight_search_cache_summary"}
+{"level":30,"time":"2026-05-07T07:29:34.792Z","pid":14480,"hostname":"Clariter_Ste_","cacheKey":"live:search:v2:MXP:2026-06-26:ow:1:premium:BCN,JFK","originIata":"MXP","destinations":2,"msg":"cache_miss"}
+{"level":30,"time":"2026-05-07T07:29:34.793Z","pid":14480,"hostname":"Clariter_Ste_","originIata":"MXP","queried":2,"bundleCacheHit":false,"cacheHits":0,"liveFetches":2,"failures":0,"budgetBlocked":0,"budgetReasons":{},"bundleTtlSec":120,"msg":"live_flight_search_cache_summary"}
+{"level":30,"time":"2026-05-07T07:29:34.793Z","pid":14480,"hostname":"Clariter_Ste_","cacheKey":"live:search:v2:MXP:2026-06-26:ow:1:premium:BCN,JFK","originIata":"MXP","destinations":2,"msg":"cache_hit"}
+{"level":30,"time":"2026-05-07T07:29:34.793Z","pid":14480,"hostname":"Clariter_Ste_","originIata":"MXP","queried":2,"bundleCacheHit":true,"liveFetches":0,"failures":0,"msg":"live_flight_search_cache_summary"}
+{"level":30,"time":"2026-05-07T07:29:34.793Z","pid":14480,"hostname":"Clariter_Ste_","cacheKey":"live:search:v2:FCO:2026-06-06:ow:1:economy:MAD","originIata":"FCO","destinations":1,"msg":"cache_miss"}
+{"level":30,"time":"2026-05-07T07:29:34.793Z","pid":14480,"hostname":"Clariter_Ste_","cacheKey":"live:search:v2:FCO:2026-06-06:ow:1:economy:MAD","originIata":"FCO","destinations":1,"msg":"cache_miss"}
+✔ runIngestionJobsMaintenance force-closes stale running jobs (10.1298ms)
+﹣ issueApiKey PG: 5 concurrent requests with maxKeys=2 → exactly 2 succeed (0.366ms) # SKIP
+﹣ createAlert PG: 5 concurrent requests with maxAlerts=3 → exactly 3 succeed (0.0414ms) # SKIP
+﹣ rotateApiKey PG: 2 concurrent rotations on same key → exactly 1 wins (0.0229ms) # SKIP
+﹣ getOrCreateSubscription PG: 5 concurrent calls for new user → 1 row, all callers get same id (0.0217ms) # SKIP
+▶ live-flight-service intelligent caching
+  ✔ blocks extra live provider calls when budget is exceeded and keeps partial feed (2.0513ms)
+  ✔ reuses bundle cache for repeated search requests (0.7205ms)
+  ✔ uses deterministic keys for quasi-identical inputs (0.7003ms)
+{"level":30,"time":"2026-05-07T07:29:34.833Z","pid":14480,"hostname":"Clariter_Ste_","originIata":"FCO","queried":1,"bundleCacheHit":false,"cacheHits":0,"liveFetches":1,"failures":0,"budgetBlocked":0,"budgetReasons":{},"bundleTtlSec":120,"msg":"live_flight_search_cache_summary"}
+{"level":40,"time":"2026-05-07T07:29:34.833Z","pid":14480,"hostname":"Clariter_Ste_","err":"cache get failed","key":"live:search:v2:VCE:2026-05-28:ow:1:economy:LHR","msg":"live_flight_cache_read_failed"}
+{"level":30,"time":"2026-05-07T07:29:34.833Z","pid":14480,"hostname":"Clariter_Ste_","cacheKey":"live:search:v2:VCE:2026-05-28:ow:1:economy:LHR","originIata":"VCE","destinations":1,"msg":"cache_miss"}
+{"level":40,"time":"2026-05-07T07:29:34.834Z","pid":14480,"hostname":"Clariter_Ste_","err":"cache get failed","key":"live:search:v2:VCE:2026-05-28:ow:1:economy:LHR","msg":"live_flight_cache_read_failed"}
+{"level":40,"time":"2026-05-07T07:29:34.834Z","pid":14480,"hostname":"Clariter_Ste_","err":"cache get failed","key":"live:offers:v2:VCE:LHR:2026-05-28:ow:1:economy","msg":"live_flight_cache_read_failed"}
+{"level":40,"time":"2026-05-07T07:29:34.834Z","pid":14480,"hostname":"Clariter_Ste_","err":"cache get failed","key":"live:offers:v2:VCE:LHR:2026-05-28:ow:1:economy","msg":"live_flight_cache_read_failed"}
+{"level":40,"time":"2026-05-07T07:29:34.834Z","pid":14480,"hostname":"Clariter_Ste_","err":"cache set failed","key":"live:offers:v2:VCE:LHR:2026-05-28:ow:1:economy","ttlSec":1800,"msg":"live_flight_cache_write_failed"}
+{"level":40,"time":"2026-05-07T07:29:34.834Z","pid":14480,"hostname":"Clariter_Ste_","err":"cache set failed","key":"live:search:v2:VCE:2026-05-28:ow:1:economy:LHR","ttlSec":120,"msg":"live_flight_cache_write_failed"}
+{"level":30,"time":"2026-05-07T07:29:34.834Z","pid":14480,"hostname":"Clariter_Ste_","originIata":"VCE","queried":1,"bundleCacheHit":false,"cacheHits":0,"liveFetches":1,"failures":0,"budgetBlocked":0,"budgetReasons":{},"bundleTtlSec":120,"msg":"live_flight_search_cache_summary"}
+{"level":30,"time":"2026-05-07T07:29:34.834Z","pid":14480,"hostname":"Clariter_Ste_","cacheKey":"live:search:v2:BLQ:2026-05-25:ow:1:economy:SIN","originIata":"BLQ","destinations":1,"msg":"cache_miss"}
+{"level":30,"time":"2026-05-07T07:29:34.834Z","pid":14480,"hostname":"Clariter_Ste_","originIata":"BLQ","queried":1,"bundleCacheHit":false,"cacheHits":0,"liveFetches":1,"failures":0,"budgetBlocked":0,"budgetReasons":{},"bundleTtlSec":90,"msg":"live_flight_search_cache_summary"}
+{"level":30,"time":"2026-05-07T07:29:34.834Z","pid":14480,"hostname":"Clariter_Ste_","cacheKey":"live:search:v2:BLQ:2026-05-25:ow:1:economy:SIN","originIata":"BLQ","destinations":1,"msg":"cache_hit"}
+{"level":30,"time":"2026-05-07T07:29:34.834Z","pid":14480,"hostname":"Clariter_Ste_","originIata":"BLQ","queried":1,"bundleCacheHit":true,"liveFetches":0,"failures":0,"msg":"live_flight_search_cache_summary"}
+{"level":30,"time":"2026-05-07T07:29:34.834Z","pid":14480,"hostname":"Clariter_Ste_","cacheKey":"live:search:v2:MXP:2026-06-16:ow:1:economy:BCN","originIata":"MXP","destinations":1,"msg":"cache_miss"}
+{"level":30,"time":"2026-05-07T07:29:34.835Z","pid":14480,"hostname":"Clariter_Ste_","originIata":"MXP","queried":1,"bundleCacheHit":false,"cacheHits":0,"liveFetches":1,"failures":0,"budgetBlocked":0,"budgetReasons":{},"bundleTtlSec":120,"msg":"live_flight_search_cache_summary"}
+{"level":30,"time":"2026-05-07T07:29:34.835Z","pid":14480,"hostname":"Clariter_Ste_","cacheKey":"live:search:v2:MXP:2026-06-16:ow:1:economy:BCN","originIata":"MXP","destinations":1,"msg":"cache_hit"}
+{"level":30,"time":"2026-05-07T07:29:34.835Z","pid":14480,"hostname":"Clariter_Ste_","originIata":"MXP","queried":1,"bundleCacheHit":true,"liveFetches":0,"failures":0,"msg":"live_flight_search_cache_summary"}
+{"level":30,"time":"2026-05-07T07:29:34.835Z","pid":14480,"hostname":"Clariter_Ste_","deleted":2,"keyCount":2,"msg":"live_flight_cache_invalidated"}
+{"level":30,"time":"2026-05-07T07:29:34.835Z","pid":14480,"hostname":"Clariter_Ste_","cacheKey":"live:search:v2:MXP:2026-06-16:ow:1:economy:BCN","originIata":"MXP","destinations":1,"msg":"cache_miss"}
+{"level":30,"time":"2026-05-07T07:29:34.835Z","pid":14480,"hostname":"Clariter_Ste_","originIata":"MXP","queried":1,"bundleCacheHit":false,"cacheHits":0,"liveFetches":1,"failures":0,"budgetBlocked":0,"budgetReasons":{},"bundleTtlSec":120,"msg":"live_flight_search_cache_summary"}
+{"level":30,"time":"2026-05-07T07:29:34.835Z","pid":14480,"hostname":"Clariter_Ste_","cacheKey":"live:search:v2:FCO:2026-08-05:ow:1:economy:JFK","originIata":"FCO","destinations":1,"msg":"cache_miss"}
+{"level":30,"time":"2026-05-07T07:29:34.835Z","pid":14480,"hostname":"Clariter_Ste_","originIata":"FCO","queried":1,"bundleCacheHit":false,"cacheHits":0,"liveFetches":1,"failures":0,"budgetBlocked":0,"budgetReasons":{},"bundleTtlSec":120,"msg":"live_flight_search_cache_summary"}
+{"level":30,"time":"2026-05-07T07:29:34.835Z","pid":14480,"hostname":"Clariter_Ste_","deleted":2,"keyCount":2,"msg":"live_flight_cache_invalidated"}
+{"level":30,"time":"2026-05-07T07:29:34.835Z","pid":14480,"hostname":"Clariter_Ste_","cacheKey":"live:search:v2:FCO:2026-08-05:ow:1:economy:JFK","originIata":"FCO","destinations":1,"msg":"cache_miss"}
+{"level":30,"time":"2026-05-07T07:29:34.835Z","pid":14480,"hostname":"Clariter_Ste_","originIata":"FCO","queried":1,"bundleCacheHit":false,"cacheHits":0,"liveFetches":1,"failures":0,"budgetBlocked":0,"budgetReasons":{},"bundleTtlSec":120,"msg":"live_flight_search_cache_summary"}
+{"level":30,"time":"2026-05-07T07:29:34.836Z","pid":14480,"hostname":"Clariter_Ste_","deleted":2,"keyCount":2,"msg":"live_flight_cache_invalidated"}
+{"level":30,"time":"2026-05-07T07:29:34.836Z","pid":14480,"hostname":"Clariter_Ste_","cacheKey":"live:search:v2:FCO:2026-08-05:ow:1:economy:JFK","originIata":"FCO","destinations":1,"msg":"cache_miss"}
+{"level":30,"time":"2026-05-07T07:29:34.836Z","pid":14480,"hostname":"Clariter_Ste_","originIata":"FCO","queried":1,"bundleCacheHit":false,"cacheHits":0,"liveFetches":1,"failures":0,"budgetBlocked":0,"budgetReasons":{},"bundleTtlSec":120,"msg":"live_flight_search_cache_summary"}
+{"level":30,"time":"2026-05-07T07:29:34.836Z","pid":14480,"hostname":"Clariter_Ste_","deleted":2,"keyCount":2,"msg":"live_flight_cache_invalidated"}
+{"level":30,"time":"2026-05-07T07:29:34.836Z","pid":14480,"hostname":"Clariter_Ste_","cacheKey":"live:search:v2:FCO:2026-08-05:ow:1:economy:JFK","originIata":"FCO","destinations":1,"msg":"cache_miss"}
+{"level":30,"time":"2026-05-07T07:29:34.836Z","pid":14480,"hostname":"Clariter_Ste_","originIata":"FCO","queried":1,"bundleCacheHit":false,"cacheHits":0,"liveFetches":1,"failures":0,"budgetBlocked":0,"budgetReasons":{},"bundleTtlSec":120,"msg":"live_flight_search_cache_summary"}
+{"level":30,"time":"2026-05-07T07:29:34.836Z","pid":14480,"hostname":"Clariter_Ste_","deleted":2,"keyCount":2,"msg":"live_flight_cache_invalidated"}
+{"level":30,"time":"2026-05-07T07:29:34.836Z","pid":14480,"hostname":"Clariter_Ste_","cacheKey":"live:search:v2:FCO:2026-08-05:ow:1:economy:JFK","originIata":"FCO","destinations":1,"msg":"cache_miss"}
+{"level":30,"time":"2026-05-07T07:29:34.836Z","pid":14480,"hostname":"Clariter_Ste_","originIata":"FCO","queried":1,"bundleCacheHit":false,"cacheHits":0,"liveFetches":1,"failures":0,"budgetBlocked":0,"budgetReasons":{},"bundleTtlSec":120,"msg":"live_flight_search_cache_summary"}
+{"level":30,"time":"2026-05-07T07:29:34.836Z","pid":14480,"hostname":"Clariter_Ste_","deleted":2,"keyCount":2,"msg":"live_flight_cache_invalidated"}
+{"level":30,"time":"2026-05-07T07:29:34.836Z","pid":14480,"hostname":"Clariter_Ste_","cacheKey":"live:search:v2:FCO:2026-08-05:ow:1:economy:JFK","originIata":"FCO","destinations":1,"msg":"cache_miss"}
+{"level":30,"time":"2026-05-07T07:29:34.836Z","pid":14480,"hostname":"Clariter_Ste_","originIata":"FCO","queried":1,"bundleCacheHit":false,"cacheHits":0,"liveFetches":1,"failures":0,"budgetBlocked":0,"budgetReasons":{},"bundleTtlSec":120,"msg":"live_flight_search_cache_summary"}
+{"level":30,"time":"2026-05-07T07:29:34.836Z","pid":14480,"hostname":"Clariter_Ste_","deleted":2,"keyCount":2,"msg":"live_flight_cache_invalidated"}
+{"level":30,"time":"2026-05-07T07:29:34.836Z","pid":14480,"hostname":"Clariter_Ste_","cacheKey":"live:search:v2:FCO:2026-08-05:ow:1:economy:JFK","originIata":"FCO","destinations":1,"msg":"cache_miss"}
+{"level":30,"time":"2026-05-07T07:29:34.836Z","pid":14480,"hostname":"Clariter_Ste_","originIata":"FCO","queried":1,"bundleCacheHit":false,"cacheHits":0,"liveFetches":1,"failures":0,"budgetBlocked":0,"budgetReasons":{},"bundleTtlSec":120,"msg":"live_flight_search_cache_summary"}
+{"level":30,"time":"2026-05-07T07:29:34.836Z","pid":14480,"hostname":"Clariter_Ste_","deleted":2,"keyCount":2,"msg":"live_flight_cache_invalidated"}
+{"level":30,"time":"2026-05-07T07:29:34.836Z","pid":14480,"hostname":"Clariter_Ste_","cacheKey":"live:search:v2:FCO:2026-08-05:ow:1:economy:JFK","originIata":"FCO","destinations":1,"msg":"cache_miss"}
+{"level":30,"time":"2026-05-07T07:29:34.836Z","pid":14480,"hostname":"Clariter_Ste_","originIata":"FCO","queried":1,"bundleCacheHit":false,"cacheHits":0,"liveFetches":1,"failures":0,"budgetBlocked":0,"budgetReasons":{},"bundleTtlSec":120,"msg":"live_flight_search_cache_summary"}
+{"level":30,"time":"2026-05-07T07:29:34.836Z","pid":14480,"hostname":"Clariter_Ste_","deleted":2,"keyCount":2,"msg":"live_flight_cache_invalidated"}
+{"level":30,"time":"2026-05-07T07:29:34.838Z","pid":14480,"hostname":"Clariter_Ste_","category":"economic","event_type":"offer_priced","user_id_hash":null,"user_tier":null,"at":null,"origin":"MXP","destination":"BCN","trip_type":null,"revenue_eur":160,"provider_cost_eur":100,"stripe_fee_eur":null,"ai_cost_eur":null,"platform_overhead_eur":null,"gross_margin_eur":59.5,"net_margin_eur":54.46,"gross_margin_rate":0.3719,"net_margin_rate":0.3404,"offer_count":null,"bookable_count":null,"excluded_count":null,"guard_action":null,"guard_rules":null,"extra":{"offer_id":"test-offer-id","economics_breakdown":{"revenueEur":160,"providerCost":100,"adjustedProviderCost":100.5,"duffelBufferEur":0.5,"stripeFeeEur":4.94,"aiCostEur":0.1,"totalCostEur":105.54,"grossMarginEur":59.5,"grossMarginRate":0.3719,"netMarginEur":54.46,"netMarginRate":0.3404,"passesNetMarginEur":true,"passesNetMarginRate":true}},"msg":"economic_event: offer_priced"}
+{"level":30,"time":"2026-05-07T07:29:34.840Z","pid":14480,"hostname":"Clariter_Ste_","category":"economic","event_type":"offer_priced","user_id_hash":null,"user_tier":null,"at":null,"origin":"MXP","destination":"BCN","trip_type":null,"revenue_eur":200,"provider_cost_eur":120,"stripe_fee_eur":null,"ai_cost_eur":null,"platform_overhead_eur":null,"gross_margin_eur":79.4,"net_margin_eur":73.2,"gross_margin_rate":0.397,"net_margin_rate":0.366,"offer_count":null,"bookable_count":null,"excluded_count":null,"guard_action":null,"guard_rules":null,"extra":{"offer_id":"test-offer-id","economics_breakdown":{"revenueEur":200,"providerCost":120,"adjustedProviderCost":120.6,"duffelBufferEur":0.6,"stripeFeeEur":6.1,"aiCostEur":0.1,"totalCostEur":126.8,"grossMarginEur":79.4,"grossMarginRate":0.397,"netMarginEur":73.2,"netMarginRate":0.366,"passesNetMarginEur":true,"passesNetMarginRate":true}},"msg":"economic_event: offer_priced"}
+{"level":30,"time":"2026-05-07T07:29:34.841Z","pid":14480,"hostname":"Clariter_Ste_","category":"economic","event_type":"offer_priced","user_id_hash":null,"user_tier":null,"at":null,"origin":"MXP","destination":"BCN","trip_type":null,"revenue_eur":150,"provider_cost_eur":100,"stripe_fee_eur":null,"ai_cost_eur":null,"platform_overhead_eur":null,"gross_margin_eur":49.5,"net_margin_eur":44.75,"gross_margin_rate":0.33,"net_margin_rate":0.2983,"offer_count":null,"bookable_count":null,"excluded_count":null,"guard_action":null,"guard_rules":null,"extra":{"offer_id":"test-offer-id","economics_breakdown":{"revenueEur":150,"providerCost":100,"adjustedProviderCost":100.5,"duffelBufferEur":0.5,"stripeFeeEur":4.65,"aiCostEur":0.1,"totalCostEur":105.25,"grossMarginEur":49.5,"grossMarginRate":0.33,"netMarginEur":44.75,"netMarginRate":0.2983,"passesNetMarginEur":true,"passesNetMarginRate":true}},"msg":"economic_event: offer_priced"}
+{"level":40,"time":"2026-05-07T07:29:34.843Z","pid":14480,"hostname":"Clariter_Ste_","offer_id":"test-offer-id","origin":"MXP","dest":"BCN","currency":"EUR","display_price":100,"provider_cost":100,"net_margin_eur":-3.8,"net_margin_rate":-0.038,"min_net_margin_eur":3,"min_net_margin_rate":0.03,"rules_triggered":["net_margin_below_absolute_floor","net_margin_below_rate_floor"],"configured_action":"recalculate","msg":"margin_guard_below_minimum"}
+{"level":30,"time":"2026-05-07T07:29:34.843Z","pid":14480,"hostname":"Clariter_Ste_","offer_id":"test-offer-id","dest":"BCN","original_price":100,"recalculated_price":107.23,"provider_cost":100,"new_net_margin_eur":3.22,"rules_triggered":["net_margin_below_absolute_floor","net_margin_below_rate_floor"],"msg":"margin_guard_price_recalculated"}
+{"level":30,"time":"2026-05-07T07:29:34.843Z","pid":14480,"hostname":"Clariter_Ste_","category":"economic","event_type":"offer_repriced","user_id_hash":null,"user_tier":null,"at":null,"origin":"MXP","destination":"BCN","trip_type":null,"revenue_eur":107.23,"provider_cost_eur":100,"stripe_fee_eur":3.41,"ai_cost_eur":0.1,"platform_overhead_eur":null,"gross_margin_eur":6.73,"net_margin_eur":3.22,"gross_margin_rate":0.0628,"net_margin_rate":0.03,"offer_count":1,"bookable_count":1,"excluded_count":0,"guard_action":"recalculate","guard_rules":"net_margin_below_absolute_floor,net_margin_below_rate_floor","extra":{"offer_id":"test-offer-id","original_display_price":100,"recalculated_display_price":107.23},"msg":"economic_event: offer_repriced"}
+{"level":40,"time":"2026-05-07T07:29:34.844Z","pid":14480,"hostname":"Clariter_Ste_","offer_id":"test-offer-id","origin":"MXP","dest":"BCN","currency":"EUR","display_price":101,"provider_cost":100,"net_margin_eur":-2.83,"net_margin_rate":-0.028,"min_net_margin_eur":3,"min_net_margin_rate":0.03,"rules_triggered":["net_margin_below_absolute_floor","net_margin_below_rate_floor"],"configured_action":"recalculate","msg":"margin_guard_below_minimum"}
+{"level":30,"time":"2026-05-07T07:29:34.844Z","pid":14480,"hostname":"Clariter_Ste_","offer_id":"test-offer-id","dest":"BCN","original_price":101,"recalculated_price":107.23,"provider_cost":100,"new_net_margin_eur":3.22,"rules_triggered":["net_margin_below_absolute_floor","net_margin_below_rate_floor"],"msg":"margin_guard_price_recalculated"}
+{"level":30,"time":"2026-05-07T07:29:34.844Z","pid":14480,"hostname":"Clariter_Ste_","category":"economic","event_type":"offer_repriced","user_id_hash":null,"user_tier":null,"at":null,"origin":"MXP","destination":"BCN","trip_type":null,"revenue_eur":107.23,"provider_cost_eur":100,"stripe_fee_eur":3.41,"ai_cost_eur":0.1,"platform_overhead_eur":null,"gross_margin_eur":6.73,"net_margin_eur":3.22,"gross_margin_rate":0.0628,"net_margin_rate":0.03,"offer_count":1,"bookable_count":1,"excluded_count":0,"guard_action":"recalculate","guard_rules":"net_margin_below_absolute_floor,net_margin_below_rate_floor","extra":{"offer_id":"test-offer-id","original_display_price":101,"recalculated_display_price":107.23},"msg":"economic_event: offer_repriced"}
+{"level":40,"time":"2026-05-07T07:29:34.845Z","pid":14480,"hostname":"Clariter_Ste_","offer_id":"test-offer-id","origin":"MXP","dest":"BCN","currency":"EUR","display_price":102,"provider_cost":100,"net_margin_eur":-1.86,"net_margin_rate":-0.0182,"min_net_margin_eur":3,"min_net_margin_rate":0.03,"rules_triggered":["net_margin_below_absolute_floor","net_margin_below_rate_floor"],"configured_action":"recalculate","msg":"margin_guard_below_minimum"}
+{"level":30,"time":"2026-05-07T07:29:34.845Z","pid":14480,"hostname":"Clariter_Ste_","offer_id":"test-offer-id","dest":"BCN","original_price":102,"recalculated_price":107.23,"provider_cost":100,"new_net_margin_eur":3.22,"rules_triggered":["net_margin_below_absolute_floor","net_margin_below_rate_floor"],"msg":"margin_guard_price_recalculated"}
+{"level":30,"time":"2026-05-07T07:29:34.845Z","pid":14480,"hostname":"Clariter_Ste_","category":"economic","event_type":"offer_repriced","user_id_hash":null,"user_tier":null,"at":null,"origin":"MXP","destination":"BCN","trip_type":null,"revenue_eur":107.23,"provider_cost_eur":100,"stripe_fee_eur":3.41,"ai_cost_eur":0.1,"platform_overhead_eur":null,"gross_margin_eur":6.73,"net_margin_eur":3.22,"gross_margin_rate":0.0628,"net_margin_rate":0.03,"offer_count":1,"bookable_count":1,"excluded_count":0,"guard_action":"recalculate","guard_rules":"net_margin_below_absolute_floor,net_margin_below_rate_floor","extra":{"offer_id":"test-offer-id","original_display_price":102,"recalculated_display_price":107.23},"msg":"economic_event: offer_repriced"}
+{"level":40,"time":"2026-05-07T07:29:34.846Z","pid":14480,"hostname":"Clariter_Ste_","offer_id":"test-offer-id","origin":"MXP","dest":"BCN","currency":"EUR","display_price":100,"provider_cost":100,"net_margin_eur":-3.8,"net_margin_rate":-0.038,"min_net_margin_eur":3,"min_net_margin_rate":0.03,"rules_triggered":["net_margin_below_absolute_floor","net_margin_below_rate_floor"],"configured_action":"recalculate","msg":"margin_guard_below_minimum"}
+{"level":30,"time":"2026-05-07T07:29:34.846Z","pid":14480,"hostname":"Clariter_Ste_","offer_id":"test-offer-id","dest":"BCN","original_price":100,"recalculated_price":107.23,"provider_cost":100,"new_net_margin_eur":3.22,"rules_triggered":["net_margin_below_absolute_floor","net_margin_below_rate_floor"],"msg":"margin_guard_price_recalculated"}
+{"level":30,"time":"2026-05-07T07:29:34.846Z","pid":14480,"hostname":"Clariter_Ste_","category":"economic","event_type":"offer_repriced","user_id_hash":null,"user_tier":null,"at":null,"origin":"MXP","destination":"BCN","trip_type":null,"revenue_eur":107.23,"provider_cost_eur":100,"stripe_fee_eur":3.41,"ai_cost_eur":0.1,"platform_overhead_eur":null,"gross_margin_eur":6.73,"net_margin_eur":3.22,"gross_margin_rate":0.0628,"net_margin_rate":0.03,"offer_count":1,"bookable_count":1,"excluded_count":0,"guard_action":"recalculate","guard_rules":"net_margin_below_absolute_floor,net_margin_below_rate_floor","extra":{"offer_id":"test-offer-id","original_display_price":100,"recalculated_display_price":107.23},"msg":"economic_event: offer_repriced"}
+{"level":40,"time":"2026-05-07T07:29:34.847Z","pid":14480,"hostname":"Clariter_Ste_","offer_id":"test-offer-id","origin":"MXP","dest":"BCN","currency":"EUR","display_price":100,"provider_cost":100,"net_margin_eur":-3.8,"net_margin_rate":-0.038,"min_net_margin_eur":3,"min_net_margin_rate":0.03,"rules_triggered":["net_margin_below_absolute_floor","net_margin_below_rate_floor"],"configured_action":"exclude","msg":"margin_guard_below_minimum"}
+{"level":30,"time":"2026-05-07T07:29:34.847Z","pid":14480,"hostname":"Clariter_Ste_","category":"economic","event_type":"offer_excluded","user_id_hash":null,"user_tier":null,"at":null,"origin":"MXP","destination":"BCN","trip_type":null,"revenue_eur":100,"provider_cost_eur":100,"stripe_fee_eur":3.2,"ai_cost_eur":0.1,"platform_overhead_eur":null,"gross_margin_eur":-0.5,"net_margin_eur":-3.8,"gross_margin_rate":-0.005,"net_margin_rate":-0.038,"offer_count":1,"bookable_count":0,"excluded_count":1,"guard_action":"exclude","guard_rules":"net_margin_below_absolute_floor,net_margin_below_rate_floor","extra":{"offer_id":"test-offer-id","configured_action":"exclude"},"msg":"economic_event: offer_excluded"}
+{"level":30,"time":"2026-05-07T07:29:34.848Z","pid":14480,"hostname":"Clariter_Ste_","offer_id":"test-offer-id","dest":"BCN","reason":"net_margin_below_absolute_floor","rules_triggered":["net_margin_below_absolute_floor","net_margin_below_rate_floor"],"msg":"margin_guard_offer_excluded"}
+{"level":40,"time":"2026-05-07T07:29:34.848Z","pid":14480,"hostname":"Clariter_Ste_","offer_id":"test-offer-id","origin":"MXP","dest":"BCN","currency":"EUR","display_price":100,"provider_cost":100,"net_margin_eur":-3.8,"net_margin_rate":-0.038,"min_net_margin_eur":3,"min_net_margin_rate":0.03,"rules_triggered":["net_margin_below_absolute_floor","net_margin_below_rate_floor"],"configured_action":"exclude","msg":"margin_guard_below_minimum"}
+{"level":30,"time":"2026-05-07T07:29:34.848Z","pid":14480,"hostname":"Clariter_Ste_","category":"economic","event_type":"offer_excluded","user_id_hash":null,"user_tier":null,"at":null,"origin":"MXP","destination":"BCN","trip_type":null,"revenue_eur":100,"provider_cost_eur":100,"stripe_fee_eur":3.2,"ai_cost_eur":0.1,"platform_overhead_eur":null,"gross_margin_eur":-0.5,"net_margin_eur":-3.8,"gross_margin_rate":-0.005,"net_margin_rate":-0.038,"offer_count":1,"bookable_count":0,"excluded_count":1,"guard_action":"exclude","guard_rules":"net_margin_below_absolute_floor,net_margin_below_rate_floor","extra":{"offer_id":"test-offer-id","configured_action":"exclude"},"msg":"economic_event: offer_excluded"}
+{"level":30,"time":"2026-05-07T07:29:34.848Z","pid":14480,"hostname":"Clariter_Ste_","offer_id":"test-offer-id","dest":"BCN","reason":"net_margin_below_absolute_floor","rules_triggered":["net_margin_below_absolute_floor","net_margin_below_rate_floor"],"msg":"margin_guard_offer_excluded"}
+{"level":40,"time":"2026-05-07T07:29:34.849Z","pid":14480,"hostname":"Clariter_Ste_","offer_id":"test-offer-id","origin":"MXP","dest":"BCN","currency":"EUR","display_price":100,"provider_cost":100,"net_margin_eur":-3.8,"net_margin_rate":-0.038,"min_net_margin_eur":3,"min_net_margin_rate":0.03,"rules_triggered":["net_margin_below_absolute_floor","net_margin_below_rate_floor"],"configured_action":"non_monetizable","msg":"margin_guard_below_minimum"}
+{"level":30,"time":"2026-05-07T07:29:34.849Z","pid":14480,"hostname":"Clariter_Ste_","category":"economic","event_type":"offer_marked_non_monetizable","user_id_hash":null,"user_tier":null,"at":null,"origin":"MXP","destination":"BCN","trip_type":null,"revenue_eur":100,"provider_cost_eur":100,"stripe_fee_eur":3.2,"ai_cost_eur":0.1,"platform_overhead_eur":null,"gross_margin_eur":-0.5,"net_margin_eur":-3.8,"gross_margin_rate":-0.005,"net_margin_rate":-0.038,"offer_count":1,"bookable_count":0,"excluded_count":1,"guard_action":"non_monetizable","guard_rules":"net_margin_below_absolute_floor,net_margin_below_rate_floor","extra":{"offer_id":"test-offer-id","configured_action":"non_monetizable"},"msg":"economic_event: offer_marked_non_monetizable"}
+{"level":30,"time":"2026-05-07T07:29:34.849Z","pid":14480,"hostname":"Clariter_Ste_","offer_id":"test-offer-id","dest":"BCN","reason":"net_margin_below_absolute_floor","rules_triggered":["net_margin_below_absolute_floor","net_margin_below_rate_floor"],"msg":"margin_guard_offer_marked_non_monetizable"}
+{"level":40,"time":"2026-05-07T07:29:34.850Z","pid":14480,"hostname":"Clariter_Ste_","offer_id":"test-offer-id","origin":"MXP","dest":"BCN","currency":"EUR","display_price":0,"provider_cost":0,"msg":"margin_guard_invalid_price_excluded"}
+{"level":40,"time":"2026-05-07T07:29:34.850Z","pid":14480,"hostname":"Clariter_Ste_","offer_id":"test-offer-id","origin":"MXP","dest":"BCN","currency":"EUR","display_price":-50,"provider_cost":50,"msg":"margin_guard_invalid_price_excluded"}
+{"level":40,"time":"2026-05-07T07:29:34.850Z","pid":14480,"hostname":"Clariter_Ste_","currency":"EUR","display_price":150,"provider_cost":150,"net_margin_eur":-5.5,"net_margin_rate":-0.0367,"min_net_margin_eur":3,"min_net_margin_rate":0.03,"rules_triggered":["net_margin_below_absolute_floor","net_margin_below_rate_floor"],"configured_action":"recalculate","msg":"margin_guard_below_minimum"}
+{"level":30,"time":"2026-05-07T07:29:34.850Z","pid":14480,"hostname":"Clariter_Ste_","original_price":150,"recalculated_price":160.63,"provider_cost":150,"new_net_margin_eur":4.82,"rules_triggered":["net_margin_below_absolute_floor","net_margin_below_rate_floor"],"msg":"margin_guard_price_recalculated"}
+{"level":30,"time":"2026-05-07T07:29:34.850Z","pid":14480,"hostname":"Clariter_Ste_","category":"economic","event_type":"offer_repriced","user_id_hash":null,"user_tier":null,"at":null,"origin":null,"destination":null,"trip_type":null,"revenue_eur":160.63,"provider_cost_eur":150,"stripe_fee_eur":4.96,"ai_cost_eur":0.1,"platform_overhead_eur":null,"gross_margin_eur":9.88,"net_margin_eur":4.82,"gross_margin_rate":0.0615,"net_margin_rate":0.03,"offer_count":1,"bookable_count":1,"excluded_count":0,"guard_action":"recalculate","guard_rules":"net_margin_below_absolute_floor,net_margin_below_rate_floor","extra":{"offer_id":null,"original_display_price":150,"recalculated_display_price":160.63},"msg":"economic_event: offer_repriced"}
+{"level":30,"time":"2026-05-07T07:29:34.851Z","pid":14480,"hostname":"Clariter_Ste_","category":"economic","event_type":"offer_priced","user_id_hash":null,"user_tier":null,"at":null,"origin":"MXP","destination":"BCN","trip_type":null,"revenue_eur":160,"provider_cost_eur":100,"stripe_fee_eur":null,"ai_cost_eur":null,"platform_overhead_eur":null,"gross_margin_eur":59.5,"net_margin_eur":54.46,"gross_margin_rate":0.3719,"net_margin_rate":0.3404,"offer_count":null,"bookable_count":null,"excluded_count":null,"guard_action":null,"guard_rules":null,"extra":{"offer_id":"test-offer-id","economics_breakdown":{"revenueEur":160,"providerCost":100,"adjustedProviderCost":100.5,"duffelBufferEur":0.5,"stripeFeeEur":4.94,"aiCostEur":0.1,"totalCostEur":105.54,"grossMarginEur":59.5,"grossMarginRate":0.3719,"netMarginEur":54.46,"netMarginRate":0.3404,"passesNetMarginEur":true,"passesNetMarginRate":true}},"msg":"economic_event: offer_priced"}
+{"level":30,"time":"2026-05-07T07:29:34.852Z","pid":14480,"hostname":"Clariter_Ste_","category":"economic","event_type":"offer_priced","user_id_hash":null,"user_tier":null,"at":null,"origin":"MXP","destination":"BCN","trip_type":null,"revenue_eur":200,"provider_cost_eur":120,"stripe_fee_eur":null,"ai_cost_eur":null,"platform_overhead_eur":null,"gross_margin_eur":79.4,"net_margin_eur":73.2,"gross_margin_rate":0.397,"net_margin_rate":0.366,"offer_count":null,"bookable_count":null,"excluded_count":null,"guard_action":null,"guard_rules":null,"extra":{"offer_id":"test-offer-id","economics_breakdown":{"revenueEur":200,"providerCost":120,"adjustedProviderCost":120.6,"duffelBufferEur":0.6,"stripeFeeEur":6.1,"aiCostEur":0.1,"totalCostEur":126.8,"grossMarginEur":79.4,"grossMarginRate":0.397,"netMarginEur":73.2,"netMarginRate":0.366,"passesNetMarginEur":true,"passesNetMarginRate":true}},"msg":"economic_event: offer_priced"}
+{"level":40,"time":"2026-05-07T07:29:34.852Z","pid":14480,"hostname":"Clariter_Ste_","offer_id":"test-offer-id","origin":"MXP","dest":"BCN","currency":"EUR","display_price":100,"provider_cost":100,"net_margin_eur":-3.8,"net_margin_rate":-0.038,"min_net_margin_eur":3,"min_net_margin_rate":0.03,"rules_triggered":["net_margin_below_absolute_floor","net_margin_below_rate_floor"],"configured_action":"recalculate","destinationIata":"MAD","msg":"margin_guard_below_minimum"}
+{"level":30,"time":"2026-05-07T07:29:34.852Z","pid":14480,"hostname":"Clariter_Ste_","offer_id":"test-offer-id","dest":"BCN","original_price":100,"recalculated_price":107.23,"provider_cost":100,"new_net_margin_eur":3.22,"rules_triggered":["net_margin_below_absolute_floor","net_margin_below_rate_floor"],"destinationIata":"MAD","msg":"margin_guard_price_recalculated"}
+{"level":30,"time":"2026-05-07T07:29:34.852Z","pid":14480,"hostname":"Clariter_Ste_","category":"economic","event_type":"offer_repriced","user_id_hash":null,"user_tier":null,"at":null,"origin":"MXP","destination":"BCN","trip_type":null,"revenue_eur":107.23,"provider_cost_eur":100,"stripe_fee_eur":3.41,"ai_cost_eur":0.1,"platform_overhead_eur":null,"gross_margin_eur":6.73,"net_margin_eur":3.22,"gross_margin_rate":0.0628,"net_margin_rate":0.03,"offer_count":1,"bookable_count":1,"excluded_count":0,"guard_action":"recalculate","guard_rules":"net_margin_below_absolute_floor,net_margin_below_rate_floor","extra":{"offer_id":"test-offer-id","original_display_price":100,"recalculated_display_price":107.23},"msg":"economic_event: offer_repriced"}
+{"level":30,"time":"2026-05-07T07:29:34.853Z","pid":14480,"hostname":"Clariter_Ste_","total":3,"passed":2,"recalculated":1,"nonMonetizable":0,"excluded":0,"msg":"margin_guard_bulk_summary"}
+{"level":30,"time":"2026-05-07T07:29:34.853Z","pid":14480,"hostname":"Clariter_Ste_","category":"economic","event_type":"offer_priced","user_id_hash":null,"user_tier":null,"at":null,"origin":"MXP","destination":"BCN","trip_type":null,"revenue_eur":160,"provider_cost_eur":100,"stripe_fee_eur":null,"ai_cost_eur":null,"platform_overhead_eur":null,"gross_margin_eur":59.5,"net_margin_eur":54.46,"gross_margin_rate":0.3719,"net_margin_rate":0.3404,"offer_count":null,"bookable_count":null,"excluded_count":null,"guard_action":null,"guard_rules":null,"extra":{"offer_id":"test-offer-id","economics_breakdown":{"revenueEur":160,"providerCost":100,"adjustedProviderCost":100.5,"duffelBufferEur":0.5,"stripeFeeEur":4.94,"aiCostEur":0.1,"totalCostEur":105.54,"grossMarginEur":59.5,"grossMarginRate":0.3719,"netMarginEur":54.46,"netMarginRate":0.3404,"passesNetMarginEur":true,"passesNetMarginRate":true}},"msg":"economic_event: offer_priced"}
+{"level":40,"time":"2026-05-07T07:29:34.854Z","pid":14480,"hostname":"Clariter_Ste_","offer_id":"test-offer-id","origin":"MXP","dest":"BCN","currency":"EUR","display_price":0,"provider_cost":0,"destinationIata":"BAD","msg":"margin_guard_invalid_price_excluded"}
+{"level":30,"time":"2026-05-07T07:29:34.854Z","pid":14480,"hostname":"Clariter_Ste_","total":2,"passed":1,"recalculated":0,"nonMonetizable":0,"excluded":1,"msg":"margin_guard_bulk_summary"}
+{"level":30,"time":"2026-05-07T07:29:34.854Z","pid":14480,"hostname":"Clariter_Ste_","category":"economic","event_type":"offer_priced","user_id_hash":null,"user_tier":null,"at":null,"origin":"MXP","destination":"BCN","trip_type":null,"revenue_eur":300,"provider_cost_eur":150,"stripe_fee_eur":null,"ai_cost_eur":null,"platform_overhead_eur":null,"gross_margin_eur":149.25,"net_margin_eur":140.15,"gross_margin_rate":0.4975,"net_margin_rate":0.4672,"offer_count":null,"bookable_count":null,"excluded_count":null,"guard_action":null,"guard_rules":null,"extra":{"offer_id":"test-offer-id","economics_breakdown":{"revenueEur":300,"providerCost":150,"adjustedProviderCost":150.75,"duffelBufferEur":0.75,"stripeFeeEur":9,"aiCostEur":0.1,"totalCostEur":159.85,"grossMarginEur":149.25,"grossMarginRate":0.4975,"netMarginEur":140.15,"netMarginRate":0.4672,"passesNetMarginEur":true,"passesNetMarginRate":true}},"msg":"economic_event: offer_priced"}
+  ✔ deduplicates concurrent identical requests in-flight (40.1987ms)
+  ✔ falls back safely when cache layer fails (0.8042ms)
+  ✔ caches negative results to avoid repeated empty provider calls (0.392ms)
+  ✔ supports explicit cache invalidation for one search payload (0.6379ms)
+  ✔ extends ttl for hot routes after repeated demand (1.1358ms)
+✔ live-flight-service intelligent caching (47.1015ms)
+▶ computeEconomics
+  ✔ computes gross and net margins correctly (0.2008ms)
+  ✔ adjustedProviderCost includes Duffel buffer (0.0604ms)
+  ✔ stripeFeeEur depends on displayPrice (0.0418ms)
+  ✔ netMarginEur = displayPrice - totalCostEur (0.0357ms)
+  ✔ exposes revenueEur as top-line revenue (0.0369ms)
+  ✔ passesNetMarginEur is false when net margin is below floor (0.0564ms)
+  ✔ passesNetMarginEur is true for a well-priced offer (0.0369ms)
+✔ computeEconomics (0.9602ms)
+▶ computeMinimumViablePrice
+  ✔ returns a price strictly greater than providerCost (0.1063ms)
+  ✔ the resulting P&L passes both constraints at the minimum viable price (0.078ms)
+  ✔ scales linearly with provider cost (0.0433ms)
+✔ computeMinimumViablePrice (0.3953ms)
+▶ guardOffer — pass path
+  ✔ returns action=pass for a well-priced offer (2.3194ms)
+  ✔ offer object is returned unchanged on pass (1.0857ms)
+  ✔ economics breakdown is populated on pass (0.8124ms)
+✔ guardOffer — pass path (4.4951ms)
+▶ guardOffer — recalculate path (default action)
+  ✔ recalculates when display price equals provider cost (zero margin) (1.5162ms)
+  ✔ action is recalculate when recalculation is within ceiling (1.0296ms)
+  ✔ recalculated offer carries updated _marginApplied (0.7189ms)
+  ✔ rulesTriggered lists the failing rules (0.6001ms)
+✔ guardOffer — recalculate path (default action) (4.1717ms)
+▶ guardOffer — exclude path
+  ✔ returns action=exclude and null offer for a zero-margin case (0.9064ms)
+  ✔ provides a reason string when excluding (0.5664ms)
+✔ guardOffer — exclude path (1.849ms)
+▶ guardOffer — non monetizable mark path
+  ✔ returns action=non_monetizable and keeps offer object (0.9333ms)
+✔ guardOffer — non monetizable mark path (1.1112ms)
+▶ guardOffer — edge cases
+  ✔ excludes an offer with zero displayPrice (0.135ms)
+  ✔ excludes an offer with negative displayPrice (0.0952ms)
+  ✔ falls back to totalPrice as providerCost when _providerCost is absent (0.6955ms)
+✔ guardOffer — edge cases (1.1874ms)
+▶ guardOffer — killswitch
+  ✔ returns pass without checking when MARGIN_GUARD_ENABLED=false (0.1835ms)
+✔ guardOffer — killswitch (0.2303ms)
+▶ guardOfferMap
+  ✔ returns stats.total matching input size (2.0239ms)
+  ✔ null replaces excluded offers in filtered map (0.6562ms)
+  ✔ well-priced offers remain in the map (0.6504ms)
+✔ guardOfferMap (3.5692ms)
+✔ notification scan service creates and dedupes smart-duration notifications (28.7237ms)
+✔ notification scan service skips when lock already exists (0.1657ms)
+✔ opportunities feed endpoint returns list without auth (42.9829ms)
+✔ opportunities feed returns localized-agnostic upgrade message key for capped plans (6.4403ms)
+✔ opportunities follows CRUD works for authenticated user (19.747ms)
+✔ opportunities follows allow re-saving an existing follow when free limit is already reached (16.5156ms)
+✔ radar preferences persist across PUT and GET (7.3416ms)
+✔ AI query is gated for anonymous requests before any AI work (4.3707ms)
+✔ AI query is gated when authenticated user plan is free (4.6245ms)
+✔ opportunities explore budget endpoint returns sorted destinations (7.7885ms)
+✔ opportunities explore map endpoint returns points (7.0683ms)
+✔ opportunities pipeline endpoints reject non-admin users (7.5283ms)
+✔ opportunity feed falls back when origin is not present in local seed data (1.4718ms)
+✔ opportunity feed always contains top + core categories for all configured origins/months (6.5048ms)
+{"level":40,"time":"2026-05-07T07:29:35.027Z","pid":14480,"hostname":"Clariter_Ste_","skipped":true,"reason":"overlap_running","overlapGuardMinutes":45,"overlapRunId":"oprun_05c7e58094658426","overlapRunStartedAt":"2026-05-07T07:29:35.022Z","staleRunsClosed":0,"msg":"opportunity_pipeline_worker_skipped_overlap_running"}
+✔ opportunity pipeline worker skips when a recent running run already exists (11.934ms)
+✔ stale running opportunity pipeline runs are auto-closed (14.266ms)
+✔ outbound selector prefers Duffel deep link when available (0.1988ms)
+✔ outbound selector falls back to travelpayouts when no Duffel link exists (0.149ms)
+✔ outbound selector keeps Kiwi and Skyscanner optional and never mandatory (0.1007ms)
+✔ OutboundRepo sanitizes destination URL before persistence (0.2832ms)
+✔ outbound report separates click, redirect success and redirect failure metrics (1.1913ms)
+✔ outbound report remains compatible with legacy redirect event names (0.1876ms)
+✔ outbound CSV contains redirect fields in summary (0.4484ms)
+✔ outbound CSV neutralizes spreadsheet formula injection payloads (0.1843ms)
+✔ POST /alerts/price-alerts — free user → 402 premium_required (7.2096ms)
+✔ POST /alerts/price-alerts — pro user under limit → 201 created (7.42ms)
+✔ POST /alerts/price-alerts — elite user → 201 created (7.3376ms)
+✔ GET /user/data-export — free user → 402 premium_required with export_limit context (5.5116ms)
+✔ GET /user/data-export — pro user → 402 premium_required with export_limit context (4.3252ms)
+✔ GET /user/data-export — elite user → 200 with snapshot (4.459ms)
+✔ GET /user/data-export.csv — free user → 402 (7.1598ms)
+✔ POST /opportunities/follows — free user at limit (1 follow) → 402 premium_required (0.4897ms)
+✔ PUT /api/opportunities/radar/preferences — free user → 402 premium_required (4.7248ms)
+✔ PUT /api/opportunities/radar/preferences — pro user → not blocked by plan gate (may fail at DB) (4.3937ms)
+✔ GET /api/discovery/price-prediction — free user → 403 premium_required with forecast_access context (4.0921ms)
+✔ GET /api/discovery/price-prediction — pro user → not blocked by forecast plan gate (7.3641ms)
+✔ price alerts notifier dispatches in-app and email notifications with dedupe (1.2363ms)
+▶ computeFlightDisplayPrice
+  ✔ returns a displayPrice strictly greater than providerCost for a valid price (0.7486ms)
+  ✔ marginApplied equals displayPrice minus providerCost (0.5161ms)
+  ✔ applies at least the minimum absolute margin floor (0.193ms)
+  ✔ respects MAX_ABSOLUTE_MARGIN_EUR cap for very expensive flights (0.119ms)
+  ✔ returns raw cost unchanged for invalid (zero) price (0.0861ms)
+  ✔ returns raw cost unchanged for negative price (0.1313ms)
+  ✔ normalises currency to uppercase (0.1441ms)
+  ✔ defaults currency to EUR when not provided (0.1425ms)
+  ✔ adds premium-user dynamic surcharge on top of base margin (0.2502ms)
+  ✔ applies mobile device adjustment when deviceType=mobile (0.1786ms)
+  ✔ applies returning-user adjustment when isReturningUser=true (0.1238ms)
+  ✔ adds last-minute surcharge when isLastMinute=true (0.1055ms)
+  ✔ auto-detects last-minute from departureDate within threshold (0.1329ms)
+  ✔ does not auto-detect last-minute for distant departure (0.1196ms)
+  ✔ applies a discount for smartDeal context (0.1083ms)
+  ✔ applies low-price uplift to protect fixed costs (0.1992ms)
+  ✔ high-price route keeps margin bounded by cap (0.1167ms)
+  ✔ rounds displayPrice to 2 decimal places (0.1393ms)
+✔ computeFlightDisplayPrice (5.3259ms)
+▶ applyPricingToOffer
+  ✔ replaces totalPrice with the marked-up displayPrice (0.3729ms)
+  ✔ preserves all original offer fields (0.1341ms)
+  ✔ attaches internal audit fields (0.1181ms)
+✔ applyPricingToOffer (0.9948ms)
+▶ sanitizeOfferForClient
+  ✔ removes internal pricing audit fields (0.1568ms)
+  ✔ handles null/undefined gracefully (0.0755ms)
+✔ sanitizeOfferForClient (0.4496ms)
+✔ prod external audit fails clearly when PROD_BASE_URL is missing (62.7178ms)
+✔ prod external audit rejects non-HTTPS PROD_BASE_URL before network checks (54.8318ms)
+✔ baseline-price-engine computes deterministic baseline from local history (51.8395ms)
+✔ price-ingestion-worker imports local CSV without external providers (11.6115ms)
+✔ alert-intelligence triggers once for strong local deal (103.0648ms)
+{"level":30,"time":"2026-05-07T07:29:35.668Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBL","departureDate":"2027-08-01","fingerprint":"a83b174516fd15e47bf76776e7686d1d94215ce881c8a8e71bb218640f51e281","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.672Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBL","departureDate":"2027-08-02","fingerprint":"9136ad4f8d0b947ad640f84da8aa38eca372d345f091bed1f1b0695da308e895","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.675Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBL","date":"2027-08-01","reason":"no_baseline","msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.676Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBL","departureDate":"2027-08-03","fingerprint":"edee560519b0fe6d63ceec9e70a5a502dfc642e27da592d0d055472e7514940e","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.678Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBL","date":"2027-08-02","reason":"below_anomaly_threshold","dealDelta":0,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.679Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBL","date":"2027-08-03","reason":"below_anomaly_threshold","dealDelta":-0.0283,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.680Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBL","departureDate":"2027-08-04","fingerprint":"14825ba3e12338f6f976423e761340ee786f0fc815ae50e886e553e11a2f7d19","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.682Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBL","date":"2027-08-04","reason":"below_anomaly_threshold","dealDelta":-0.0567,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.684Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBL","departureDate":"2027-08-05","fingerprint":"3b64114a17b1d329089e258f7111848a1a78c474c139f8137c64b6b85103f56c","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.686Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBL","date":"2027-08-05","reason":"below_anomaly_threshold","dealDelta":-0.085,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.688Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBL","departureDate":"2027-08-06","fingerprint":"d88743bae3c3e1aafb6d4e78083de57b923b40acc1c581e20c017c989e54cce2","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.691Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBL","date":"2027-08-06","reason":"below_anomaly_threshold","dealDelta":-0.1134,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.692Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBL","departureDate":"2027-08-07","fingerprint":"de117b316a490f87765c41a8e6757a96195126035b5366a74eb976240076258a","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.695Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBL","date":"2027-08-07","reason":"below_anomaly_threshold","dealDelta":-0.1498,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.696Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBL","departureDate":"2027-08-08","fingerprint":"b3adef789ccc81160daa953adadc9c23a018cf7afe191332fc4523290796bdac","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.699Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBL","date":"2027-08-08","reason":"below_anomaly_threshold","dealDelta":-0.1781,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.701Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBL","departureDate":"2027-08-09","fingerprint":"2ee0952f42a79fe66a3d33b65813e15bb42bbe85fbc60700ed0b20676e1742f1","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.704Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBL","date":"2027-08-09","reason":"below_anomaly_threshold","dealDelta":0.0202,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.706Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBL","departureDate":"2027-08-10","fingerprint":"9688c8b0ca8cd25df6cef603f17092ebb1b0773ee0ebd20ec1d408c401aa5b69","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.710Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBL","date":"2027-08-10","reason":"below_anomaly_threshold","dealDelta":-0.0081,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.712Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBL","departureDate":"2027-08-11","fingerprint":"a8488345343d47228c1cd366954dad4f0f1087bc7113f41fe53659c99fa1b2ff","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.715Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBL","date":"2027-08-11","reason":"below_anomaly_threshold","dealDelta":-0.0364,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.717Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBL","departureDate":"2027-08-12","fingerprint":"79b561a76c9b2fce8968746894c1f7f2deb7fbfbee1c7439cca4a777ae8cdca6","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.721Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBL","date":"2027-08-12","reason":"below_anomaly_threshold","dealDelta":-0.0648,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.723Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBL","departureDate":"2027-08-13","fingerprint":"6f6ec349dba6a9b094eec166a094a675f841db8ee386cd5af712ee17b7ee48ae","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.726Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBL","date":"2027-08-13","reason":"below_anomaly_threshold","dealDelta":-0.1012,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.729Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBL","departureDate":"2027-08-14","fingerprint":"a6b963863eeca325a06a242d1adf58ab351ad2d6b19d38e9c13d6ecbcad54723","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.733Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBL","date":"2027-08-14","reason":"below_anomaly_threshold","dealDelta":-0.1296,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.735Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBL","departureDate":"2027-08-15","fingerprint":"53a42443674f0b2fc75c8760c25924c4097e2f4ec27c67c4497966a84ce27b3f","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.738Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBL","date":"2027-08-15","reason":"below_anomaly_threshold","dealDelta":-0.1579,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.740Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBL","departureDate":"2027-08-16","fingerprint":"e6b1d1fad4870fc1ee129f085f157b78317e19e6c188637cffb17ac33e18f7d4","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.743Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBL","date":"2027-08-16","reason":"below_anomaly_threshold","dealDelta":-0.1862,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.746Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBL","departureDate":"2027-08-17","fingerprint":"4264aed04c8133eb375ebc13c45ca2ce16782c9d1417ea916818957835072d21","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.750Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBL","date":"2027-08-17","reason":"below_anomaly_threshold","dealDelta":0.0121,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.752Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBL","departureDate":"2027-08-18","fingerprint":"a6c471599c962d3406065969c5de6ae0e532ea0aa50b4eb9a772e387f1209586","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.756Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBL","date":"2027-08-18","reason":"below_anomaly_threshold","dealDelta":-0.0162,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.758Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBL","departureDate":"2027-08-19","fingerprint":"bbc563eb9aa47ee75256413302c0b6e1d1211a871f07a4ba0e4b5bd67e52c16c","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.761Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBL","date":"2027-08-19","reason":"below_anomaly_threshold","dealDelta":-0.0526,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.763Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBL","departureDate":"2027-08-20","fingerprint":"fea5deeef68bcb1a08c064c6c2884c73794a328cd30818cce3d482d952eec57c","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.767Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBL","date":"2027-08-20","reason":"below_anomaly_threshold","dealDelta":-0.081,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.769Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBL","departureDate":"2027-08-21","fingerprint":"3fb9f30a64478ce19a2af14081206be70a68d724f5416f3413797769dbb86b57","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.772Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBL","date":"2027-08-21","reason":"below_anomaly_threshold","dealDelta":-0.1093,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.774Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBL","departureDate":"2027-08-22","fingerprint":"abc5db068dfdc71e49945eac9634ca5d33b8c51d8d4a8e9fe4a0ab85d85bb0ef","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.777Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBL","date":"2027-08-22","reason":"below_anomaly_threshold","dealDelta":-0.1377,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.779Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBL","departureDate":"2027-08-23","fingerprint":"50c1425cd5af025d6af09c1d3858a5025d7bea31fdba9d8d1b0861a092b1b4e9","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.781Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBL","date":"2027-08-23","reason":"below_anomaly_threshold","dealDelta":-0.166,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.784Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBL","departureDate":"2027-08-24","fingerprint":"5af89c53f0894b8c307b6a2bddb8b679090f8cd8094dd310d72f0953edc8ee62","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.786Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBL","date":"2027-08-24","reason":"below_anomaly_threshold","dealDelta":-0.1943,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.788Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBL","departureDate":"2027-08-25","fingerprint":"3128f81719d55e8fd7fe02fe37fb39bc2516b6c15aa949bd6c0822ed796c4f8c","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.791Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBL","date":"2027-08-25","reason":"below_anomaly_threshold","dealDelta":-0.004,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.792Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBL","departureDate":"2027-08-26","fingerprint":"4b55efe4652d793a96c5635eab87fb88b4326c0a4331def8d5bd078c47f65a78","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.794Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBL","date":"2027-08-26","reason":"below_anomaly_threshold","dealDelta":-0.0324,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.796Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBL","departureDate":"2027-08-27","fingerprint":"df89171e10f3382eb9878e7980749d023880448eb3f6a8aaa49ceaaa1e16a874","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.799Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBL","date":"2027-08-27","reason":"below_anomaly_threshold","dealDelta":-0.0607,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.801Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBL","departureDate":"2027-08-01","fingerprint":"d681a21afb869903b171f7d906daa89e97843debac28d66fab439eacd13caddc","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.804Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBL","date":"2027-08-01","reason":"below_anomaly_threshold","dealDelta":-0.0891,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.805Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBL","departureDate":"2027-08-02","fingerprint":"1be1e23f69656751f3183eaf953a99d2e6396b2c031aea4239c63fad932a6675","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.808Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBL","date":"2027-08-02","reason":"below_anomaly_threshold","dealDelta":-0.1174,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.810Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBL","departureDate":"2027-08-03","fingerprint":"07160141dfd99311d613eaeb3c1ce6b37ed93a4aa9bd514d8153ab9453c9d55e","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.814Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBL","date":"2027-08-03","reason":"below_anomaly_threshold","dealDelta":-0.1457,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.815Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBL","departureDate":"2027-08-04","fingerprint":"3e18cdbc9037a945f6a827d537963a68015c0420dbd8a46a8424579f5cd16ca4","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.817Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBL","reason":"rate_limited","msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.820Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBL","departureDate":"2027-08-05","fingerprint":"eea6588dba1d8905ac07d95f241369d86564c93cda09eddde074484ba61f99a6","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.822Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBL","reason":"rate_limited","msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.825Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBL","departureDate":"2027-08-06","fingerprint":"bd66611fd96b77b5d000c37dd07a52200893e9862fc7d2673b6633382af1bea2","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.826Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBL","reason":"rate_limited","msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.830Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBL","departureDate":"2027-08-07","fingerprint":"99a87dc165c084b34a4ad7e9bff24785e665f54acb0d6d29f435bdaf58baf36b","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.832Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBL","reason":"rate_limited","msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.835Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBL","departureDate":"2027-08-08","fingerprint":"c83bba9bdaae5d5093c9e350029972b80a13ae62ce6b6dcffee311e8fe17e6c2","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.836Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBL","reason":"rate_limited","msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.840Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBL","departureDate":"2027-08-09","fingerprint":"bee052e32bc476a6718bff803e0668c53942b785d31f9c4cff48ceec74715ff3","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.842Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBL","reason":"rate_limited","msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.845Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBL","departureDate":"2027-08-10","fingerprint":"47638594d8f4faf616ee9584d1db512b3a767744e6d0975b12e6ba6ac1029b7e","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.846Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBL","reason":"rate_limited","msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.849Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBL","departureDate":"2027-08-11","fingerprint":"c3cedcc915f1292c183e90ef097dfd05ceb6b415b6e4c31998a6b085dfcd0c40","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.850Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBL","reason":"rate_limited","msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.854Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBL","departureDate":"2027-08-12","fingerprint":"aaa21c265c874f0e067e4cf2afcdb2e7b5f1b55b7162898aacf8cc42ee3feb05","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.855Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBL","reason":"rate_limited","msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.858Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBL","departureDate":"2027-08-13","fingerprint":"53010dfa698c0aede9d0cb8917100f0d647a76a75cb32560d06dd68d50bc1a10","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.859Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBL","reason":"rate_limited","msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.863Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBL","departureDate":"2027-08-14","fingerprint":"9049fddc8eb0f20eab965de7aeb5392a46b5d3f5616e7a1154b490178f26dd63","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.864Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBL","reason":"rate_limited","msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.867Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBL","departureDate":"2027-08-15","fingerprint":"566fc41e736b8ae831fbb2a2b795d462715180ccc360688fe415b43bdc516fc3","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.868Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBL","reason":"rate_limited","msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.872Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBL","departureDate":"2027-08-16","fingerprint":"33810cb6fb7616fb3ec267810f8e7eb862a24929b882141947e6c4deecfd76a7","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.873Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBL","reason":"rate_limited","msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.877Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBL","departureDate":"2027-08-17","fingerprint":"713c7ae0d31d49d1a9ba2c5cd2daf8a20b95c8ea95cb18ec62cf9d593254ce0c","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.878Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBL","reason":"rate_limited","msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.882Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBX","departureDate":"2027-08-01","fingerprint":"d8d3d6c6a577445c839b01c1fc73d2e63163cb0033666ef69fb2d4808dc5bb3c","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.887Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBX","date":"2027-08-01","reason":"no_baseline","msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.887Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBX","departureDate":"2027-08-02","fingerprint":"e6b9c0d80899f8f07aabd15eef3ec511f0f185a462b4836be3cc4f662d2d14ce","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.891Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBX","departureDate":"2027-08-03","fingerprint":"4a99be9a78791f6dc3de374683c0aafa584de27ad6b6f736725a4c48c1ad0fc0","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.892Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBX","date":"2027-08-02","reason":"below_anomaly_threshold","dealDelta":0,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.893Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBX","date":"2027-08-03","reason":"below_anomaly_threshold","dealDelta":-0.0214,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.895Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBX","departureDate":"2027-08-04","fingerprint":"7f1df463739d292b575f36341ea5e170539c97cdb1905222731efce31d160c60","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.897Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBX","date":"2027-08-04","reason":"below_anomaly_threshold","dealDelta":-0.0428,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.899Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBX","departureDate":"2027-08-05","fingerprint":"df03a31629f94b622ffe59911c26e0b3562db6ad2b3fb5d5c876880a8aeaf2d3","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.902Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBX","date":"2027-08-05","reason":"below_anomaly_threshold","dealDelta":-0.0642,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.903Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBX","departureDate":"2027-08-06","fingerprint":"34a255ad04599c946a0bd99376812fd76343df2a81a1d6d019c3476808e3a23e","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.906Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBX","date":"2027-08-06","reason":"below_anomaly_threshold","dealDelta":-0.0856,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.908Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBX","departureDate":"2027-08-07","fingerprint":"f9b76cee0f793a44dd84410094c316a0652cfc60caeff3425e3c4ebfbd218c85","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.910Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBX","date":"2027-08-07","reason":"below_anomaly_threshold","dealDelta":-0.1131,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.912Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBX","departureDate":"2027-08-08","fingerprint":"1ad0d544467afd2c3e3d9b1906e2cb9af6f1264da831003a41d7d1ad5e209b80","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.915Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBX","date":"2027-08-08","reason":"below_anomaly_threshold","dealDelta":-0.1346,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.917Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBX","departureDate":"2027-08-09","fingerprint":"afeb81b2ea4656df72dd4f244daa4e7030bd793f7b719c3053dc180a19944ce5","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.919Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBX","date":"2027-08-09","reason":"below_anomaly_threshold","dealDelta":0.0153,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.921Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBX","departureDate":"2027-08-10","fingerprint":"0218b2f67386f43c11d45a754b6e20d9106feda68cafed0e79f61741d380aacf","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.924Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBX","date":"2027-08-10","reason":"below_anomaly_threshold","dealDelta":-0.0061,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.925Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBX","departureDate":"2027-08-11","fingerprint":"849e972a6f73cf9be82c7d5314ae16abecd0d7731c72b89df4e45f9a9b0b44d1","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.928Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBX","date":"2027-08-11","reason":"below_anomaly_threshold","dealDelta":-0.0275,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.930Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBX","departureDate":"2027-08-12","fingerprint":"730f64797eeb9a62915d1a7453437b2f16bf0887200962bf5f5c6a9c4d445988","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.933Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBX","date":"2027-08-12","reason":"below_anomaly_threshold","dealDelta":-0.0489,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.935Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBX","departureDate":"2027-08-13","fingerprint":"0912bd45d0fcadefb85f31ef3282a03b015768baf1d5b1003ed94ba4e2d3b9fc","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.937Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBX","date":"2027-08-13","reason":"below_anomaly_threshold","dealDelta":-0.0765,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.939Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBX","departureDate":"2027-08-14","fingerprint":"d3f6aa3866e3f176795b42b2e918bcb8cce6fa47bc4b53c83287624cd0affc7d","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.942Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBX","date":"2027-08-14","reason":"below_anomaly_threshold","dealDelta":-0.0979,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.944Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBX","departureDate":"2027-08-15","fingerprint":"db9e10aa9fecae55b19edf188bd49847ccf10e582c7224dc03e62834b3e91e40","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.947Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBX","date":"2027-08-15","reason":"below_anomaly_threshold","dealDelta":-0.1193,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.948Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBX","departureDate":"2027-08-16","fingerprint":"d98080247e1ff0e339d1a1440ec5a44ccc303f36b6b9baf239d57ccded0a2c49","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.951Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBX","date":"2027-08-16","reason":"below_anomaly_threshold","dealDelta":-0.1407,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.952Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBX","departureDate":"2027-08-17","fingerprint":"7e416e0df60b6fb36c17adf426813345904becad378e05fb109d7f9d66ff9da2","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.954Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBX","date":"2027-08-17","reason":"below_anomaly_threshold","dealDelta":0.0092,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.955Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBX","departureDate":"2027-08-18","fingerprint":"133c808be17d56bcda8aba4e9a6f0fdbca7fdc2c612a348f0e468003f6e9fe20","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.957Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBX","date":"2027-08-18","reason":"below_anomaly_threshold","dealDelta":-0.0122,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.959Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBX","departureDate":"2027-08-19","fingerprint":"ce287dfe602b2f5c1133079c6c033ce37f17a3d989e1e5529cdcf774472b35e3","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.960Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBX","date":"2027-08-19","reason":"below_anomaly_threshold","dealDelta":-0.0398,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.961Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBX","departureDate":"2027-08-20","fingerprint":"a1b7110566dc40bf747f58d6b038e15bcfc6dbe80e0010cad39d8b5039845e51","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.962Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBX","date":"2027-08-20","reason":"below_anomaly_threshold","dealDelta":-0.0612,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.963Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBX","departureDate":"2027-08-21","fingerprint":"afde9bfa6b64f0ae25f1124a953ad388188b8b53abc4e37a44d65fdb34b57e83","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.964Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBX","date":"2027-08-21","reason":"below_anomaly_threshold","dealDelta":-0.0826,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.966Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBX","departureDate":"2027-08-22","fingerprint":"855332a0a9cffb509241b304d162012072a2c848641380bb3f9795acff73d854","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.967Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBX","date":"2027-08-22","reason":"below_anomaly_threshold","dealDelta":-0.104,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.968Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBX","departureDate":"2027-08-23","fingerprint":"3b1b0a2c62ad02950e75a1b878511ec00c6693201e6bcbd0f755b4d7263f5de5","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.970Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBX","date":"2027-08-23","reason":"below_anomaly_threshold","dealDelta":-0.1254,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.970Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBX","departureDate":"2027-08-24","fingerprint":"6ac70e81594a847620293b3cb69c0f34aae1337ec80bb2bcbbc3e5ac519bb4b3","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.972Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBX","date":"2027-08-24","reason":"below_anomaly_threshold","dealDelta":-0.1468,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.973Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBX","departureDate":"2027-08-25","fingerprint":"d3f5a3108bf0c1ea7f71463160f832bd74756bb75c978fe79d17b074a306c7b0","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.974Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBX","date":"2027-08-25","reason":"below_anomaly_threshold","dealDelta":-0.0031,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.975Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBX","departureDate":"2027-08-26","fingerprint":"ef2dff79386733c054f00892364b5366698fa539b2fa2f29560ba1c97d771929","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.977Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBX","date":"2027-08-26","reason":"below_anomaly_threshold","dealDelta":-0.0245,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.977Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBX","departureDate":"2027-08-27","fingerprint":"0b6b9e204c8d3031b9a9fcb25b2b26742dac7a2fc26f822e08964f379f105bab","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.979Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBX","date":"2027-08-27","reason":"below_anomaly_threshold","dealDelta":-0.0459,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.980Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBX","departureDate":"2027-08-01","fingerprint":"24dda6d087eab7ed19f8b045187731be3922b33ddf4258c51f438599887eb8b1","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.981Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBX","date":"2027-08-01","reason":"below_anomaly_threshold","dealDelta":-0.0673,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.982Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBX","departureDate":"2027-08-02","fingerprint":"ea09e45509c3d7743b8b8f20efb0460e44b7eb945c604ce9de2e7c51fa22cd83","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.984Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBX","date":"2027-08-02","reason":"below_anomaly_threshold","dealDelta":-0.0887,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.985Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBX","departureDate":"2027-08-03","fingerprint":"cc979c8421206cc01c95d60859c2b340e10da4f59e7a6d5192727181c29b7e1e","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.986Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBX","date":"2027-08-03","reason":"below_anomaly_threshold","dealDelta":-0.1101,"minDelta":0.18,"msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.987Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBX","departureDate":"2027-08-04","fingerprint":"ce1ae25d362e181e50c7641c4f55a939f7629dc0563a4e55858bfee3bb9c6d28","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.988Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBX","reason":"rate_limited","msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.989Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBX","departureDate":"2027-08-05","fingerprint":"c1d2adee48bcf3b2d387fcb91ba0be01b06e281194aa28f09ec362535854093d","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.989Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBX","reason":"rate_limited","msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.991Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBX","departureDate":"2027-08-06","fingerprint":"744db829bd9b34b6f4af99d99f4df758e6b2a1ac31a597d62c2570323851f970","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.991Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBX","reason":"rate_limited","msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.993Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBX","departureDate":"2027-08-07","fingerprint":"dcdcc7eb369b981c788bb4707cdc9416024e117580e08d7f2fce9375857c4c2e","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.993Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBX","reason":"rate_limited","msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.995Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBX","departureDate":"2027-08-08","fingerprint":"196f1fe5757eddad1d854156e943d1f524c605cddcddc0a26f9240f1a47a9ebd","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.995Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBX","reason":"rate_limited","msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:35.997Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBX","departureDate":"2027-08-09","fingerprint":"486c16a0a1ba691e3d70da49cb5dcd948081c39e19c37d618598b5d5b91c6ce0","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:35.997Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBX","reason":"rate_limited","msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:36.000Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBX","departureDate":"2027-08-10","fingerprint":"02cd2aaecd11aa7952d99fc34cff83dffca9505e89c4622a635287ef22c1307c","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:36.000Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBX","reason":"rate_limited","msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:36.002Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBX","departureDate":"2027-08-11","fingerprint":"2cf78b1b012412bdbfcf6b5d752ac74bcaa7dec7673eef2dfc0ebef3a2cd8be1","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:36.002Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBX","reason":"rate_limited","msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:36.004Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBX","departureDate":"2027-08-12","fingerprint":"081adb248344c0f0a8aab113c9199ca5bb6039c0d830b4d7ca934a8a21dd84e1","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:36.005Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBX","reason":"rate_limited","msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:36.006Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBX","departureDate":"2027-08-13","fingerprint":"b95755589cdf12b7bd06ba8ee12b544ac2d5eb045488ce3dbada2ea0a102e67c","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:36.007Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBX","reason":"rate_limited","msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:36.008Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBX","departureDate":"2027-08-14","fingerprint":"d65bb21ea7addeb4f2700defb4048838893f8f3b4473aa4d9c37e9943edf5b19","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:36.009Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBX","reason":"rate_limited","msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:36.010Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBX","departureDate":"2027-08-15","fingerprint":"13ee019a5821ab718e44b24a9c2f64b2dbc88084a899d9912a42f42611d38f1a","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:36.011Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBX","reason":"rate_limited","msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:36.012Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBX","departureDate":"2027-08-16","fingerprint":"91605ed7f5e15eec7d4d118b003e2a6b1385f9dc0ac18c8e6005fe519666d6b1","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:36.013Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBX","reason":"rate_limited","msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:36.014Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBX","departureDate":"2027-08-17","fingerprint":"548f26c8befe8d1dfea7c08bc5718092e87aee659a7926e97b62c302f2f1ef2d","msg":"realtime_processing_triggered"}
+{"level":30,"time":"2026-05-07T07:29:36.015Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","dest":"KBX","reason":"rate_limited","msg":"rt_deal_skipped"}
+{"level":30,"time":"2026-05-07T07:29:36.022Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBL","travelMonth":"2027-08-01","score":52,"badge":"OK","confidenceLevel":"high","observationCount":80,"visibility":"normal","msg":"discovery_cheapest_scored"}
+{"level":30,"time":"2026-05-07T07:29:36.022Z","pid":14480,"hostname":"Clariter_Ste_","origin":"KAU","destination":"KBX","travelMonth":"2027-08-01","score":52,"badge":"OK","confidenceLevel":"high","observationCount":80,"visibility":"normal","msg":"discovery_cheapest_scored"}
+{"level":40,"time":"2026-05-07T07:29:36.023Z","pid":14480,"hostname":"Clariter_Ste_","route":"MXP-LAX","userId":"user_1","reason":"global_per_minute_calls_exceeded","used":2,"limit":1,"plannedCalls":1,"msg":"budget_exceeded_provider"}
+{"level":40,"time":"2026-05-07T07:29:36.023Z","pid":14480,"hostname":"Clariter_Ste_","route":"FCO-BCN","userId":"user_2","reason":"route_daily_calls_exceeded","used":2,"limit":1,"plannedCalls":1,"msg":"budget_exceeded_provider"}
+{"level":40,"time":"2026-05-07T07:29:36.023Z","pid":14480,"hostname":"Clariter_Ste_","route":"FCO-JFK","msg":"provider_cost_guard_backend_unavailable_fail_closed"}
+{"level":40,"time":"2026-05-07T07:29:36.024Z","pid":14480,"hostname":"Clariter_Ste_","route":"FCO-JFK","msg":"provider_cost_guard_backend_unavailable_fail_open"}
+{"level":30,"time":"2026-05-07T07:29:36.024Z","pid":14480,"hostname":"Clariter_Ste_","providerFlags":{"duffel":false,"kiwi":false,"skyscanner":false,"travelpayoutsAffiliate":true},"msg":"provider_registry_profile"}
+{"level":40,"time":"2026-05-07T07:29:36.025Z","pid":14480,"hostname":"Clariter_Ste_","provider":"unstable","err":"simulated_provider_failure","msg":"provider_search_failed"}
+{"level":40,"time":"2026-05-07T07:29:36.025Z","pid":14480,"hostname":"Clariter_Ste_","provider":"unstable","err":"simulated_provider_failure","msg":"provider_search_failed"}
+{"level":40,"time":"2026-05-07T07:29:36.025Z","pid":14480,"hostname":"Clariter_Ste_","provider":"unstable","msg":"provider_search_skipped_circuit_open"}
+{"level":30,"time":"2026-05-07T07:29:36.026Z","pid":14480,"hostname":"Clariter_Ste_","providerFlags":{"duffel":false,"kiwi":false,"skyscanner":false,"travelpayoutsAffiliate":true},"msg":"provider_registry_profile"}
+✔ destination-discovery-engine returns local suggestions from history (618.0156ms)
+✔ provider-cost-guard blocks when global per-minute call budget is exceeded (0.5005ms)
+✔ provider-cost-guard applies route-level budgets (0.3642ms)
+✔ provider-cost-guard fail-closed by default when backend is unavailable (0.1991ms)
+✔ provider-cost-guard supports explicit fail-open mode (0.1681ms)
+✔ provider registry opens circuit after repeated failures (1.5638ms)
+{"level":40,"time":"2026-05-07T07:29:36.233Z","pid":14480,"hostname":"Clariter_Ste_","provider":"hanging","err":"provider_timeout:hanging","msg":"provider_search_failed"}
+{"level":30,"time":"2026-05-07T07:29:36.234Z","pid":14480,"hostname":"Clariter_Ste_","providerFlags":{"duffel":true,"kiwi":false,"skyscanner":false,"travelpayoutsAffiliate":true},"msg":"provider_registry_profile"}
+{"level":40,"time":"2026-05-07T07:29:36.234Z","pid":14480,"hostname":"Clariter_Ste_","provider":"duffel","msg":"provider_enabled_but_not_configured"}
+{"level":30,"time":"2026-05-07T07:29:36.234Z","pid":14480,"hostname":"Clariter_Ste_","providerFlags":{"duffel":true,"kiwi":false,"skyscanner":false,"travelpayoutsAffiliate":true},"msg":"provider_registry_profile"}
+{"level":30,"time":"2026-05-07T07:29:36.235Z","pid":14480,"hostname":"Clariter_Ste_","request_id":"r1","user_id":"u1","endpoint":"","status_code":200,"quota_counter":"search","quota_limit":10,"quota_used":2,"quota_remaining":8,"msg":"quota_usage_recorded"}
+{"level":40,"time":"2026-05-07T07:29:36.235Z","pid":14480,"hostname":"Clariter_Ste_","request_id":"r2","user_id":"u1","endpoint":"","status_code":429,"quota_counter":"alerts","msg":"quota_limit_exceeded"}
+✔ provider registry times out hanging providers and opens circuit (208.199ms)
+✔ provider registry skips missing credentials safely (0.4861ms)
+✔ provider registry reflects duffel-only soft-launch profile flags (0.3716ms)
+✔ quotaGuard allows request and sets quota headers (0.6432ms)
+✔ quotaGuard blocks when limit exceeded (5.0478ms)
+✔ quotaGuard is non-fatal in non-production on checker error (0.2752ms)
+✔ requireApiScope allows session-authenticated requests by default (0.1188ms)
+✔ requireApiScope can block session-authenticated requests when allowSession=false (0.0585ms)
+✔ requireApiScope blocks API keys missing required scope (0.0524ms)
+✔ quote normalizer filters unrealistic offers and returns valid quotes (0.4416ms)
+{"level":30,"time":"2026-05-07T07:29:36.242Z","pid":14480,"hostname":"Clariter_Ste_","msg":"free_cache_redis_closed"}
+{"level":40,"time":"2026-05-07T07:29:36.246Z","pid":14480,"hostname":"Clariter_Ste_","err":{"type":"Error","message":"connect ECONNREFUSED 127.0.0.1:6399","stack":"Error: connect ECONNREFUSED 127.0.0.1:6399\n    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1713:16)","errno":-4078,"code":"ECONNREFUSED","syscall":"connect","address":"127.0.0.1","port":6399},"msg":"free_cache_redis_error"}
+{"level":40,"time":"2026-05-07T07:29:36.246Z","pid":14480,"hostname":"Clariter_Ste_","err":{"type":"Error","message":"Connection is closed.","stack":"Error: Connection is closed.\n    at EventEmitter.connectionCloseHandler (C:\\Users\\StefanoGiustini\\OneDrive - Clariter Group\\Desktop\\Flight\\node_modules\\ioredis\\built\\Redis.js:208:28)\n    at Object.onceWrapper (node:events:623:12)\n    at EventEmitter.emit (node:events:508:20)\n    at process.processTicksAndRejections (node:internal/process/task_queues:85:11)"},"msg":"free_cache_redis_connect_failed"}
+{"level":40,"time":"2026-05-07T07:29:36.247Z","pid":14480,"hostname":"Clariter_Ste_","err":{"type":"Error","message":"Connection is closed.","stack":"Error: Connection is closed.\n    at EventEmitter.sendCommand (C:\\Users\\StefanoGiustini\\OneDrive - Clariter Group\\Desktop\\Flight\\node_modules\\ioredis\\built\\Redis.js:333:28)\n    at EventEmitter.zrevrangebyscore (C:\\Users\\StefanoGiustini\\OneDrive - Clariter Group\\Desktop\\Flight\\node_modules\\ioredis\\built\\utils\\Commander.js:90:25)\n    at file:///C:/Users/StefanoGiustini/OneDrive%20-%20Clariter%20Group/Desktop/Flight/server/lib/free-cache.js:289:30\n    at HybridCache._withFallback (file:///C:/Users/StefanoGiustini/OneDrive%20-%20Clariter%20Group/Desktop/Flight/server/lib/free-cache.js:211:20)\n    at HybridCache.zrevrangebyscore (file:///C:/Users/StefanoGiustini/OneDrive%20-%20Clariter%20Group/Desktop/Flight/server/lib/free-cache.js:287:17)\n    at getLiveDeals (file:///C:/Users/StefanoGiustini/OneDrive%20-%20Clariter%20Group/Desktop/Flight/server/lib/realtime-anomaly-engine.js:437:27)\n    at file:///C:/Users/StefanoGiustini/OneDrive%20-%20Clariter%20Group/Desktop/Flight/server/routes/deal-engine.js:644:30\n    at Layer.handleRequest (C:\\Users\\StefanoGiustini\\OneDrive - Clariter Group\\Desktop\\Flight\\node_modules\\router\\lib\\layer.js:152:17)\n    at next (C:\\Users\\StefanoGiustini\\OneDrive - Clariter Group\\Desktop\\Flight\\node_modules\\router\\lib\\route.js:157:13)\n    at Route.dispatch (C:\\Users\\StefanoGiustini\\OneDrive - Clariter Group\\Desktop\\Flight\\node_modules\\router\\lib\\route.js:117:3)"},"command":"zrevrangebyscore","msg":"free_cache_redis_degraded_using_memory_fallback"}
+{"level":40,"time":"2026-05-07T07:29:36.248Z","pid":14480,"hostname":"Clariter_Ste_","err":{"type":"Error","message":"Connection is closed.","stack":"Error: Connection is closed.\n    at EventEmitter.sendCommand (C:\\Users\\StefanoGiustini\\OneDrive - Clariter Group\\Desktop\\Flight\\node_modules\\ioredis\\built\\Redis.js:333:28)\n    at EventEmitter.quit (C:\\Users\\StefanoGiustini\\OneDrive - Clariter Group\\Desktop\\Flight\\node_modules\\ioredis\\built\\utils\\Commander.js:90:25)\n    at HybridCache.quit (file:///C:/Users/StefanoGiustini/OneDrive%20-%20Clariter%20Group/Desktop/Flight/server/lib/free-cache.js:312:28)\n    at closeCacheClient (file:///C:/Users/StefanoGiustini/OneDrive%20-%20Clariter%20Group/Desktop/Flight/server/lib/free-cache.js:375:18)\n    at TestContext.<anonymous> (file:///C:/Users/StefanoGiustini/OneDrive%20-%20Clariter%20Group/Desktop/Flight/test/realtime-deals.route.integration.test.mjs:44:11)\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at async Test.run (node:internal/test_runner/test:1125:7)\n    at async Test.processPendingSubtests (node:internal/test_runner/test:787:7)"},"msg":"free_cache_redis_close_failed"}
+✔ realtime deals endpoint returns valid fallback payload when redis is down (7.0622ms)
+✔ register succeeds with valid payload and returns session envelope (1717.3096ms)
+✔ register rejects invalid payload with invalid_payload and no 500 (1610.6072ms)
+✔ register returns email_already_exists for duplicate email (1775.784ms)
+✔ register returns registration_disabled when auth registration is disabled by config (1625.8978ms)
+{"level":30,"time":"2026-05-07T07:29:44.692Z","pid":14480,"hostname":"Clariter_Ste_","skipped":false,"reason":null,"routeCount":1,"scheduledRouteCount":1,"windowsPerRoute":2,"windowsByPriority":{"high":2,"medium":1,"low":1},"taskCount":2,"skippedByPriorityCooldown":0,"skippedByLowPriorityCap":0,"skippedByWindowCooldown":0,"skippedByBackpressure":0,"initialQueueDepth":0,"backlogSoftLimit":2000,"backlogHardLimit":6000,"lowPriorityMaxShare":0.25,"backlogThrottleStartPct":0.7,"intelligentPriorityEnabled":true,"strongDealRouteCount":0,"enqueued":2,"duplicates":0,"rejected":0,"msg":"flight_scan_route_scheduler_completed"}
+{"level":30,"time":"2026-05-07T07:29:44.693Z","pid":14480,"hostname":"Clariter_Ste_","skipped":false,"reason":null,"routeCount":1,"scheduledRouteCount":0,"windowsPerRoute":0,"windowsByPriority":{"high":2,"medium":1,"low":1},"taskCount":0,"skippedByPriorityCooldown":1,"skippedByLowPriorityCap":0,"skippedByWindowCooldown":0,"skippedByBackpressure":0,"initialQueueDepth":0,"backlogSoftLimit":2000,"backlogHardLimit":6000,"lowPriorityMaxShare":0.25,"backlogThrottleStartPct":0.7,"intelligentPriorityEnabled":true,"strongDealRouteCount":0,"enqueued":0,"duplicates":0,"rejected":0,"msg":"flight_scan_route_scheduler_completed"}
+{"level":30,"time":"2026-05-07T07:29:44.694Z","pid":14480,"hostname":"Clariter_Ste_","skipped":false,"reason":null,"routeCount":3,"scheduledRouteCount":3,"windowsPerRoute":2,"windowsByPriority":{"high":2,"medium":1,"low":1},"taskCount":6,"skippedByPriorityCooldown":0,"skippedByLowPriorityCap":0,"skippedByWindowCooldown":0,"skippedByBackpressure":0,"initialQueueDepth":0,"backlogSoftLimit":2000,"backlogHardLimit":6000,"lowPriorityMaxShare":0.25,"backlogThrottleStartPct":0.7,"intelligentPriorityEnabled":true,"strongDealRouteCount":1,"enqueued":6,"duplicates":0,"rejected":0,"msg":"flight_scan_route_scheduler_completed"}
+{"level":30,"time":"2026-05-07T07:29:44.696Z","pid":14480,"hostname":"Clariter_Ste_","skipped":false,"reason":null,"routeCount":1,"scheduledRouteCount":1,"windowsPerRoute":3,"windowsByPriority":{"high":3,"medium":2,"low":1},"taskCount":3,"skippedByPriorityCooldown":0,"skippedByLowPriorityCap":0,"skippedByWindowCooldown":0,"skippedByBackpressure":0,"initialQueueDepth":0,"backlogSoftLimit":2000,"backlogHardLimit":6000,"lowPriorityMaxShare":0.25,"backlogThrottleStartPct":0.7,"intelligentPriorityEnabled":false,"strongDealRouteCount":0,"enqueued":3,"duplicates":0,"rejected":0,"msg":"flight_scan_route_scheduler_completed"}
+{"level":30,"time":"2026-05-07T07:29:44.696Z","pid":14480,"hostname":"Clariter_Ste_","skipped":false,"reason":null,"routeCount":1,"scheduledRouteCount":1,"windowsPerRoute":0,"windowsByPriority":{"high":3,"medium":2,"low":1},"taskCount":0,"skippedByPriorityCooldown":0,"skippedByLowPriorityCap":0,"skippedByWindowCooldown":3,"skippedByBackpressure":0,"initialQueueDepth":0,"backlogSoftLimit":2000,"backlogHardLimit":6000,"lowPriorityMaxShare":0.25,"backlogThrottleStartPct":0.7,"intelligentPriorityEnabled":false,"strongDealRouteCount":0,"enqueued":0,"duplicates":0,"rejected":0,"msg":"flight_scan_route_scheduler_completed"}
+{"level":30,"time":"2026-05-07T07:29:44.697Z","pid":14480,"hostname":"Clariter_Ste_","lockKey":"flight_scan:scheduler:lock","lockTtlSec":420,"msg":"flight_scan_route_scheduler_skipped_lock_not_acquired"}
+{"level":30,"time":"2026-05-07T07:29:44.698Z","pid":14480,"hostname":"Clariter_Ste_","skipped":false,"reason":null,"routeCount":1,"scheduledRouteCount":1,"windowsPerRoute":1,"windowsByPriority":{"high":2,"medium":1,"low":1},"taskCount":1,"skippedByPriorityCooldown":0,"skippedByLowPriorityCap":0,"skippedByWindowCooldown":0,"skippedByBackpressure":0,"initialQueueDepth":0,"backlogSoftLimit":2000,"backlogHardLimit":6000,"lowPriorityMaxShare":0.25,"backlogThrottleStartPct":0.7,"intelligentPriorityEnabled":false,"strongDealRouteCount":0,"enqueued":1,"duplicates":0,"rejected":0,"msg":"flight_scan_route_scheduler_completed"}
+{"level":40,"time":"2026-05-07T07:29:44.699Z","pid":14480,"hostname":"Clariter_Ste_","err":{"type":"Error","message":"Stream isn't writeable and enableOfflineQueue options is false","stack":"Error: Stream isn't writeable and enableOfflineQueue options is false\n    at EventEmitter.sendCommand (C:\\Users\\StefanoGiustini\\OneDrive - Clariter Group\\Desktop\\Flight\\node_modules\\ioredis\\built\\Redis.js:365:32)\n    at EventEmitter.get (C:\\Users\\StefanoGiustini\\OneDrive - Clariter Group\\Desktop\\Flight\\node_modules\\ioredis\\built\\utils\\Commander.js:90:25)\n    at file:///C:/Users/StefanoGiustini/OneDrive%20-%20Clariter%20Group/Desktop/Flight/server/lib/free-cache.js:219:61\n    at HybridCache._withFallback (file:///C:/Users/StefanoGiustini/OneDrive%20-%20Clariter%20Group/Desktop/Flight/server/lib/free-cache.js:211:20)\n    at HybridCache.get (file:///C:/Users/StefanoGiustini/OneDrive%20-%20Clariter%20Group/Desktop/Flight/server/lib/free-cache.js:219:17)\n    at runRouteSchedulerOnce (file:///C:/Users/StefanoGiustini/OneDrive%20-%20Clariter%20Group/Desktop/Flight/server/lib/scan/route-scheduler.js:686:53)\n    at async TestContext.<anonymous> (file:///C:/Users/StefanoGiustini/OneDrive%20-%20Clariter%20Group/Desktop/Flight/test/route-scheduler.test.mjs:70:18)\n    at async Test.run (node:internal/test_runner/test:1125:7)\n    at async Test.processPendingSubtests (node:internal/test_runner/test:787:7)"},"command":"get","msg":"free_cache_redis_degraded_using_memory_fallback"}
+{"level":30,"time":"2026-05-07T07:29:44.700Z","pid":14480,"hostname":"Clariter_Ste_","skipped":false,"reason":null,"routeCount":6,"scheduledRouteCount":2,"windowsPerRoute":1,"windowsByPriority":{"high":2,"medium":1,"low":1},"taskCount":2,"skippedByPriorityCooldown":0,"skippedByLowPriorityCap":4,"skippedByWindowCooldown":0,"skippedByBackpressure":0,"initialQueueDepth":0,"backlogSoftLimit":2000,"backlogHardLimit":6000,"lowPriorityMaxShare":0.2,"backlogThrottleStartPct":0.7,"intelligentPriorityEnabled":false,"strongDealRouteCount":0,"enqueued":2,"duplicates":0,"rejected":0,"msg":"flight_scan_route_scheduler_completed"}
+{"level":40,"time":"2026-05-07T07:29:44.700Z","pid":14480,"hostname":"Clariter_Ste_","lockKey":"flight_scan:scheduler:lock","lockTtlSec":420,"distributedLockRequired":true,"msg":"flight_scan_route_scheduler_skipped_lock_backend_unavailable"}
+{"level":40,"time":"2026-05-07T07:29:44.700Z","pid":14480,"hostname":"Clariter_Ste_","lockKey":"flight_scan:scheduler:lock","lockTtlSec":420,"msg":"flight_scan_route_scheduler_skipped_lock_backend_degraded"}
+{"level":30,"time":"2026-05-07T07:29:44.701Z","pid":14480,"hostname":"Clariter_Ste_","skipped":false,"reason":null,"routeCount":2,"scheduledRouteCount":2,"windowsPerRoute":1,"windowsByPriority":{"high":2,"medium":1,"low":1},"taskCount":2,"skippedByPriorityCooldown":0,"skippedByLowPriorityCap":0,"skippedByWindowCooldown":0,"skippedByBackpressure":0,"initialQueueDepth":0,"backlogSoftLimit":2000,"backlogHardLimit":6000,"lowPriorityMaxShare":0.25,"backlogThrottleStartPct":0.7,"intelligentPriorityEnabled":true,"strongDealRouteCount":0,"enqueued":1,"duplicates":0,"rejected":1,"msg":"flight_scan_route_scheduler_completed"}
+✔ register on legacy sqlite schema does not return 500 (1706.6387ms)
+✔ requestLogger downgrades expected readiness 503 to warning (1.217ms)
+✔ requestLogger keeps non-expected 500 as error (0.4007ms)
+✔ route price stats service aggregates flight quotes into route_price_stats (1.2216ms)
+✔ intelligent scheduler skips route when priority cooldown is still active (4.815ms)
+✔ intelligent scheduler expands similar routes when a strong deal is detected (1.0343ms)
+✔ scheduler skips route windows when freshness cooldown is active (2.2056ms)
+✔ route scheduler skips when lock is not acquired (0.6946ms)
+✔ route scheduler enqueues tasks and releases lock on completion (1.2304ms)
+✔ route scheduler caps low-priority routes to reduce overscan (1.2614ms)
+✔ route scheduler skips when distributed lock backend is unavailable (0.2917ms)
+✔ route scheduler skips when distributed lock backend is degraded (0.2651ms)
+✔ route scheduler updates priority cooldown tick only for routes accepted by queue (0.8516ms)
+✔ system router exposes /health (8.9061ms)
+✔ system router exposes /api/system/data-status (7.4815ms)
+✔ system router protects sensitive status endpoints with admin guard (5.5064ms)
+✔ system router exposes /api/health/observability (6.0048ms)
+✔ system router exposes flight scan status and manual run endpoints (10.9553ms)
+✔ system router rejects non-admin access to flight scan operational endpoints (6.2745ms)
+✔ search router sets cache headers on public config endpoints (7.1712ms)
+✔ alerts router returns watchlist items for authenticated user (5.6987ms)
+✔ alerts router supports price alerts CRUD and manual scan (15.0959ms)
+✔ admin telemetry endpoint requires admin guard (9.7369ms)
+{"level":30,"time":"2026-05-07T07:29:44.817Z","pid":14480,"hostname":"Clariter_Ste_","runScheduler":true,"maxWorkerPasses":6,"workerPassesExecuted":2,"queueDepthBefore":4,"queueDepthAfter":0,"stoppedReason":"queue_empty","totals":{"processedTasks":6,"delayedTasks":0,"insertedQuotes":6,"dedupedQuotes":0,"rejectedQuotes":0,"failedTasks":0,"retriedTasks":0,"deadLetteredTasks":0},"downstream":{"skipped":true,"reason":"downstream_disabled"},"msg":"flight_scan_cycle_completed"}
+{"level":30,"time":"2026-05-07T07:29:44.817Z","pid":14480,"hostname":"Clariter_Ste_","runScheduler":false,"maxWorkerPasses":5,"workerPassesExecuted":1,"queueDepthBefore":2,"queueDepthAfter":2,"stoppedReason":"worker_delayed_tasks","totals":{"processedTasks":0,"delayedTasks":2,"insertedQuotes":0,"dedupedQuotes":0,"rejectedQuotes":0,"failedTasks":0,"retriedTasks":0,"deadLetteredTasks":0},"downstream":{"skipped":true,"reason":"downstream_disabled"},"msg":"flight_scan_cycle_completed"}
+{"level":30,"time":"2026-05-07T07:29:44.817Z","pid":14480,"hostname":"Clariter_Ste_","runScheduler":false,"maxWorkerPasses":6,"workerPassesExecuted":0,"queueDepthBefore":0,"queueDepthAfter":0,"stoppedReason":"queue_empty_before_first_pass","totals":{"processedTasks":0,"delayedTasks":0,"insertedQuotes":0,"dedupedQuotes":0,"rejectedQuotes":0,"failedTasks":0,"retriedTasks":0,"deadLetteredTasks":0},"downstream":{"routePriceStats":{"updatedRows":10}},"msg":"flight_scan_cycle_completed"}
+{"level":30,"time":"2026-05-07T07:29:44.827Z","pid":14480,"hostname":"Clariter_Ste_","scanRunId":"job_1","taskId":"t1","originIata":"MXP","destinationIata":"JFK","departureDate":"2026-08-10","attempt":1,"maxAttempts":2,"delaySec":1,"err":"temporary_provider_failure","msg":"flight_scan_task_retried"}
+{"level":30,"time":"2026-05-07T07:29:44.827Z","pid":14480,"hostname":"Clariter_Ste_","scanRunId":"job_1","taskId":"t1","originIata":"MXP","destinationIata":"JFK","departureDate":"2026-08-10","offerCount":1,"inserted":1,"deduped":0,"rejected":0,"fromCache":false,"msg":"flight_scan_task_completed"}
+{"level":30,"time":"2026-05-07T07:29:44.827Z","pid":14480,"hostname":"Clariter_Ste_","scanRunId":"job_1","skipped":false,"reason":null,"processedTasks":2,"delayedTasks":0,"insertedQuotes":1,"dedupedQuotes":0,"rejectedQuotes":0,"failedTasks":1,"retriedTasks":1,"deadLetteredTasks":0,"reusedProviderResponses":0,"status":"partial","msg":"flight_scan_worker_completed"}
+{"level":50,"time":"2026-05-07T07:29:44.828Z","pid":14480,"hostname":"Clariter_Ste_","scanRunId":"job_dead","taskId":"t_dead","originIata":"FCO","destinationIata":"JFK","departureDate":"2026-10-03","attempt":1,"maxAttempts":0,"err":"provider_hard_failure","msg":"flight_scan_task_failed_final"}
+{"level":30,"time":"2026-05-07T07:29:44.828Z","pid":14480,"hostname":"Clariter_Ste_","scanRunId":"job_dead","skipped":false,"reason":null,"processedTasks":1,"delayedTasks":0,"insertedQuotes":0,"dedupedQuotes":0,"rejectedQuotes":0,"failedTasks":1,"retriedTasks":0,"deadLetteredTasks":1,"reusedProviderResponses":0,"status":"failed","msg":"flight_scan_worker_completed"}
+{"level":30,"time":"2026-05-07T07:29:44.828Z","pid":14480,"hostname":"Clariter_Ste_","scanRunId":"job_rate","taskId":"t_rate","originIata":"LIN","destinationIata":"MAD","departureDate":"2026-11-03","priority":"low","delaySec":777,"err":"provider_rate_limit_priority_exceeded","msg":"flight_scan_task_requeued_rate_limited"}
+{"level":30,"time":"2026-05-07T07:29:44.829Z","pid":14480,"hostname":"Clariter_Ste_","scanRunId":"job_rate","skipped":false,"reason":null,"processedTasks":1,"delayedTasks":0,"insertedQuotes":0,"dedupedQuotes":0,"rejectedQuotes":0,"failedTasks":0,"retriedTasks":1,"deadLetteredTasks":0,"reusedProviderResponses":0,"status":"success","msg":"flight_scan_worker_completed"}
+{"level":30,"time":"2026-05-07T07:29:44.829Z","pid":14480,"hostname":"Clariter_Ste_","scanRunId":"job_inflight","taskId":"t_inflight","originIata":"MXP","destinationIata":"LIS","departureDate":"2026-11-03","delaySec":9,"inFlightRequeues":1,"err":"provider_request_inflight","msg":"flight_scan_task_requeued_inflight_contention"}
+{"level":30,"time":"2026-05-07T07:29:44.829Z","pid":14480,"hostname":"Clariter_Ste_","scanRunId":"job_inflight","skipped":false,"reason":null,"processedTasks":1,"delayedTasks":0,"insertedQuotes":0,"dedupedQuotes":0,"rejectedQuotes":0,"failedTasks":0,"retriedTasks":1,"deadLetteredTasks":0,"reusedProviderResponses":0,"status":"success","msg":"flight_scan_worker_completed"}
+{"level":30,"time":"2026-05-07T07:29:44.830Z","pid":14480,"hostname":"Clariter_Ste_","scanRunId":"job_reuse","taskId":"dup_1","originIata":"FCO","destinationIata":"JFK","departureDate":"2026-12-01","offerCount":1,"inserted":1,"deduped":0,"rejected":0,"fromCache":false,"msg":"flight_scan_task_completed"}
+{"level":30,"time":"2026-05-07T07:29:44.830Z","pid":14480,"hostname":"Clariter_Ste_","scanRunId":"job_reuse","taskId":"dup_2","originIata":"FCO","destinationIata":"JFK","departureDate":"2026-12-01","offerCount":1,"inserted":1,"deduped":0,"rejected":0,"fromCache":false,"msg":"flight_scan_task_completed"}
+{"level":30,"time":"2026-05-07T07:29:44.830Z","pid":14480,"hostname":"Clariter_Ste_","scanRunId":"job_reuse","skipped":false,"reason":null,"processedTasks":2,"delayedTasks":0,"insertedQuotes":2,"dedupedQuotes":0,"rejectedQuotes":0,"failedTasks":0,"retriedTasks":0,"deadLetteredTasks":0,"reusedProviderResponses":1,"status":"success","msg":"flight_scan_worker_completed"}
+{"level":30,"time":"2026-05-07T07:29:44.830Z","pid":14480,"hostname":"Clariter_Ste_","scanRunId":"job_delay","skipped":false,"reason":null,"processedTasks":0,"delayedTasks":1,"insertedQuotes":0,"dedupedQuotes":0,"rejectedQuotes":0,"failedTasks":0,"retriedTasks":0,"deadLetteredTasks":0,"reusedProviderResponses":0,"status":"success","msg":"flight_scan_worker_completed"}
+{"level":50,"time":"2026-05-07T07:29:44.831Z","pid":14480,"hostname":"Clariter_Ste_","scanRunId":"job_rate_limit_cap","taskId":"t_rate_limit_cap","originIata":"MXP","destinationIata":"BCN","departureDate":"2026-10-20","rateLimitRequeues":2,"maxRateLimitRequeues":2,"err":"provider_rate_limit_priority_exceeded","msg":"flight_scan_task_failed_rate_limited_final"}
+{"level":30,"time":"2026-05-07T07:29:44.831Z","pid":14480,"hostname":"Clariter_Ste_","scanRunId":"job_rate_limit_cap","skipped":false,"reason":null,"processedTasks":1,"delayedTasks":0,"insertedQuotes":0,"dedupedQuotes":0,"rejectedQuotes":0,"failedTasks":1,"retriedTasks":0,"deadLetteredTasks":1,"reusedProviderResponses":0,"status":"failed","msg":"flight_scan_worker_completed"}
+{"level":30,"time":"2026-05-07T07:29:44.831Z","pid":14480,"hostname":"Clariter_Ste_","scanRunId":"job_loop_delay","taskId":"t_loop_delay","originIata":"VCE","destinationIata":"LIS","departureDate":"2026-12-15","remainingSec":90,"msg":"flight_scan_worker_stopped_repeating_delayed_task"}
+{"level":30,"time":"2026-05-07T07:29:44.831Z","pid":14480,"hostname":"Clariter_Ste_","scanRunId":"job_loop_delay","skipped":false,"reason":null,"processedTasks":0,"delayedTasks":2,"insertedQuotes":0,"dedupedQuotes":0,"rejectedQuotes":0,"failedTasks":0,"retriedTasks":0,"deadLetteredTasks":0,"reusedProviderResponses":0,"status":"success","msg":"flight_scan_worker_completed"}
+✔ outbound tracking is blocked without server-side consent and enabled only with backend consent (24.545ms)
+✔ runtime config audit flags blocking keys when missing (1.5166ms)
+✔ runtime config audit passes when blocking keys are present (0.3165ms)
+✔ runtime config audit blocks production when outbound click secret is weak or reused (0.3919ms)
+✔ runtime config audit rejects unsupported billing provider values (0.2353ms)
+✔ runtime config audit blocks production when mock billing upgrades are enabled (0.2202ms)
+✔ runtime config audit blocks production when Stripe publishable key and prices are missing (0.3136ms)
+✔ runtime config audit blocks production when STRIPE_SECRET_KEY is missing with billing provider stripe (0.2591ms)
+✔ runtime config audit blocks production when AI free-user bypass is enabled (0.261ms)
+✔ runtime config audit blocks production when AI_ALLOWED_PLAN_TYPES includes free (0.2928ms)
+✔ runtime config audit blocks production when FREE_AI_ENABLED is true (0.3353ms)
+✔ runtime config audit blocks production when Stripe inline price-data fallback is enabled (0.2697ms)
+✔ runtime config audit fails when Duffel is enabled without API key (0.1834ms)
+✔ runtime config audit fails when scanner is enabled and no provider is configured (0.1786ms)
+✔ runtime config audit passes scanner provider consistency when one provider is configured (0.2862ms)
+✔ runtime config audit fails in production when deals content has no delivery channel (0.2932ms)
+✔ runtime config audit passes deals content channel check with in-app delivery enabled (0.3166ms)
+✔ scan orchestrator runs scheduler and multiple worker passes until queue is empty (0.7732ms)
+✔ scan orchestrator stops when worker reports delayed-only tasks (0.2681ms)
+✔ scan orchestrator invokes downstream pipeline only when enabled (0.2651ms)
+✔ provider adapter caches offers and avoids repeated provider call (1.2942ms)
+✔ provider adapter enforces rate limit (0.4844ms)
+✔ provider adapter enforces priority-specific rate limits (0.6595ms)
+✔ provider adapter serves stale cache when provider keeps failing (0.6898ms)
+✔ provider adapter fails fast with provider_request_inflight when lock is already held (0.4501ms)
+✔ provider adapter uses shorter active cache ttl when provider returns empty offers (0.522ms)
+✔ scan queue dedupes repeated route/date tasks (0.81ms)
+✔ scan queue requeues task with delay (0.3555ms)
+✔ scan queue stores dead-letter payload and exposes stats (0.6223ms)
+✔ scan queue extends dedupe ttl for low-priority windows (0.2773ms)
+✔ scan queue rolls back dedupe claim when enqueue push fails (0.4786ms)
+✔ scan queue enqueueMany continues after single enqueue failure (0.6047ms)
+✔ scan queue enqueueMany can return per-item results when requested (0.3781ms)
+✔ scan worker retries failed task and stores quotes on next attempt (1.6778ms)
+✔ scan worker dead-letters task after max attempts (0.5721ms)
+✔ scan worker requeues rate-limited task without incrementing attempt (0.5344ms)
+✔ scan worker requeues inflight contention without consuming rate-limit retries (0.5121ms)
+✔ scan worker reuses provider response for duplicate request within same run (0.7388ms)
+✔ scan worker preserves long notBefore delay instead of shrinking it (0.4132ms)
+✔ scan worker dead-letters task when rate-limit requeue cap is exceeded (0.5349ms)
+✔ scan worker stops when the same delayed task repeats in the same run (0.3817ms)
+✔ STEP1 access control: /api/watchlist only returns owner items (7.9931ms)
+✔ STEP1 access control: /api/watchlist/:id cannot delete another user item (5.9307ms)
+✔ STEP1 access control: /api/user/data-export only contains owner data (7.2768ms)
+✔ STEP1 access control: /api/billing/subscription/sync uses session user context (12.7562ms)
+✔ extractJsonObject tolerates wrapped JSON content (0.2547ms)
+✔ extractJsonObject rejects oversized model payloads (0.1005ms)
+✔ parseDecisionAiPayload enforces IATA format and sanitizes text (0.6623ms)
+✔ parseIntentAiPayload keeps only allowed deterministic fields (0.2461ms)
+✔ resolveOpportunityEnrichmentPayload falls back safely on malformed payload (0.674ms)
+✔ anonymous consent is persisted server-side and gates optional tracking (12.3152ms)
+✔ reject optional consent clears functional storage keys (1.3679ms)
+✔ custom preferences keep only permitted categories (0.2742ms)
+✔ clearConsent removes consent record and policy can be enforced idempotently (0.2322ms)
+✔ canTrack denies optional tracking when consent is missing (0.1161ms)
+✔ canTrack allows only necessary by default and respects explicit backend categories (0.1088ms)
+✔ verify-email: valid token marks user verified and marks token used (0.7818ms)
+✔ verify-email: expired token returns 400 (0.2491ms)
+✔ verify-email: already-used token returns 400 (0.2299ms)
+✔ verify-email: unknown token returns 400 (0.1903ms)
+✔ verify-email: invalid short token returns 400 (0.0981ms)
+✔ verify-email/resend: unverified user gets token stored and mail queued (0.5045ms)
+✔ verify-email/resend: already-verified user → 200 no-op, no mail sent (0.1696ms)
+✔ verify-email/resend: unknown email → 200, no enumeration (0.131ms)
+✔ register: auto-verify when SMTP not configured (sendMail returns skipped) (0.2578ms)
+✔ register: NOT auto-verified when SMTP is configured (mail sent) (0.1693ms)
+✔ error handler maps 413 and entity.too.large to payload_too_large (0.1655ms)
+✔ error handler normalizes auth/forbidden/rate-limit codes (0.0879ms)
+✔ error handler provides bounded human message for payload_too_large (0.1044ms)
+✔ error handler provides human message for premium_required (0.0656ms)
+✔ error handler preserves register-specific machine error codes (0.0705ms)
+✔ export without reason is rejected with 400 (0.3833ms)
+✔ export with valid reason passes middleware (0.1381ms)
+✔ export limiter returns 429 on flood (0.1655ms)
+✔ invalid input on /api/search/suggestions is rejected with 400 (6.7298ms)
+✔ sanitizeFollowMetadata drops nested and unsupported values (0.4018ms)
+✔ followMetadataSchema rejects oversized payloads (0.68ms)
+✔ followMetadataSchema accepts safe primitive metadata (0.4656ms)
+✔ frontend source does not embed server/provider secrets (82.9841ms)
+✔ non-admin sessions cannot execute operational jobs or access outbound reports (1716.814ms)
+✔ legacy /auth routes are disabled by default in production (1622.6173ms)
+✔ oauth callback enforces browser binding and rejects reused state (1656.7893ms)
+✔ /api/outbound/click requires server-issued redirect context and rejects tampering (1753.1808ms)
+✔ admin telemetry stores trusted server-derived context instead of spoofed client fields (1753.2309ms)
+✔ server startup hard-fails in production when ALLOW_MOCK_BILLING_UPGRADES=true (1438.746ms)
+✔ server startup hard-fails in production when OUTBOUND_CLICK_SECRET is weak (1502.5757ms)
+✔ backoffice startup fails safely in production when BACKOFFICE_TRUST_PROXY is not configured (1001.1215ms)
+✔ redactUrlForLogs hides sensitive query values (0.3098ms)
+✔ redactUrlForLogs keeps origin only when requested (0.2049ms)
+✔ sanitizeHeaderLikeValue strips control characters and bounds size (0.1058ms)
+✔ analyzePayloadShape rejects deep payload trees (0.4215ms)
+✔ payload hardening middleware rejects oversized payload (1.2132ms)
+✔ payload hardening middleware allows safe payloads (0.3725ms)
+✔ personal hub readers fail closed on oversized localStorage payloads (0.354ms)
+✔ exportLocalTravelData returns minimized snapshot and omits stale upgrade records (0.9356ms)
+✔ remembered email storage is validated and expires stale data (0.2264ms)
+✔ clearLocalTravelData removes privacy-relevant local keys (0.4956ms)
+✔ rotateRefreshSession: valid session rotates ok (0.5092ms)
+✔ rotateRefreshSession: expired session returns reason=expired (0.4703ms)
+✔ rotateRefreshSession: already-revoked session returns reason=reused (0.1478ms)
+✔ rotateRefreshSession: missing session returns reason=not_found (0.1211ms)
+✔ rotateRefreshSession: concurrent rotations — only first wins (0.4188ms)
+✔ issueApiKey JSON path: concurrent requests cannot exceed maxKeys (0.4583ms)
+✔ createAlert JSON path: concurrent requests cannot exceed maxAlerts (0.3849ms)
+✔ getOrCreateSubscription JSON path: concurrent calls create one subscription (0.2755ms)
+{"level":30,"time":"2026-05-07T07:29:57.454Z","pid":14480,"hostname":"Clariter_Ste_","source":"seed_import","processedCount":2,"insertedCount":0,"dedupedCount":2,"failedCount":0,"dryRun":false,"msg":"seed_import_worker_completed"}
+{"level":30,"time":"2026-05-07T07:29:57.458Z","pid":14480,"hostname":"Clariter_Ste_","source":"seed_import","processedCount":2,"insertedCount":0,"dedupedCount":0,"failedCount":0,"dryRun":true,"msg":"seed_import_worker_completed"}
+✔ seed import worker normalizes and dedupes csv rows (25.2884ms)
+✔ smart departure returns disabled payload on invalid input (0.367ms)
+✔ smart departure free/anonymous gating returns max 1 for anonymous (0.6322ms)
+✔ smart departure free gating returns max 2 for free users (0.1551ms)
+✔ smart departure paid gating returns max 3 for pro/creator (0.278ms)
+✔ smart departure keeps only meaningful alternatives and sorts by saving desc (0.6517ms)
+✔ soft launch runtime audit can pass without Duffel when product is cached-only honest (0.312ms)
+✔ soft launch blocks unsupported live provider mix (0.5882ms)
+✔ Duffel absent resolves to provider not ready and cached public copy (0.1747ms)
+✔ SMTP and push absent resolve to alert delivery not ready without instant promise (0.171ms)
+✔ soft launch feature matrix exposes core MVP and hides unready features (0.2441ms)
+✔ public legal pages are generated from versioned privacy docs (1.9797ms)
+✔ footer and auth surfaces link to public legal pages (0.4273ms)
+✔ soft launch public copy avoids unproven Free/live claims (79.7354ms)
+✔ startup readiness passes with production-safe policy (1.0024ms)
+✔ startup readiness fails when production origin is not https (0.2634ms)
+✔ startup readiness fails when localhost is in production CORS (0.2199ms)
+✔ user export: JSON snapshot has required top-level fields (0.3437ms)
+✔ user export: only returns data belonging to requesting user (0.3067ms)
+✔ user export: CSV includes section headers (0.2941ms)
+✔ user export: CSV escapes double quotes in values (0.2649ms)
+✔ user export: empty collections produce valid CSV without crash (0.1196ms)
+✔ user export: notifications capped at 200 most recent (1.0935ms)
+✔ user export: deleted price alerts excluded from export (0.1617ms)
+{"level":40,"time":"2026-05-07T07:29:57.556Z","pid":14480,"hostname":"Clariter_Ste_","skipped":true,"reason":"overlap_running","overlapGuardMinutes":45,"overlapJobId":"1KlyIk5t0kK-jTz-","overlapJobType":"route_price_stats_refresh","routeId":null,"msg":"route_price_stats_worker_skipped_overlap_running"}
+✔ route price stats worker skips when a recent running job already exists (7.9478ms)
+{"level":40,"time":"2026-05-07T07:29:57.562Z","pid":14480,"hostname":"Clariter_Ste_","skipped":true,"reason":"overlap_running","overlapGuardMinutes":45,"overlapJobId":"6bY4_7MZnYPYcDay","overlapJobType":"detected_deals_refresh","routeId":null,"msg":"detected_deals_worker_skipped_overlap_running"}
+✔ detected deals worker skips when a recent running job already exists (7.0691ms)
+{"level":40,"time":"2026-05-07T07:29:57.570Z","pid":14480,"hostname":"Clariter_Ste_","skipped":true,"reason":"overlap_running","overlapGuardMinutes":45,"overlapJobId":"pn_zxNA1nBnNz6E_","overlapJobType":"price_alerts_scan","limit":null,"msg":"price_alerts_worker_skipped_overlap_running"}
+✔ price alerts worker skips when a recent running job already exists (6.0553ms)
+ℹ tests 434
+ℹ suites 13
+ℹ pass 430
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 4
+ℹ todo 0
+ℹ duration_ms 41056.3785

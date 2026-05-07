@@ -13,6 +13,18 @@ const STEP_TIMEOUT_MS = Number(process.env.SECURITY_GATE_STEP_TIMEOUT_MS || 20 *
 const DATABASE_URL = String(process.env.DATABASE_URL || 'postgresql://flight:flight@127.0.0.1:5432/flight').trim();
 const REDIS_URL = String(process.env.REDIS_URL || 'redis://127.0.0.1:6379').trim();
 const INFRA_MODE = String(process.env.INFRA_MODE || 'auto').trim().toLowerCase();
+const DEFAULT_REDIS_CLEANUP_PREFIXES = [
+  'release_gate:*',
+  'test:*',
+  'flight:test:*',
+  'rl:*',
+  'sess:*',
+  'csrf:*',
+  'oauth:*',
+  'quota:*',
+  'email:*',
+  'scan:*'
+];
 
 function isLikelyLocalHost(urlValue) {
   try {
@@ -83,7 +95,7 @@ function buildStrictComplianceEnvForLocalProfile() {
     CORS_ALLOWED_ORIGINS: process.env.CORS_ALLOWED_ORIGINS || 'https://app.flightsuite.test',
     CORS_ORIGIN: process.env.CORS_ORIGIN || 'https://app.flightsuite.test',
     CORS_ALLOWLIST: process.env.CORS_ALLOWLIST || 'https://app.flightsuite.test',
-    ENABLE_PROVIDER_DUFFEL: process.env.ENABLE_PROVIDER_DUFFEL || 'true',
+    ENABLE_PROVIDER_DUFFEL: process.env.SECURITY_GATE_ENABLE_PROVIDER_DUFFEL || 'true',
     ENABLE_PROVIDER_KIWI: process.env.ENABLE_PROVIDER_KIWI || 'false',
     [`ENABLE_PROVIDER_${'SKY' + 'SCANNER'}`]: process.env[`ENABLE_PROVIDER_${'SKY' + 'SCANNER'}`] || 'false',
     DUFFEL_API_KEY: process.env.DUFFEL_API_KEY || 'duffel_local_security_gate_key_123456789',
@@ -146,15 +158,39 @@ async function waitForService(name, endpoint, attempts = 30, intervalMs = 1000) 
   throw new Error(`${name}_not_ready:${endpoint.host}:${endpoint.port}`);
 }
 
-async function flushRedisState() {
-  console.log('\n[security-go-live-gate] running: reset-redis-state');
-  const allowExternalFlush =
-    String(process.env.SECURITY_GATE_ALLOW_EXTERNAL_REDIS_FLUSH || '').trim().toLowerCase() === 'true';
-  if (!isLikelyLocalHost(REDIS_URL) && !allowExternalFlush) {
-    throw new Error(
-      'redis_flush_requires_dedicated_test_redis:set SECURITY_GATE_ALLOW_EXTERNAL_REDIS_FLUSH=true only for isolated gate Redis'
-    );
+function getRedisCleanupPatterns() {
+  const configured = String(process.env.SECURITY_GATE_REDIS_CLEANUP_PREFIXES || '').trim();
+  const patterns = configured
+    ? configured
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+    : DEFAULT_REDIS_CLEANUP_PREFIXES;
+  for (const pattern of patterns) {
+    if (pattern === '*' || pattern === '*:*' || !pattern.endsWith('*')) {
+      throw new Error(`unsafe_redis_cleanup_pattern:${pattern}`);
+    }
   }
+  return patterns;
+}
+
+async function deleteRedisKeysByPattern(redis, pattern) {
+  let cursor = '0';
+  let deleted = 0;
+  do {
+    const [nextCursor, keys] = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', 500);
+    cursor = nextCursor;
+    if (keys.length > 0) {
+      deleted += keys.length;
+      await redis.del(...keys);
+    }
+  } while (cursor !== '0');
+  return deleted;
+}
+
+async function cleanupRedisState() {
+  console.log('\n[security-go-live-gate] running: reset-redis-state');
+  const patterns = getRedisCleanupPatterns();
   const redis = new Redis(REDIS_URL, {
     connectTimeout: 10_000,
     commandTimeout: 10_000,
@@ -164,7 +200,12 @@ async function flushRedisState() {
   });
   try {
     await redis.connect();
-    await redis.flushall();
+    let deleted = 0;
+    for (const pattern of patterns) {
+      // eslint-disable-next-line no-await-in-loop
+      deleted += await deleteRedisKeysByPattern(redis, pattern);
+    }
+    console.log(`[security-go-live-gate] redis namespace cleanup deleted ${deleted} keys`);
   } finally {
     redis.disconnect();
   }
@@ -196,7 +237,7 @@ async function main() {
     await runStep('critical-flow-auth-session', 'node', ['--test', 'test/auth-session-router.security.test.mjs']);
     await runStep('critical-flow-cookie-consent', 'node', ['--test', 'test/security/cookie-consent-policy.test.mjs']);
     await runStep('critical-flow-deal-redirect-consent', 'node', ['--test', 'test/security/deal-redirect-consent-guard.test.mjs']);
-    await flushRedisState();
+    await cleanupRedisState();
     if (useStrictLocalOpsProfile) {
       await runStep(
         'security-compliance-strict-local-env',

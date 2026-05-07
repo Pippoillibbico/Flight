@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { getSaasPool } from '../lib/saas-db.js';
+import { getEmailReadiness } from '../lib/email/email-readiness.js';
+import { passwordResetTemplate } from '../lib/email/email-templates.js';
 
 const resendVerifyEmailSchema = z
   .object({
@@ -53,8 +55,8 @@ export function buildAuthLocalRouter({
     const parsed = registerSchema.safeParse(req.body);
     if (!parsed.success) return sendMachineError(req, res, 400, 'invalid_payload');
     const isProduction = String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
-    const smtpConfigured = Boolean(String(process.env.SMTP_HOST || '').trim() && String(process.env.SMTP_USER || '').trim());
-    if (isProduction && !smtpConfigured) {
+    const emailReadiness = getEmailReadiness(process.env);
+    if (isProduction && emailReadiness.status === 'EMAIL_NOT_CONFIGURED') {
       logger.error({ request_id: req.id || null }, '[FATAL] SMTP must be configured in production to register users safely');
       return sendMachineError(req, res, 503, 'smtp_required_in_production');
     }
@@ -639,11 +641,17 @@ export function buildAuthLocalRouter({
       });
 
       const resetUrl = buildPasswordResetUrl(rawToken);
+      const template = passwordResetTemplate({
+        resetUrl,
+        managePreferencesUrl: `${process.env.FRONTEND_ORIGIN || process.env.FRONTEND_URL || 'http://localhost:5173'}/account/email-preferences`,
+        privacyUrl: `${process.env.FRONTEND_ORIGIN || process.env.FRONTEND_URL || 'http://localhost:5173'}/privacy`
+      });
       sendMail({
         to: user.email,
-        subject: 'Password reset request',
-        text: `Use this secure link to reset your password: ${resetUrl}`,
-        html: `<p>Use this secure link to reset your password:</p><p><a href="${resetUrl}">${resetUrl}</a></p>`
+        subject: template.subject,
+        text: template.text,
+        html: template.html,
+        type: 'service'
       }).catch((error) => {
         logger.warn(
           {

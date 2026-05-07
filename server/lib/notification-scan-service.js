@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 import { addDays, format, parseISO } from 'date-fns';
 import { findCheapestWindows } from './window-finder-engine.js';
+import { resolveUserPlan } from './plan-access.js';
+import { canSendEmailType } from './email/email-preferences.js';
 
 function toSafeInt(value, { fallback, min, max }) {
   const num = Number(value);
@@ -225,7 +227,8 @@ export function createNotificationScanService({
             });
 
             const user = db.users.find((u) => u.id === subscription.userId);
-            if (user?.email) {
+            const planType = resolveUserPlan(user).planType;
+            if (user?.email && planType !== 'free' && canSendEmailType(user, 'alert')) {
               pendingEmails.push({
                 userId: user.id,
                 email: user.email,
@@ -287,11 +290,12 @@ export function createNotificationScanService({
             }
           });
 
-          const user = db.users.find((u) => u.id === subscription.userId);
-          if (user?.email) {
-            pendingEmails.push({
-              userId: user.id,
-              email: user.email,
+            const user = db.users.find((u) => u.id === subscription.userId);
+            const planType = resolveUserPlan(user).planType;
+            if (user?.email && planType !== 'free' && canSendEmailType(user, 'alert')) {
+              pendingEmails.push({
+                userId: user.id,
+                email: user.email,
               subject: '\uD83D\uDD25 Nuova occasione',
               text: `${best.origin} -> ${best.destination}\n${Math.round(Number(best.price || 0))}\u20AC\nTarget radar: ${Math.round(Number(subscription.targetPrice || 0))}\u20AC.\nQuesto volo potrebbe sparire presto.`
             });

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import pg from 'pg';
 import {
   cleanupStaleOpportunityPipelineRuns,
   createOpportunityPipelineRun,
@@ -22,12 +23,52 @@ function withEnv(name, value) {
   };
 }
 
-async function withOpportunitySqliteDb(fn) {
+async function withOpportunityDb(fn) {
+  const databaseUrl = String(process.env.DATABASE_URL || '').trim();
+  if (databaseUrl) {
+    const pool = new pg.Pool({
+      connectionString: databaseUrl,
+      max: 1,
+      connectionTimeoutMillis: 5_000
+    });
+    try {
+      return await fn({
+        updateStartedAt: async (runId) => {
+          await pool.query(
+            `UPDATE opportunity_pipeline_runs
+             SET started_at = NOW() - INTERVAL '3 hours'
+             WHERE id = $1`,
+            [runId]
+          );
+        },
+        getRun: async (runId) => {
+          const result = await pool.query(
+            'SELECT id, status, error_summary FROM opportunity_pipeline_runs WHERE id = $1',
+            [runId]
+          );
+          return result.rows[0] || null;
+        }
+      });
+    } finally {
+      await pool.end().catch(() => {});
+    }
+  }
+
   const sqlite = await import('node:sqlite');
   const dbPath = fileURLToPath(new URL('../data/app.db', import.meta.url));
   const db = new sqlite.DatabaseSync(dbPath);
   try {
-    return await fn(db);
+    return await fn({
+      updateStartedAt: async (runId) => {
+        db.prepare(
+          `UPDATE opportunity_pipeline_runs
+           SET started_at = datetime('now', '-3 hour')
+           WHERE id = ?`
+        ).run(runId);
+      },
+      getRun: async (runId) =>
+        db.prepare('SELECT id, status, error_summary FROM opportunity_pipeline_runs WHERE id = ?').get(runId)
+    });
   } finally {
     db.close();
   }
@@ -70,12 +111,8 @@ test('stale running opportunity pipeline runs are auto-closed', async () => {
   });
 
   try {
-    await withOpportunitySqliteDb(async (db) => {
-      db.prepare(
-        `UPDATE opportunity_pipeline_runs
-         SET started_at = datetime('now', '-3 hour')
-         WHERE id = ?`
-      ).run(run.id);
+    await withOpportunityDb(async (db) => {
+      await db.updateStartedAt(run.id);
     });
 
     const closedCount = await cleanupStaleOpportunityPipelineRuns({ staleAfterMinutes: 30 });
@@ -84,9 +121,7 @@ test('stale running opportunity pipeline runs are auto-closed', async () => {
     const recent = await listRecentOpportunityPipelineRuns(200);
     let row = recent.find((item) => String(item?.id || '') === run.id);
     if (!row) {
-      row = await withOpportunitySqliteDb(async (db) =>
-        db.prepare('SELECT id, status, error_summary FROM opportunity_pipeline_runs WHERE id = ?').get(run.id)
-      );
+      row = await withOpportunityDb(async (db) => db.getRun(run.id));
     }
     assert.equal(Boolean(row), true);
     assert.equal(String(row?.status || ''), 'failed');
