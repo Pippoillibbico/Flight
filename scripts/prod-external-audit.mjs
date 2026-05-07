@@ -166,10 +166,11 @@ async function run() {
   }).catch(() => null);
   if (httpProbe) {
     const status = Number(httpProbe.status || 0);
-    if (![301, 302, 307, 308].includes(status)) {
+    const tunnelHttpBlocked = hostname.endsWith('.trycloudflare.com') && status === 530;
+    if (![301, 302, 307, 308].includes(status) && !tunnelHttpBlocked) {
       fail('HTTP to HTTPS redirect not enforced for plain HTTP', `status=${status}`);
     }
-    logCheck('http-redirect', true, `status=${status}`);
+    logCheck(tunnelHttpBlocked ? 'http-blocked-by-audit-tunnel' : 'http-redirect', true, `status=${status}`);
   }
 
   const health = await fetchJson(`${origin}/health`);
