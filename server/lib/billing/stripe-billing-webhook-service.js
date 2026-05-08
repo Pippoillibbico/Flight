@@ -142,6 +142,7 @@ export class StripeBillingWebhookService {
             });
           } catch (error) {
             this.logger.warn({ err: error, stripe_subscription_id: subscriptionId }, 'stripe_checkout_subscription_sync_failed');
+            throw Object.assign(error, { code: 'stripe_checkout_subscription_sync_failed' });
           }
         } else {
           const userId = String(session?.metadata?.user_id || session?.client_reference_id || '').trim();

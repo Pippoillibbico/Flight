@@ -8,6 +8,35 @@ $frontendUrl = if ([string]::IsNullOrWhiteSpace($env:FRONTEND_APP_URL)) { 'http:
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $projectRoot
+$dockerMode = $null
+$wslProjectRoot = $null
+
+function Get-WslArgs {
+  if ([string]::IsNullOrWhiteSpace($env:WSL_DISTRO)) { return @() }
+  return @('-d', $env:WSL_DISTRO, '--')
+}
+
+function Invoke-WslCapture {
+  param([string]$Command)
+  $args = @(Get-WslArgs) + @('sh', '-lc', $Command)
+  return & wsl.exe @args 2>&1
+}
+
+function Get-WslProjectRoot {
+  if (-not [string]::IsNullOrWhiteSpace($script:wslProjectRoot)) { return $script:wslProjectRoot }
+  $args = @(Get-WslArgs) + @('wslpath', '-a', $projectRoot)
+  $path = (& wsl.exe @args 2>$null | Select-Object -First 1)
+  if ([string]::IsNullOrWhiteSpace($path)) {
+    throw 'Impossibile risolvere il percorso progetto dentro WSL.'
+  }
+  $script:wslProjectRoot = $path.Trim()
+  return $script:wslProjectRoot
+}
+
+function Quote-Sh {
+  param([string]$Value)
+  return "'" + ($Value -replace "'", "'\''") + "'"
+}
 
 function Test-DockerReady {
   try {
@@ -16,6 +45,46 @@ function Test-DockerReady {
   } catch {
     return $false
   }
+}
+
+function Test-WslDockerReady {
+  try {
+    $dockerPath = Invoke-WslCapture 'command -v docker'
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($dockerPath)) { return $false }
+    $dockerPathText = ($dockerPath | Out-String).Trim()
+    if ($dockerPathText -match '/mnt/wsl/docker-desktop' -or $dockerPathText -match '/mnt/c/.+docker') { return $false }
+
+    $info = Invoke-WslCapture "docker info --format 'name={{.Name}} os={{.OperatingSystem}} root={{.DockerRootDir}}'"
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($info)) { return $false }
+    $infoText = ($info | Out-String).Trim()
+    if ($infoText -match 'Docker Desktop' -or $infoText -match 'docker-desktop') { return $false }
+    return $true
+  } catch {
+    return $false
+  }
+}
+
+function Invoke-ComposeCommand {
+  param([string]$Command)
+  if ($script:dockerMode -eq 'wsl') {
+    $root = Quote-Sh (Get-WslProjectRoot)
+    $args = @(Get-WslArgs) + @('sh', '-lc', "cd $root && docker compose $Command")
+    & wsl.exe @args
+    return
+  }
+  $parts = $Command -split '\s+'
+  docker compose @parts
+}
+
+function Invoke-ComposeCapture {
+  param([string]$Command)
+  if ($script:dockerMode -eq 'wsl') {
+    $root = Quote-Sh (Get-WslProjectRoot)
+    $args = @(Get-WslArgs) + @('sh', '-lc', "cd $root && docker compose $Command")
+    return & wsl.exe @args 2>$null
+  }
+  $parts = $Command -split '\s+'
+  return docker compose @parts 2>$null
 }
 
 function Test-AppReady {
@@ -51,29 +120,36 @@ if (Test-AppReady) {
   exit 0
 }
 
-if (-not (Test-DockerReady)) {
+if (Test-WslDockerReady) {
+  $script:dockerMode = 'wsl'
+  Write-Host 'Docker mode: WSL/Linux Docker Engine' -ForegroundColor Cyan
+} elseif ($env:ALLOW_DOCKER_DESKTOP_FALLBACK -eq 'true' -and (Test-DockerReady)) {
+  $script:dockerMode = 'windows'
+  Write-Host 'Docker mode: Windows Docker CLI (explicit fallback)' -ForegroundColor Yellow
+} else {
   throw @'
 Docker daemon non disponibile.
-Avvia un Docker Engine raggiungibile da terminale, poi riesegui il comando.
-Questo script non avvia Docker Desktop automaticamente.
+Avvia Docker Engine dentro WSL/Linux, poi riesegui il comando.
+Docker Desktop non è richiesto e non viene usato salvo ALLOW_DOCKER_DESKTOP_FALLBACK=true.
 
 Esempi:
-- Linux/WSL: avvia il servizio Docker Engine nella distro e lancia lo script da quel terminale.
-- Engine remoto: esporta DOCKER_HOST prima di eseguire lo script.
+- WSL Ubuntu: sudo service docker start
+- Verifica: wsl sh -lc "docker info"
+- Fallback esplicito Desktop: ALLOW_DOCKER_DESKTOP_FALLBACK=true npm run app:start
 '@
 }
 
-$composeArgs = @('compose', 'up', '-d')
+$composeCommand = 'up -d'
 if (-not $NoBuild) {
-  $composeArgs += '--build'
+  $composeCommand = "$composeCommand --build"
 }
 
-docker @composeArgs
+Invoke-ComposeCommand $composeCommand
 
 $deadline = (Get-Date).AddSeconds(180)
 $healthy = $false
 while ((Get-Date) -lt $deadline) {
-  $json = docker compose ps --format json 2>$null
+  $json = Invoke-ComposeCapture 'ps --format json'
   if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($json)) {
     Start-Sleep -Seconds 2
     continue
@@ -100,7 +176,7 @@ while ((Get-Date) -lt $deadline) {
 
 if (-not $healthy) {
   Write-Host 'Servizi non pronti entro timeout. Ultimo stato:' -ForegroundColor Yellow
-  docker compose ps
+  Invoke-ComposeCommand 'ps'
   throw 'Startup incompleto.'
 }
 

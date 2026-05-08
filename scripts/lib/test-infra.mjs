@@ -428,9 +428,16 @@ export async function ensureTestInfra(options = {}) {
     urls = resolveInfraUrls({ mode: 'wsl-docker' });
     await tryMode('wsl-docker', () => startWslDockerInfra(urls));
   } else {
+    if (process.platform === 'win32') {
+      const wslUrls = resolveInfraUrls({ mode: 'wsl-docker' });
+      if (await tryMode('wsl-docker', () => startWslDockerInfra(wslUrls))) {
+        urls = wslUrls;
+        return { ...urls, controller: selectedController };
+      }
+    }
     if (await tryMode('docker-desktop', () => startDockerDesktopInfra(urls))) return { ...urls, controller: selectedController };
     const wslUrls = resolveInfraUrls({ mode: 'wsl-docker' });
-    if (await tryMode('wsl-docker', () => startWslDockerInfra(wslUrls))) {
+    if (process.platform !== 'win32' && (await tryMode('wsl-docker', () => startWslDockerInfra(wslUrls)))) {
       urls = wslUrls;
       return { ...urls, controller: selectedController };
     }

@@ -468,12 +468,19 @@ async function ensureLocalInfra() {
   } else if (INFRA_MODE === 'wsl-docker') {
     if (await tryMode('wsl-docker', startWslDockerInfra)) return;
   } else {
-    if (await tryMode('docker-desktop', startDockerDesktopInfra)) return;
-    const desktopFailure = failures.find((failure) => failure.mode === 'docker-desktop');
-    if (desktopFailure && isDockerDesktopUnavailable(desktopFailure.message)) {
-      console.warn('[release-prod-gate] Docker Desktop looks unhealthy; trying WSL Docker Engine next.');
+    if (process.platform === 'win32') {
+      if (await tryMode('wsl-docker', startWslDockerInfra)) return;
+      if (String(process.env.ALLOW_DOCKER_DESKTOP_FALLBACK || '').toLowerCase() === 'true') {
+        if (await tryMode('docker-desktop', startDockerDesktopInfra)) return;
+      }
+    } else {
+      if (await tryMode('docker-desktop', startDockerDesktopInfra)) return;
+      const desktopFailure = failures.find((failure) => failure.mode === 'docker-desktop');
+      if (desktopFailure && isDockerDesktopUnavailable(desktopFailure.message)) {
+        console.warn('[release-prod-gate] Docker Desktop looks unhealthy; trying WSL Docker Engine next.');
+      }
+      if (await tryMode('wsl-docker', startWslDockerInfra)) return;
     }
-    if (await tryMode('wsl-docker', startWslDockerInfra)) return;
     if (await tryMode('existing-services', () => useExternalInfra({ allowDefaults: true }))) return;
   }
 

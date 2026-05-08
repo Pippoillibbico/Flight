@@ -127,10 +127,11 @@ It does not require or start Docker Desktop automatically.
 On Windows, the preferred free path is Docker Engine inside WSL2:
 
 ```bash
+npm run app:start
 npm run release:prod:gate:free
 ```
 
-This command rejects Docker Desktop-backed WSL integration. `release:prod:gate:auto` also stays on free/non-Desktop paths unless `ALLOW_DOCKER_DESKTOP_FALLBACK=true` is set.
+`npm run app:start` uses WSL/Linux Docker Engine first on Windows and serves the app at `http://127.0.0.1:8080`. These commands reject Docker Desktop-backed WSL integration. `release:prod:gate:auto` also stays on free/non-Desktop paths unless `ALLOW_DOCKER_DESKTOP_FALLBACK=true` is set.
 
 You can also run Docker commands from a WSL/Linux terminal with Docker Engine available, or export `DOCKER_HOST` for a remote/rootless engine before running the scripts.
 
@@ -138,7 +139,7 @@ You can also run Docker commands from a WSL/Linux terminal with Docker Engine av
 docker compose up --build
 ```
 - API: `http://localhost:3000`
-- Frontend: `http://localhost`
+- Frontend: `http://localhost:8080`
 
 ## Production Compose Template
 ```bash

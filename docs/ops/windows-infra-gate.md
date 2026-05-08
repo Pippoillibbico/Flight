@@ -9,6 +9,17 @@ Docker Desktop is not required for this repository. On Windows, prefer Docker En
 Recommended command:
 
 ```bash
+npm run app:start
+```
+
+This starts the full compose app through WSL/Linux Docker Engine and exposes:
+
+- App: `http://127.0.0.1:8080`
+- API: `http://localhost:3000`
+
+Recommended release gate:
+
+```bash
 npm run release:prod:gate:free
 ```
 
@@ -91,8 +102,8 @@ npm run release:prod:gate:auto
 
 Order:
 
-1. Check already reachable Postgres/Redis.
-2. Try WSL2 Docker Engine.
+1. Try WSL2 Docker Engine.
+2. Try already reachable Postgres/Redis.
 3. Fail with explicit remediation instructions.
 
 Optional Desktop fallback for teams that explicitly allow it:

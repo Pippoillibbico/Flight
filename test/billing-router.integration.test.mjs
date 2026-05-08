@@ -373,6 +373,82 @@ test('billing webhook syncs subscription state on invoice.payment_failed when in
   assert.equal(calls.retrieve, 1);
 });
 
+test('billing webhook retries checkout subscription activation after transient Stripe sync failure', async () => {
+  const webhookSecret = 'whsec_test_32chars_secret_checkout_retry';
+  const uniqueEventId = `evt_checkout_retry_${Date.now()}`;
+  const calls = { retrieve: 0, upsert: [], plan: [] };
+  let failFirstRetrieve = true;
+  const stripeClient = {
+    subscriptions: {
+      retrieve: async (subscriptionId) => {
+        calls.retrieve += 1;
+        if (failFirstRetrieve) {
+          failFirstRetrieve = false;
+          throw new Error('temporary Stripe retrieve failure');
+        }
+        return {
+          id: subscriptionId,
+          customer: 'cus_checkout_retry',
+          status: 'active',
+          cancel_at_period_end: false,
+          current_period_start: 1700000000,
+          current_period_end: 1702678400,
+          metadata: { user_id: 'user_checkout_retry', plan_type: 'pro' },
+          items: { data: [{ price: { id: process.env.STRIPE_PRICE_PRO || 'price_pro_test_123' } }] }
+        };
+      }
+    }
+  };
+  const app = createApp({
+    deps: {
+      getStripeClient: () => stripeClient,
+      isStripeConfigured: () => true,
+      upsertSubscriptionFromProvider: async (payload) => {
+        calls.upsert.push(payload);
+      },
+      setUserPlan: async (payload) => {
+        calls.plan.push(payload);
+      },
+      appendImmutableAudit: async () => {}
+    }
+  });
+  const event = {
+    id: uniqueEventId,
+    type: 'checkout.session.completed',
+    data: {
+      object: {
+        id: 'cs_checkout_retry',
+        customer: 'cus_checkout_retry',
+        subscription: 'sub_checkout_retry',
+        client_reference_id: 'user_checkout_retry',
+        metadata: { user_id: 'user_checkout_retry' }
+      }
+    }
+  };
+  const rawBody = JSON.stringify(event);
+
+  await withStripeSecret(webhookSecret, async () => {
+    await withServer(app, async (baseUrl) => {
+      const sig = generateStripeSignature(rawBody, webhookSecret);
+      const headers = { 'Content-Type': 'application/json', 'stripe-signature': sig };
+
+      const first = await fetch(`${baseUrl}/api/billing/webhook`, { method: 'POST', headers, body: rawBody });
+      assert.equal(first.status, 500);
+
+      const second = await fetch(`${baseUrl}/api/billing/webhook`, { method: 'POST', headers, body: rawBody });
+      assert.equal(second.status, 200);
+      const secondBody = await second.json();
+      assert.equal(secondBody.received, true);
+      assert.notEqual(secondBody.deduped, true);
+    });
+  });
+
+  assert.equal(calls.retrieve, 2);
+  assert.equal(calls.upsert.length, 1);
+  assert.equal(calls.plan.length, 1);
+  assert.equal(calls.plan[0].planType, 'pro');
+});
+
 test('billing checkout creates a Stripe checkout session', async () => {
   const calls = { checkout: [], audit: [] };
   let expectedProPrice = '';

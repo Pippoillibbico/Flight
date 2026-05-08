@@ -25,6 +25,20 @@ test-results
 .idea
 
 dist
+.tmp
 tmp
 temp
 *.tmp
+
+# Local runtime/test artifacts. Server runtime uses server/data and docs/privacy,
+# not this root-level data folder.
+data
+test
+e2e
+.playwright-mcp
+
+# Local screenshots and manual audit captures stored at repo root.
+/*.png
+/*.jpg
+/*.jpeg
+/*.webp

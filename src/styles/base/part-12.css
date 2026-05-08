@@ -397,8 +397,9 @@ label.ck-cat__name {
 }
 
 .disc-feed-subtitle {
-  font-size: 0.8125rem;
-  color: var(--muted);
+  font-size: 0.875rem;
+  color: #c7d2e5;
+  font-weight: 500;
   margin: 0;
 }
 
@@ -409,43 +410,60 @@ label.ck-cat__name {
 }
 
 .disc-feed-error {
-  color: var(--muted);
+  color: #bac6d8;
   font-size: 0.875rem;
-  margin: 0;
+  margin: 0 0 1rem;
+  line-height: 1.55;
 }
 
 .disc-feed-retry-btn {
   appearance: none;
-  background: none;
-  border: none;
+  display: inline;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
   padding: 0;
-  color: var(--brand);
+  min-height: 0;
+  color: #ffffff !important;
   font-size: inherit;
-  font-weight: 600;
+  font-weight: 800;
+  line-height: inherit;
   cursor: pointer;
   text-decoration: underline;
-  text-underline-offset: 2px;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1.5px;
+  vertical-align: baseline;
+}
+
+.disc-feed-retry-btn:hover,
+.disc-feed-retry-btn:focus-visible {
+  color: #eaf2ff !important;
+  background: transparent !important;
 }
 
 .disc-feed-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 1.25rem;
 }
 
 .disc-feed-card {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 1rem;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(45, 105, 190, 0.18), transparent 34%),
+    linear-gradient(180deg, rgba(18, 30, 47, 0.98), rgba(12, 21, 34, 0.99));
+  border: 1px solid rgba(107, 142, 190, 0.5);
+  border-radius: 14px;
+  padding: 1.15rem 1.2rem;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.72rem;
   transition: box-shadow 0.15s ease, transform 0.15s ease;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.16);
 }
 
 .disc-feed-card:hover {
-  box-shadow: 0 4px 16px rgba(15, 111, 255, 0.1);
+  border-color: rgba(125, 166, 226, 0.62);
+  box-shadow: 0 10px 28px rgba(15, 111, 255, 0.14);
   transform: translateY(-2px);
 }
 
@@ -453,58 +471,70 @@ label.ck-cat__name {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 0.5rem;
+  gap: 0.75rem;
 }
 
 .disc-feed-card-route {
   display: flex;
   flex-direction: column;
-  gap: 0.1rem;
+  gap: 0.16rem;
   min-width: 0;
 }
 
 .disc-feed-card-route-main {
-  font-size: 0.95rem;
-  font-weight: 700;
-  color: var(--ink);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: 1.08rem;
+  line-height: 1.18;
+  font-weight: 800;
+  color: #f4f7fb;
+  white-space: normal;
 }
 
 .disc-feed-card-country {
-  font-size: 0.78rem;
-  color: var(--muted);
+  font-size: 0.8125rem;
+  color: #bdc8da;
+  font-weight: 500;
+}
+
+.disc-feed-card-airports {
+  width: fit-content;
+  margin-top: 0.08rem;
+  color: #91a7c4;
+  font-size: 0.76rem;
+  font-weight: 700;
+  line-height: 1.25;
 }
 
 .disc-feed-card-badge {
-  font-size: 0.6875rem;
-  font-weight: 700;
-  border-radius: 6px;
-  padding: 0.2em 0.55em;
+  font-size: 0.7rem;
+  font-weight: 800;
+  border-radius: 999px;
+  padding: 0.22em 0.62em;
   white-space: nowrap;
   flex-shrink: 0;
 }
 
 .disc-feed-card-badge[data-category="cheap_flight"] {
-  background: rgba(11, 143, 88, 0.12);
-  color: var(--success);
+  background: rgba(7, 83, 62, 0.88);
+  color: #7df0bd;
+  border: 1px solid rgba(76, 208, 153, 0.28);
 }
 
 .disc-feed-card-badge[data-category="unusual_route"] {
-  background: rgba(179, 106, 18, 0.12);
-  color: var(--warning);
+  background: rgba(112, 66, 13, 0.86);
+  color: #ffd18a;
+  border: 1px solid rgba(255, 190, 99, 0.3);
 }
 
 .disc-feed-card-badge[data-category="high_value_deal"] {
-  background: rgba(15, 111, 255, 0.12);
-  color: var(--brand);
+  background: rgba(22, 73, 145, 0.88);
+  color: #b9d8ff;
+  border: 1px solid rgba(116, 171, 255, 0.32);
 }
 
 .disc-feed-card-price {
-  font-size: 1.125rem;
-  font-weight: 700;
-  color: var(--ink);
+  font-size: 1.28rem;
+  font-weight: 800;
+  color: #f7f9fd;
   margin: 0;
   display: flex;
   align-items: center;
@@ -513,16 +543,18 @@ label.ck-cat__name {
 
 .disc-feed-card-saving {
   font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--success);
-  background: rgba(11, 143, 88, 0.1);
-  border-radius: 5px;
-  padding: 0.1em 0.4em;
+  font-weight: 800;
+  color: #5ee5aa;
+  background: rgba(5, 80, 60, 0.55);
+  border: 1px solid rgba(68, 199, 145, 0.2);
+  border-radius: 999px;
+  padding: 0.12em 0.45em;
 }
 
 .disc-feed-card-period {
-  font-size: 0.75rem;
-  color: var(--muted);
+  font-size: 0.8rem;
+  color: #b8c4d6;
+  font-weight: 500;
   margin: 0;
 }
 
@@ -534,37 +566,52 @@ label.ck-cat__name {
 }
 
 .disc-feed-card-tag {
-  font-size: 0.75rem;
-  font-weight: 600;
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--ink);
-  border-radius: 6px;
-  padding: 0.25em 0.55em;
+  font-size: 0.72rem;
+  font-weight: 750;
+  background: rgba(33, 50, 74, 0.95);
+  color: #dce8f8;
+  border: 1px solid rgba(130, 157, 194, 0.34);
+  border-radius: 999px;
+  padding: 0.26em 0.6em;
 }
 
 .disc-feed-card-cta {
   margin-top: auto;
-  display: inline-block;
-  padding: 0.45rem 0.9rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.65rem;
+  padding: 0.55rem 0.9rem;
   border-radius: 8px;
-  font-size: 0.8125rem;
-  font-weight: 600;
+  border: 1px solid rgba(83, 145, 255, 0.78);
+  font-size: 0.875rem;
+  font-weight: 800;
   text-align: center;
   text-decoration: none;
-  background: var(--brand);
-  color: #fff;
-  transition: background 0.15s ease;
+  background: linear-gradient(180deg, #3288ff, #176cf0);
+  color: #ffffff;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
   cursor: pointer;
 }
 
 .disc-feed-card-cta:hover {
-  background: var(--brand-dark);
+  background: linear-gradient(180deg, #4090ff, #1e74f6);
+  border-color: rgba(144, 188, 255, 0.9);
+  transform: translateY(-1px);
 }
 
 .disc-feed-card-cta--disabled {
-  background: var(--line);
-  color: var(--muted);
+  background: linear-gradient(180deg, rgba(49, 84, 130, 0.92), rgba(36, 57, 86, 0.96));
+  border-color: rgba(139, 170, 216, 0.45);
+  color: #f2f7ff;
   cursor: default;
+  transform: none;
+}
+
+.disc-feed-card-cta--disabled:hover {
+  background: linear-gradient(180deg, rgba(49, 84, 130, 0.92), rgba(36, 57, 86, 0.96));
+  border-color: rgba(139, 170, 216, 0.45);
+  transform: none;
 }
 
 /* CTA hover legacy overrides removed. State system is centralized in src/styles/cta-system.css. */

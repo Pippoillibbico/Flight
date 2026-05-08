@@ -71,7 +71,7 @@ export default function HomeMainSection({
         />
       ) : null}
 
-      <DiscoveryFeedWidget origin={searchForm.origin || undefined} limit={12} language={language} />
+      <DiscoveryFeedWidget origin={searchForm.origin || undefined} limit={12} language={language} t={t} />
 
       {limitedResultsBanner?.show ? (
         <UpgradeInlineBanner
@@ -148,4 +148,3 @@ export default function HomeMainSection({
     </>
   );
 }
-

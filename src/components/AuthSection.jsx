@@ -122,16 +122,17 @@ function AuthSection(props) {
     systemCapabilities
   } = validateProps(AuthSectionPropsSchema, props, 'AuthSection');
 
-  // Keep the expected social options visible; capabilities only decide whether a
-  // provider can be launched from this environment.
+  // Keep Google visible; Facebook is only shown when the backend reports it as active.
   const cap = systemCapabilities;
   const googleReady = cap === null || cap?.oauth_google?.active !== false;
-  const facebookReady = cap === null || cap?.oauth_facebook?.active !== false;
+  const facebookReady = cap?.oauth_facebook?.active === true;
   const showGoogle = true;
-  const showFacebook = true;
+  const showFacebook = facebookReady;
   const anyOAuthAvailable = showGoogle || showFacebook;
-  const hasUnavailableSocialLogin = cap !== null && (!googleReady || !facebookReady);
-  const socialAuthLabel = t('authSocialOrEmailLabelNoApple') || 'Continue with Google, Facebook, or email';
+  const hasUnavailableSocialLogin = cap !== null && !googleReady;
+  const socialAuthLabel = showFacebook
+    ? t('authSocialOrEmailLabelNoApple') || 'Continue with Google, Facebook, or email'
+    : t('authSocialOrEmailLabelGoogleOnly') || 'Continue with Google or email';
 
   const mfaInputRef = useRef(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -387,7 +388,7 @@ function AuthSection(props) {
                           ) : (
                             <>
                               <span>{authUi.google}</span>
-                              {!googleReady ? <span className="auth-provider-status">Setup required</span> : null}
+                              {!googleReady ? <span className="auth-provider-status">{t('oauthSetupRequired')}</span> : null}
                             </>
                           )}
                         </button>
@@ -410,7 +411,7 @@ function AuthSection(props) {
                           ) : (
                             <>
                               <span>{authUi.facebook}</span>
-                              {!facebookReady ? <span className="auth-provider-status">Setup required</span> : null}
+                              {!facebookReady ? <span className="auth-provider-status">{t('oauthSetupRequired')}</span> : null}
                             </>
                           )}
                         </button>
