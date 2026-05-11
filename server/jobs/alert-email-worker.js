@@ -5,6 +5,7 @@ import { resolveUserPlan } from '../lib/plan-access.js';
 import { canSendEmailType } from '../lib/email/email-preferences.js';
 import { canSendInstantAlertForPlan } from '../lib/email/email-limits.js';
 import { priceAlertTemplate } from '../lib/email/email-templates.js';
+import { buildUnsubscribeUrl } from '../lib/email/unsubscribe-token.js';
 import { getEmailReadiness } from '../lib/email/email-readiness.js';
 import {
   recordEmailAttempt,
@@ -68,7 +69,8 @@ export function createAlertEmailWorker({
       deal,
       providerReady: Boolean(providerReady),
       managePreferencesUrl: user.managePreferencesUrl,
-      privacyUrl: user.privacyUrl
+      privacyUrl: user.privacyUrl,
+      unsubscribeUrl: buildUnsubscribeUrl({ userId: user.id, type: 'alert' })
     });
 
     recordEmailAttempt(planType);

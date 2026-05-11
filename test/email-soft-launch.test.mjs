@@ -1,11 +1,16 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import express from 'express';
 import { createEmailProvider } from '../server/lib/email/email-provider.js';
 import { assertEmailReadinessForProduction } from '../server/lib/email/email-readiness.js';
 import { passwordResetTemplate, priceAlertTemplate, routeDigestTemplate } from '../server/lib/email/email-templates.js';
+import { buildUnsubscribeUrl, createUnsubscribeToken, verifyUnsubscribeToken } from '../server/lib/email/unsubscribe-token.js';
 import { createEmailDigestWorker } from '../server/jobs/email-digest-worker.js';
 import { createAlertEmailWorker } from '../server/jobs/alert-email-worker.js';
+import { buildUnsubscribeRouter } from '../server/routes/unsubscribe.js';
+
+process.env.EMAIL_UNSUBSCRIBE_SECRET ||= 'test-unsubscribe-secret-value-32-chars';
 
 function createDb(seed) {
   const db = structuredClone(seed);
@@ -13,6 +18,18 @@ function createDb(seed) {
     db,
     withDb: async (task) => task(db)
   };
+}
+
+async function withServer(app, fn) {
+  const server = await new Promise((resolve) => {
+    const instance = app.listen(0, () => resolve(instance));
+  });
+  const { port } = server.address();
+  try {
+    await fn(`http://127.0.0.1:${port}`);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
 }
 
 test('EMAIL_DRY_RUN=true does not create or use a real SMTP transport', async () => {
@@ -89,6 +106,7 @@ test('Free digest uses cached public data only and skips when there is no value'
   assert.equal(providerCalls, 0);
   assert.match(sentPayloads[0].subject, /Weekly cached route digest/);
   assert.match(sentPayloads[0].text, /public cached opportunities only/i);
+  assert.match(sentPayloads[0].text, /Unsubscribe: https?:\/\/.+\/unsubscribe\?token=/);
 });
 
 test('Pro alert email is skipped when email delivery is not ready', async () => {
@@ -181,6 +199,47 @@ test('alert emails are idempotent by key', async () => {
   assert.equal(second.reason, 'duplicate_alert_email');
   assert.equal(sent, 1);
   assert.equal(db.emailAlertDeliveries.length, 1);
+});
+
+test('unsubscribe token validates user and communication type without exposing email', () => {
+  const token = createUnsubscribeToken({ userId: 'u1', type: 'digest' });
+  assert.ok(token);
+  assert.equal(token.includes('user@example.com'), false);
+  const verified = verifyUnsubscribeToken(token);
+  assert.equal(verified.ok, true);
+  assert.equal(verified.userId, 'u1');
+  assert.equal(verified.type, 'digest');
+});
+
+test('public one-click unsubscribe disables the targeted preference without login', async () => {
+  const { db, withDb } = createDb({
+    users: [{ id: 'u1', email: 'user@example.com', emailPreferences: { digest: true, alert: true, marketing: true } }]
+  });
+  const app = express();
+  app.use('/', buildUnsubscribeRouter({ withDb }));
+  const token = createUnsubscribeToken({ userId: 'u1', type: 'alert' });
+
+  await withServer(app, async (base) => {
+    const response = await fetch(`${base}/unsubscribe?token=${encodeURIComponent(token)}`);
+    assert.equal(response.status, 200);
+    assert.match(await response.text(), /unsubscribed/i);
+  });
+
+  assert.equal(db.users[0].emailPreferences.alert, false);
+  assert.equal(db.users[0].emailPreferences.digest, true);
+  assert.equal(db.users[0].emailPreferences.marketing, true);
+  assert.equal(db.users[0].emailPreferenceAudit.at(-1).actor, 'one_click_unsubscribe');
+});
+
+test('transactional templates do not include one-click unsubscribe links', () => {
+  const reset = passwordResetTemplate({
+    resetUrl: 'https://app.example.com/reset',
+    managePreferencesUrl: 'https://app.example.com/preferences/email',
+    privacyUrl: 'https://app.example.com/privacy',
+    unsubscribeUrl: buildUnsubscribeUrl({ userId: 'u1', type: 'digest' })
+  });
+  assert.doesNotMatch(reset.text, /Unsubscribe:/);
+  assert.doesNotMatch(reset.html, /\/unsubscribe\?token=/);
 });
 
 test('SMTP_PASS never appears in provider logs', async () => {

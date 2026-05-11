@@ -5,6 +5,7 @@ import { resolveUserPlan } from '../lib/plan-access.js';
 import { canSendEmailType } from '../lib/email/email-preferences.js';
 import { digestCadenceForPlan, getEmailLimits } from '../lib/email/email-limits.js';
 import { routeDigestTemplate } from '../lib/email/email-templates.js';
+import { buildUnsubscribeUrl } from '../lib/email/unsubscribe-token.js';
 import {
   recordEmailAttempt,
   recordEmailSent,
@@ -107,7 +108,8 @@ export function createEmailDigestWorker({
         plan: item.planType,
         deals: item.deals,
         managePreferencesUrl: item.user.managePreferencesUrl,
-        privacyUrl: item.user.privacyUrl
+        privacyUrl: item.user.privacyUrl,
+        unsubscribeUrl: buildUnsubscribeUrl({ userId: item.user.id, type: 'digest' })
       });
       recordEmailAttempt(item.planType);
       const result = await sendMail({

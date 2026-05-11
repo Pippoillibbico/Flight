@@ -10,21 +10,25 @@ function footer(env = process.env, links = {}) {
   const base = appUrl(env);
   const preferencesUrl = links.managePreferencesUrl || `${base}/account/preferences`;
   const privacyUrl = links.privacyUrl || `${base}/privacy-policy`;
-  return [
+  const rows = [
     '',
     `Manage preferences: ${preferencesUrl}`,
     `Privacy policy: ${privacyUrl}`
-  ].join('\n');
+  ];
+  if (links.unsubscribeUrl) rows.splice(1, 0, `Unsubscribe: ${links.unsubscribeUrl}`);
+  return rows.join('\n');
 }
 
 function htmlWrap(title, body, env, links = {}) {
   const base = appUrl(env);
   const preferencesUrl = links.managePreferencesUrl || `${base}/account/preferences`;
   const privacyUrl = links.privacyUrl || `${base}/privacy-policy`;
+  const unsubscribeLink = links.unsubscribeUrl ? `<p><a href="${links.unsubscribeUrl}">Unsubscribe</a></p>` : '';
   return [
     '<!doctype html><html><body>',
     `<h1>${escapeText(title)}</h1>`,
     body,
+    unsubscribeLink,
     `<p><a href="${preferencesUrl}">Manage preferences</a></p>`,
     `<p><a href="${privacyUrl}">Privacy policy</a></p>`,
     '</body></html>'
@@ -45,9 +49,9 @@ export function securityNoticeTemplate({ message, managePreferencesUrl, privacyU
   return { subject, text: `${safe}${footer(env, links)}`, html: htmlWrap(subject, `<p>${escapeText(safe)}</p>`, env, links) };
 }
 
-export function routeDigestTemplate({ deals = [], plan = 'free', managePreferencesUrl, privacyUrl }, env = process.env) {
+export function routeDigestTemplate({ deals = [], plan = 'free', managePreferencesUrl, privacyUrl, unsubscribeUrl }, env = process.env) {
   const subject = plan === 'free' ? 'Weekly cached route digest' : 'Route digest';
-  const links = { managePreferencesUrl, privacyUrl };
+  const links = { managePreferencesUrl, privacyUrl, unsubscribeUrl };
   const lines = deals.map((deal) => `${deal.route || `${deal.origin || ''} -> ${deal.destination || ''}`}: ${deal.price || 'n/a'} ${deal.currency || 'EUR'}`);
   const intro = plan === 'free'
     ? 'Your weekly digest uses public cached opportunities only.'
@@ -57,9 +61,9 @@ export function routeDigestTemplate({ deals = [], plan = 'free', managePreferenc
   return { subject, text, html: htmlWrap(subject, `<p>${escapeText(intro)}</p><ul>${htmlDeals}</ul>`, env, links) };
 }
 
-export function priceAlertTemplate({ route, price, currency = 'EUR', providerReady = false, plan = 'pro', deal = null, managePreferencesUrl, privacyUrl }, env = process.env) {
+export function priceAlertTemplate({ route, price, currency = 'EUR', providerReady = false, plan = 'pro', deal = null, managePreferencesUrl, privacyUrl, unsubscribeUrl }, env = process.env) {
   const subject = 'Scheduled price alert';
-  const links = { managePreferencesUrl, privacyUrl };
+  const links = { managePreferencesUrl, privacyUrl, unsubscribeUrl };
   const displayRoute = route || deal?.route || `${deal?.origin || ''}-${deal?.destination || ''}`.replace(/^-|-$/g, '') || 'Tracked route';
   const displayPrice = price || deal?.price || deal?.deal_price || 'n/a';
   const displayCurrency = currency || deal?.currency || 'EUR';
