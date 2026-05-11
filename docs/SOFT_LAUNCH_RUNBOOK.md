@@ -28,26 +28,33 @@ STRIPE_WEBHOOK_SECRET=whsec_...
 STRIPE_PRICE_PRO=price_...
 STRIPE_PRICE_CREATOR=price_...
 ALLOW_MOCK_BILLING_UPGRADES=false
-ENABLE_PROVIDER_DUFFEL=false
-ENABLE_PROVIDER_KIWI=false
+PROVIDER_COLLECTION_ENABLED=true
+PROVIDER_COLLECTION_CRON=*/5 * * * *
+PROVIDER_COLLECTION_ALLOW_WITH_SCAN=true
+ENABLE_PROVIDER_DUFFEL=true
+DUFFEL_API_KEY=duffel_...
+ENABLE_PROVIDER_KIWI=true
+KIWI_API_KEY=kiwi_...
 ENABLE_PROVIDER_SKYSCANNER=false
-FLIGHT_SCAN_ENABLED=false
+FLIGHT_SCAN_ENABLED=true
+FLIGHT_SCAN_RUN_DOWNSTREAM=true
+FLIGHT_SCAN_DOWNSTREAM_ROUTE_PRICE_STATS=true
 ```
 
 Optional readiness upgrades:
 
 ```bash
-ENABLE_PROVIDER_DUFFEL=true
-DUFFEL_API_KEY=duffel_...
 SMTP_HOST=smtp.example.com
 SMTP_USER=...
 SMTP_PASS=...
 PUSH_WEBHOOK_URL=https://...
+BROWSER_PUSH_ENABLED=false
 VAPID_PUBLIC_KEY=...
 VAPID_PRIVATE_KEY=...
 ```
 
 Only enable optional readiness variables after the provider or delivery path has been tested end to end.
+Keep `BROWSER_PUSH_ENABLED=false` during soft launch unless browser push has been explicitly tested end to end.
 
 ## Visible Core
 

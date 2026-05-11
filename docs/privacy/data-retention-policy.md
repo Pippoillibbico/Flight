@@ -5,7 +5,7 @@ Version: v1.1-final
 Owner: Data Governance & Privacy Office
 
 Controller: Clariter Group  
-Registered office: Via del Corso 101, 00186 Roma, Italia  
+Registered office: Via Giana Anguissola, 38 00142 Roma, Italia  
 Privacy contact: privacy@flightsuite.app  
 DPO contact: dpo@flightsuite.app  
 Internal privacy owner: Stefano Giustini, Founder
@@ -20,6 +20,7 @@ Internal privacy owner: Stefano Giustini, Founder
 | Search history | query, date, route prefs | 180 giorni | Funzionalita prodotto, riuso ricerche e supporto utente | User-delete + TTL purge |
 | Alerts/watchlist | preferenze utente, rotte monitorate | durata account o disattivazione + 30 giorni | Servizio richiesto dall'utente | Delete su richiesta/chiusura |
 | Billing records | subscription/invoice refs, Stripe customer references | 10 anni | Obblighi fiscali/contabili locali | Blocco cancellazione anticipata quando obbligatorio; minimizzazione interna |
+| Billing records after account deletion | hash irreversibile utente, Stripe customer/subscription refs minimi, piano/status contabile | 10 anni | Obblighi fiscali/contabili, chargeback, dispute e riconciliazione pagamenti | Subscription Stripe cancellata quando possibile; account app anonymized/deleted; nessun nome/email/password/token conservato nel record di retention |
 | Outbound/click tracking events | redirect context, partner click metadata, economic event refs | 180 giorni | Anti-frode, riconciliazione economica, analytics consentita ove applicabile | TTL purge/anonymization |
 | Error/application logs | code, route, correlationId, redacted diagnostics | 90 giorni | Reliability, sicurezza, debug incidenti | Rotazione |
 | Temporary import/export files | file temporanei operativi | 24 ore | Minimizzazione e sicurezza operativa | Cleanup automatico |

@@ -1,7 +1,7 @@
 # Privacy Policy
 
-Last update: 2026-05-04  
-Version: v1.1-final  
+Last update: 2026-05-11  
+Version: v1.3-flight-provider-activation  
 Owner: Privacy Office - Flight Suite
 
 This document is approved for go-live publication.
@@ -17,17 +17,18 @@ Internal privacy owner: Stefano Giustini, Founder
 This policy applies to the SaaS web application Flight Suite, including user accounts, flight discovery, alerts, billing, admin backoffice, consent management, security logging, and optional AI-assisted features where enabled.
 
 ## 3. Personal Data Categories
-- Account and identity data: name, email, authentication identifiers.
+- Account and identity data: name, email, authentication identifiers. If the user chooses Google login, Flight Suite receives the Google account subject identifier, verified email, display name, and profile picture URL needed to create or access the account.
 - Security data: login/session metadata, security event logs, pseudonymized IP/user-agent hashes where applicable.
 - Service usage data: searches, watchlist entries, alert preferences, interaction metadata.
+- Flight provider search data: minimized technical route/date parameters sent to enabled flight data providers, such as origin and destination airport codes, travel dates, adult passenger count, cabin class, and currency. Flight Suite does not send name, email, account id, IP address, payment data, or user free-text to Kiwi Tequila or Duffel for provider ingestion.
 - Consent data: consent categories, policy version, timestamp, proof records.
 - Billing-related data: Stripe customer, subscription, checkout, invoice, and payment references. Full card data is processed by Stripe and is not stored by Flight Suite.
 - Support/admin audit data: admin access and actions for accountability.
 - Optional AI data: minimized prompts and outputs only when an AI feature is enabled and requested.
 
 ## 4. Purposes and Legal Bases
-- Account creation, authentication, and service delivery: contract performance.
-- Flight search, discovery, saved routes, watchlist, and alerts: contract performance.
+- Account creation, authentication, optional Google login, and service delivery: contract performance.
+- Flight search, discovery, saved routes, watchlist, alerts, and provider fare-data ingestion through enabled flight providers: contract performance.
 - Platform security, fraud prevention, abuse detection, auditability: legitimate interest.
 - Billing, subscription management, invoices, and payment status: contract performance and legal obligation where applicable.
 - Optional analytics, marketing, personalization: consent.
@@ -40,7 +41,10 @@ The current provider matrix is maintained in `docs/privacy/dpa-fornitori.md`.
 Summary:
 - Internal self-managed application, database, Redis, and audit stores: Clariter Group acts as Data Controller.
 - Stripe: independent Data Controller for regulated payment processing and Data Processor for limited processing performed under Stripe DPA.
-- Email/SMTP, Google OAuth, Duffel, Travelpayouts, OpenAI, and Anthropic: not active for personal-data transfer unless configured with production credentials and a completed DPA/SCC review.
+- Google OAuth / Google Identity Services: optional login provider when configured. Google acts as the provider of the user's Google Account and may process sign-in data under Google terms and privacy policy; Flight Suite requests only `openid email profile`.
+- Kiwi Tequila API: enabled flight data provider for fare search and provider ingestion. Flight Suite sends only minimized route/date search parameters and no account identity.
+- Duffel: enabled secondary flight data provider for fare search, availability/pricing ingestion, and route baseline enrichment. Flight Suite sends only minimized route/date search parameters and no account identity or card data in the search-ingestion flow.
+- Email/SMTP, Travelpayouts affiliate, OpenAI, and Anthropic: not active for personal-data transfer unless configured with production credentials and a completed DPA/SCC review.
 - Server-side analytics and telemetry: internal processing controlled by Clariter Group and gated by consent where non-necessary.
 
 ## 6. International Transfers
