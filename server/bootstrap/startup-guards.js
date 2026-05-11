@@ -163,11 +163,13 @@ export function logStartupCapabilityWarnings({
   }
 
   const flightScanEnabled = String(env.FLIGHT_SCAN_ENABLED || '').trim().toLowerCase() === 'true';
-  const liveProviders = String(env.ENABLE_PROVIDER_DUFFEL || '').trim().toLowerCase() === 'true';
+  const liveProviders =
+    String(env.ENABLE_PROVIDER_DUFFEL || '').trim().toLowerCase() === 'true' ||
+    String(env.ENABLE_PROVIDER_KIWI || '').trim().toLowerCase() === 'true';
   if (!liveProviders) {
     logger.warn(
       { capability: 'live_flight_providers', impact: 'synthetic_data_only' },
-      'startup_capability_disabled_live_providers: no live flight provider enabled. Search results and deals are based on internal synthetic data. Set ENABLE_PROVIDER_DUFFEL=true with credentials to enable live prices.'
+      'startup_capability_disabled_live_providers: no live flight provider enabled. Search results and deals are based on internal synthetic data. Set ENABLE_PROVIDER_KIWI=true with credentials to enable live prices.'
     );
   } else if (!flightScanEnabled) {
     logger.warn(

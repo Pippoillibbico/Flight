@@ -43,7 +43,7 @@ function resolveSearchRateLimits(planId, env = process.env) {
   };
 }
 
-function resolveSessionKey(req) {
+function resolveRawSessionKey(req) {
   const raw = String(
     req.headers?.['x-session-id'] ||
       req.cookies?.sid ||
@@ -54,6 +54,10 @@ function resolveSessionKey(req) {
     .trim()
     .slice(0, 128);
   return raw || 'anonymous_session';
+}
+
+function resolveSessionKey(req) {
+  return hashValueForLogs(resolveRawSessionKey(req), { label: 'quota_session', length: 24 }) || 'anonymous_session_hash';
 }
 
 function dayBucketText(date = new Date()) {
@@ -222,7 +226,7 @@ export function createQuotaGuard({
         metadata: {
           method: req.method,
           ip_hash: anonymizeIpForLogs(req.ip),
-          session_id_hash: hashValueForLogs(resolveSessionKey(req), { label: 'session', length: 16 })
+          session_id_hash: resolveSessionKey(req)
         }
       });
 

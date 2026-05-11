@@ -544,11 +544,57 @@ function rateLimitKey(req) {
   return 'anonymous';
 }
 
-function createDistributedLimiter({ namespace, windowMs, limit }) {
+function createLocalBoundedRateLimitFallback({ namespace, windowMs, limit }) {
+  const store = new Map();
+  const safeWindowMs = Math.max(1000, Number(windowMs) || 60_000);
+  const safeLimit = Math.max(1, Number(limit) || 10);
+  const maxKeys = 5000;
+
+  return (req, res, next) => {
+    const now = Date.now();
+    const bucket = Math.floor(now / safeWindowMs);
+    const key = `${namespace}:fallback:${bucket}:${rateLimitKey(req)}`;
+    const used = Number(store.get(key) || 0) + 1;
+    store.set(key, used);
+
+    if (store.size > maxKeys) {
+      const activePrefix = `${namespace}:fallback:${bucket}:`;
+      for (const candidate of store.keys()) {
+        if (!candidate.startsWith(activePrefix)) store.delete(candidate);
+        if (store.size <= maxKeys) break;
+      }
+    }
+
+    const resetTime = new Date((bucket + 1) * safeWindowMs);
+    req.rateLimit = {
+      limit: safeLimit,
+      used,
+      remaining: Math.max(0, safeLimit - used),
+      resetTime
+    };
+    res.setHeader('X-RateLimit-Limit', String(safeLimit));
+    res.setHeader('X-RateLimit-Remaining', String(Math.max(0, safeLimit - used)));
+    res.setHeader('X-RateLimit-Policy', 'local-fallback');
+
+    if (used > safeLimit) {
+      return sendMachineError(req, res, 429, 'limit_exceeded', { reset_at: resetTime.toISOString() });
+    }
+    return next();
+  };
+}
+
+function createDistributedLimiter({ namespace, windowMs, limit, fallbackOnError = false, fallbackWindowMs, fallbackLimit }) {
   const cache = getCacheClient();
   const safeWindowMs = Math.max(1000, Number(windowMs) || 60_000);
   const safeLimit = Math.max(1, Number(limit) || 60);
   const ttlSec = Math.max(2, Math.ceil(safeWindowMs / 1000) + 2);
+  const localFallback = fallbackOnError
+    ? createLocalBoundedRateLimitFallback({
+        namespace,
+        windowMs: Math.max(1000, Number(fallbackWindowMs) || Math.min(safeWindowMs, 60_000)),
+        limit: Math.max(1, Number(fallbackLimit) || Math.max(3, Math.ceil(safeLimit / 2)))
+      })
+    : null;
   return async (req, res, next) => {
     const now = Date.now();
     const bucket = Math.floor(now / safeWindowMs);
@@ -574,6 +620,10 @@ function createDistributedLimiter({ namespace, windowMs, limit }) {
       }
       return next();
     } catch (error) {
+      if (localFallback) {
+        logger.warn({ err: error, namespace }, 'distributed_rate_limit_degraded_local_fallback');
+        return localFallback(req, res, next);
+      }
       logger.warn({ err: error, namespace }, 'distributed_rate_limit_failed_open');
       return next();
     }
@@ -607,7 +657,10 @@ const strictAuthPathLimiter = useDistributedRateLimiting
   ? createDistributedLimiter({
       namespace: 'rl:auth',
       windowMs: 60 * 1000,
-      limit: RL_AUTH_PER_MINUTE
+      limit: RL_AUTH_PER_MINUTE,
+      fallbackOnError: true,
+      fallbackWindowMs: 60 * 1000,
+      fallbackLimit: RL_AUTH_PER_MINUTE
     })
   : rateLimit({
   windowMs: 60 * 1000,
@@ -743,7 +796,10 @@ const authLimiter = useDistributedRateLimiting
   ? createDistributedLimiter({
       namespace: 'rl:auth:login',
       windowMs: 15 * 60 * 1000,
-      limit: Number(process.env.RL_LOGIN_ATTEMPTS_15M || 12)
+      limit: Number(process.env.RL_LOGIN_ATTEMPTS_15M || 12),
+      fallbackOnError: true,
+      fallbackWindowMs: 60 * 1000,
+      fallbackLimit: Number(process.env.RL_AUTH_FALLBACK_LOGIN_PER_MINUTE || 6)
     })
   : rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -780,6 +836,23 @@ const telemetryBurstLimiter = useDistributedRateLimiting
   handler: (req, res) => sendMachineError(req, res, 429, 'rate_limited', { reset_at: toIsoFromRateLimit(req) })
 });
 const exportEndpointLimiter = createExportRateLimiter({ windowMs: 60_000, max: 12 });
+const billingCriticalLimiter = useDistributedRateLimiting
+  ? createDistributedLimiter({
+      namespace: 'rl:billing:critical',
+      windowMs: 60 * 1000,
+      limit: Number(process.env.RL_BILLING_PER_MINUTE || 30),
+      fallbackOnError: true,
+      fallbackWindowMs: 60 * 1000,
+      fallbackLimit: Number(process.env.RL_BILLING_FALLBACK_PER_MINUTE || 15)
+    })
+  : rateLimit({
+  windowMs: 60 * 1000,
+  limit: Number(process.env.RL_BILLING_PER_MINUTE || 30),
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => sendMachineError(req, res, 429, 'limit_exceeded', { reset_at: toIsoFromRateLimit(req) })
+});
+app.use('/api/billing', billingCriticalLimiter);
 
 const appContext = createRuntimeAppContext({
   env: process.env,
