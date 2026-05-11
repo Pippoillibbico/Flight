@@ -26,7 +26,10 @@ data/audit-log.ndjson.lock
 data/audit-log.ndjson.broken-*
 
 # variabili ambiente
-.env
+.env*
+!.env.example
+!.env.production.example
+!.env.staging.example
 
 # node
 node_modules
