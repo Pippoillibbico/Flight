@@ -1,10 +1,18 @@
 import Stripe from 'stripe';
 import { logEconomicEvent } from '../economic-logger.js';
+import { hashValueForLogs } from '../log-redaction.js';
 
 const STRIPE_API_VERSION = '2026-02-25.clover';
 const STRIPE_INVOICE_FEE_RATE = 0.029;
 const STRIPE_INVOICE_FEE_FIXED_EUR = 0.3;
 const DEFAULT_WEBHOOK_TOLERANCE_SECONDS = 300;
+const IS_PRODUCTION = String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
+
+function safeErrorCode(error, fallback = 'unknown_error') {
+  return String(error?.code || error?.type || error?.name || fallback)
+    .replace(/[^a-zA-Z0-9_.:-]/g, '_')
+    .slice(0, 80);
+}
 
 function resolveWebhookToleranceSeconds() {
   const raw = Number(process.env.STRIPE_WEBHOOK_TOLERANCE_SECONDS);
@@ -26,6 +34,19 @@ function estimateStripeInvoiceFee(revenueEur) {
   const revenue = Number(revenueEur);
   if (!Number.isFinite(revenue) || revenue <= 0) return null;
   return round4(revenue * STRIPE_INVOICE_FEE_RATE + STRIPE_INVOICE_FEE_FIXED_EUR);
+}
+
+function stripeIdHash(value, label) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  return hashValueForLogs(raw, { label, length: 16 });
+}
+
+function stripeLogRefs({ customerId = null, subscriptionId = null } = {}) {
+  return {
+    stripe_customer_hash: stripeIdHash(customerId, 'stripe_customer_id'),
+    stripe_subscription_hash: stripeIdHash(subscriptionId, 'stripe_subscription_id')
+  };
 }
 
 export class StripeBillingWebhookService {
@@ -82,7 +103,7 @@ export class StripeBillingWebhookService {
       await this.stateService.persistStripeSubscriptionState(subscription, { auditAction });
     } catch (error) {
       this.logger.warn(
-        { err: error, stripe_subscription_id: subscriptionId, stripe_invoice_id: invoice?.id || null },
+        { err: error, ...stripeLogRefs({ subscriptionId }), stripe_invoice_id: invoice?.id || null },
         'stripe_invoice_subscription_sync_failed'
       );
     }
@@ -102,8 +123,7 @@ export class StripeBillingWebhookService {
         if (type === 'customer.subscription.created') {
           logEconomicEvent('subscription_created', {
             user_id: sub?.metadata?.user_id,
-            stripe_subscription_id: sub?.id,
-            stripe_customer_id: sub?.customer,
+            ...stripeLogRefs({ customerId: sub?.customer, subscriptionId: sub?.id }),
             plan_id: sub?.items?.data?.[0]?.price?.id,
             plan_type: sub?.metadata?.plan_type
           });
@@ -141,7 +161,7 @@ export class StripeBillingWebhookService {
               auditAction: 'billing.checkout.completed'
             });
           } catch (error) {
-            this.logger.warn({ err: error, stripe_subscription_id: subscriptionId }, 'stripe_checkout_subscription_sync_failed');
+            this.logger.warn({ err: error, ...stripeLogRefs({ subscriptionId }) }, 'stripe_checkout_subscription_sync_failed');
             throw Object.assign(error, { code: 'stripe_checkout_subscription_sync_failed' });
           }
         } else {
@@ -192,8 +212,7 @@ export class StripeBillingWebhookService {
           net_margin_eur: netMarginEur,
           extra: {
             invoice_id: invoice?.id || null,
-            stripe_customer_id: invoice?.customer || null,
-            stripe_subscription_id: invoice?.subscription || null,
+            ...stripeLogRefs({ customerId: invoice?.customer, subscriptionId: invoice?.subscription }),
             currency: currency || null,
             amount_paid_minor: Number.isFinite(Number(invoice?.amount_paid)) ? Number(invoice.amount_paid) : null
           }
@@ -262,8 +281,7 @@ export class StripeBillingWebhookService {
           revenue_eur: dueEur,
           extra: {
             invoice_id: invoice?.id || null,
-            stripe_customer_id: invoice?.customer || null,
-            stripe_subscription_id: invoice?.subscription || null,
+            ...stripeLogRefs({ customerId: invoice?.customer, subscriptionId: invoice?.subscription }),
             currency: currency || null,
             amount_due_minor: Number.isFinite(Number(invoice?.amount_due)) ? Number(invoice.amount_due) : null
           }
@@ -326,7 +344,8 @@ export class StripeBillingWebhookService {
     } catch (error) {
       this.logger.warn(
         {
-          err: error,
+          error_code: safeErrorCode(error, 'stripe_signature_invalid'),
+          ...(IS_PRODUCTION ? {} : { err: error }),
           endpoint: '/api/billing/webhook'
         },
         'stripe_webhook_signature_invalid'
@@ -405,8 +424,13 @@ export class StripeBillingWebhookService {
       this.logger.error(
         {
           code: 'STRIPE_WEBHOOK_PROCESSING_FAILED',
-          error: error?.message || String(error),
-          stack: error?.stack,
+          error_code: safeErrorCode(error, 'webhook_processing_failed'),
+          ...(IS_PRODUCTION
+            ? {}
+            : {
+                error: error?.message || String(error),
+                stack: error?.stack
+              }),
           stripeEventId: event?.id || null,
           stripeEventType: event?.type || null,
           endpoint: '/api/billing/webhook',

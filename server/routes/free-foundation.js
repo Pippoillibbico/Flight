@@ -49,6 +49,12 @@ const createAlertSchema = z.object({
   target_price: z.number().positive()
 }).strict();
 
+const FREE_ALERT_EVALUATION_QUEUE_KEY = 'free:queue:alerts:evaluate';
+const FREE_ALERT_EVALUATION_QUEUE_TTL_SECONDS = Math.max(
+  3600,
+  Number(process.env.FREE_ALERT_EVALUATION_QUEUE_TTL_SECONDS || 7 * 24 * 60 * 60)
+);
+
 function nextUtcMidnightIso() {
   const now = new Date();
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0, 0)).toISOString();
@@ -153,6 +159,13 @@ async function consumeDailyLimit(cache, key, limit) {
 async function getDailyCount(cache, key) {
   const raw = await cache.get(key);
   return Number(raw || 0);
+}
+
+async function enqueueAlertEvaluation(cache, payload) {
+  await cache.lpush(FREE_ALERT_EVALUATION_QUEUE_KEY, JSON.stringify(payload));
+  if (typeof cache.expire === 'function') {
+    await cache.expire(FREE_ALERT_EVALUATION_QUEUE_KEY, FREE_ALERT_EVALUATION_QUEUE_TTL_SECONDS).catch(() => {});
+  }
 }
 
 export function buildFreeFoundationRouter({ corsAllowlist, legacyAuthEnabled = false, registrationEnabled = true }) {
@@ -342,7 +355,7 @@ export function buildFreeFoundationRouter({ corsAllowlist, legacyAuthEnabled = f
       if (err.code === 'alert_limit_reached') return limitExceeded(res, nextUtcMidnightIso());
       throw err;
     }
-    await cache.lpush('free:queue:alerts:evaluate', JSON.stringify({ alertId: alert.id, userId, at: new Date().toISOString() }));
+    await enqueueAlertEvaluation(cache, { alertId: alert.id, userId, at: new Date().toISOString() });
 
     appendImmutableAudit({
       category: 'free_alerts',

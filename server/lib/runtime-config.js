@@ -1,6 +1,5 @@
 import { parseFlag } from './env-flags.js';
-import { isLiveFlightProviderEnabled } from './live-flight-provider.js';
-import { getEmailReadiness } from './email/email-readiness.js';
+import { getAlertDeliveryReadiness, getBillingReadiness, getProviderReadiness, hasReadyValue } from './readiness.js';
 
 const PLACEHOLDER_PATTERNS = [
   'replace-with',
@@ -107,7 +106,7 @@ const CHECKS = [
       const provider = String(env?.BILLING_PROVIDER || '').trim().toLowerCase();
       const billingActive = isProduction && provider === 'stripe';
       if (!billingActive) return true;
-      return hasMinLength(value, 16) && !valueLooksPlaceholder(value);
+      return getBillingReadiness({ ...env, STRIPE_SECRET_KEY: value }).stripeReady;
     },
     detailOnFail: 'required in production when BILLING_PROVIDER=stripe',
     detailOnPass: 'configured or non-production'
@@ -402,23 +401,23 @@ export function getRuntimeConfigAudit(env = process.env) {
   const isProduction = String(env.NODE_ENV || '').trim().toLowerCase() === 'production';
   const launchMode = String(env.LAUNCH_MODE || 'public').trim().toLowerCase() === 'soft' ? 'soft' : 'public';
   const isSoftLaunch = launchMode === 'soft';
+  const providerReadiness = getProviderReadiness(env);
+  const alertReadiness = getAlertDeliveryReadiness(env);
   const duffelEnabled = parseFlag(env.ENABLE_PROVIDER_DUFFEL, false);
   const scanEnabled = parseFlag(env.FLIGHT_SCAN_ENABLED, false);
   const providerCollectionEnabled = parseFlag(env.PROVIDER_COLLECTION_ENABLED, false);
   const dealsContentEnabled = parseFlag(env.DEALS_CONTENT_ENABLED, true);
   const dealsContentInAppEnabled = parseFlag(env.DEALS_CONTENT_INAPP_ENABLED, true);
-  const dealsContentPushReady = isLikelyUrl(env.PUSH_WEBHOOK_URL) && !valueLooksPlaceholder(env.PUSH_WEBHOOK_URL);
+  const dealsContentPushReady = alertReadiness.pushWebhookReady;
   const dealsContentSocialReady =
     isLikelyUrl(env.DEALS_CONTENT_SOCIAL_WEBHOOK_URL) && !valueLooksPlaceholder(env.DEALS_CONTENT_SOCIAL_WEBHOOK_URL);
   const dealsNewsletterRecipients = parseList(env.DEALS_CONTENT_NEWSLETTER_RECIPIENTS);
   const dealsContentNewsletterReady =
     dealsNewsletterRecipients.length > 0 &&
-    String(env.SMTP_HOST || '').trim().length > 0 &&
-    String(env.SMTP_USER || '').trim().length > 0 &&
-    String(env.SMTP_PASS || '').trim().length > 0;
+    alertReadiness.smtpReady;
   const dealsContentAtLeastOneChannel =
     dealsContentInAppEnabled || dealsContentPushReady || dealsContentSocialReady || dealsContentNewsletterReady;
-  const emailReadiness = getEmailReadiness(env);
+  const emailReadiness = alertReadiness.emailReadiness;
 
   checks.push(
     evaluateCheck(
@@ -476,10 +475,10 @@ export function getRuntimeConfigAudit(env = process.env) {
           const nodeEnv = String(envContext?.NODE_ENV || '').trim().toLowerCase();
           if (nodeEnv !== 'production') return true;
           if (String(envContext.LAUNCH_MODE || '').trim().toLowerCase() === 'soft') return true;
-          return isLiveFlightProviderEnabled(envContext);
+          return getProviderReadiness(envContext).liveProviderConfigured;
         },
         detailOnFail:
-          'production requires at least one live provider configured: duffel (ENABLE_PROVIDER_DUFFEL + DUFFEL_API_KEY), kiwi (ENABLE_PROVIDER_KIWI + KIWI_TEQUILA_API_KEY), or skyscanner (ENABLE_PROVIDER_SKYSCANNER + SKYSCANNER_API_KEY)',
+          'production requires at least one live provider configured: duffel (ENABLE_PROVIDER_DUFFEL + DUFFEL_API_KEY), kiwi (ENABLE_PROVIDER_KIWI + KIWI_API_KEY), or skyscanner (ENABLE_PROVIDER_SKYSCANNER + SKYSCANNER_API_KEY)',
         detailOnPass: isSoftLaunch ? 'soft launch may run cached-only' : 'configured'
       },
       env
@@ -494,7 +493,7 @@ export function getRuntimeConfigAudit(env = process.env) {
         severity: duffelEnabled ? 'blocking' : 'recommended',
         validator: (_value, envContext) => {
           if (!parseFlag(envContext.ENABLE_PROVIDER_DUFFEL, false)) return true;
-          return hasMinLength(envContext.DUFFEL_API_KEY, 8) && !valueLooksPlaceholder(envContext.DUFFEL_API_KEY);
+          return hasReadyValue(envContext.DUFFEL_API_KEY, 8);
         },
         detailOnFail: 'ENABLE_PROVIDER_DUFFEL=true requires DUFFEL_API_KEY',
         detailOnPass: duffelEnabled ? 'configured' : 'provider disabled'
@@ -514,11 +513,7 @@ export function getRuntimeConfigAudit(env = process.env) {
             parseFlag(envContext.FLIGHT_SCAN_ENABLED, false) || parseFlag(envContext.PROVIDER_COLLECTION_ENABLED, false);
           if (!scanOrCollectionEnabled) return true;
 
-          const duffelReady =
-            parseFlag(envContext.ENABLE_PROVIDER_DUFFEL, false) &&
-            hasMinLength(envContext.DUFFEL_API_KEY, 8) &&
-            !valueLooksPlaceholder(envContext.DUFFEL_API_KEY);
-          return duffelReady;
+          return getProviderReadiness(envContext).liveProviderConfigured;
         },
         detailOnFail: 'scanner/provider collection enabled but no provider is fully configured',
         detailOnPass: scanEnabled || providerCollectionEnabled ? 'configured' : 'scanner/provider collection disabled'
@@ -537,12 +532,17 @@ export function getRuntimeConfigAudit(env = process.env) {
           const duffel = parseFlag(envContext.ENABLE_PROVIDER_DUFFEL, false);
           const kiwi = parseFlag(envContext.ENABLE_PROVIDER_KIWI, false);
           const skyscanner = parseFlag(envContext.ENABLE_PROVIDER_SKYSCANNER, false);
-          const duffelReady = !duffel || (hasMinLength(envContext.DUFFEL_API_KEY, 8) && !valueLooksPlaceholder(envContext.DUFFEL_API_KEY));
-          return duffelReady && !kiwi && !skyscanner;
+          const readiness = getProviderReadiness(envContext);
+          const duffelReady = !duffel || readiness.duffelReady;
+          const kiwiReady = !kiwi || readiness.kiwiReady;
+          return duffelReady && kiwiReady && !skyscanner;
         },
         detailOnFail:
-          'soft-launch allows cached-only or Duffel; Kiwi/Skyscanner must be disabled and Duffel needs DUFFEL_API_KEY when enabled',
-        detailOnPass: duffelEnabled ? 'Duffel profile configured' : 'cached-only provider profile'
+          'soft-launch allows cached-only, Kiwi, or Duffel; enabled providers need credentials and Skyscanner must stay disabled',
+        detailOnPass:
+          providerReadiness.liveProviderConfigured
+            ? 'soft-launch provider profile configured'
+            : 'cached-only provider profile'
       },
       env
     )

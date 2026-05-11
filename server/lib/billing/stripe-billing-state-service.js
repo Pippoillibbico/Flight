@@ -1,6 +1,13 @@
 import { PLANS } from '../saas-db.js';
 import { planIdToPublicPlanType, normalizeStripeProrationBehavior, normalizeSubscriptionStatus } from './stripe-billing-utils.js';
 import { normalizePlanType } from '../plans/normalize-plan-type.js';
+import { hashValueForLogs } from '../log-redaction.js';
+
+function stripeIdHash(value, label) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  return hashValueForLogs(raw, { label, length: 16 });
+}
 
 export class StripeBillingStateService {
   constructor({
@@ -117,7 +124,10 @@ export class StripeBillingStateService {
         if (customer && !customer.deleted) return existing;
       } catch (error) {
         if (String(error?.code || '') !== 'resource_missing') throw error;
-        this.logger.warn({ user_id: userId, stripe_customer_id: existing }, 'stripe_customer_id_stale_recovering');
+        this.logger.warn(
+          { user_id: userId, stripe_customer_hash: stripeIdHash(existing, 'stripe_customer_id') },
+          'stripe_customer_id_stale_recovering'
+        );
       }
     }
 
@@ -194,7 +204,10 @@ export class StripeBillingStateService {
   async persistStripeSubscriptionState(subscription, { auditAction = null } = {}) {
     const userId = subscription?.metadata?.user_id ?? (await this.resolveUserIdFromStripeCustomer(subscription?.customer));
     if (!userId) {
-      this.logger.warn({ stripe_subscription_id: subscription?.id }, 'stripe_subscription_user_missing');
+      this.logger.warn(
+        { stripe_subscription_hash: stripeIdHash(subscription?.id, 'stripe_subscription_id') },
+        'stripe_subscription_user_missing'
+      );
       return null;
     }
 
@@ -236,7 +249,7 @@ export class StripeBillingStateService {
             error: error?.message || String(error),
             user_id: userId,
             audit_action: auditAction,
-            stripe_subscription_id: payload.id || null
+            stripe_subscription_hash: stripeIdHash(payload.id, 'stripe_subscription_id')
           },
           'stripe_subscription_audit_write_failed'
         );
@@ -256,7 +269,10 @@ export class StripeBillingStateService {
         return await stripe.subscriptions.retrieve(localSubscriptionId);
       } catch (error) {
         if (String(error?.code || '') !== 'resource_missing') throw error;
-        this.logger.warn({ user_id: user?.id, stripe_subscription_id: localSubscriptionId }, 'stripe_subscription_id_stale_recovering');
+        this.logger.warn(
+          { user_id: user?.id, stripe_subscription_hash: stripeIdHash(localSubscriptionId, 'stripe_subscription_id') },
+          'stripe_subscription_id_stale_recovering'
+        );
       }
     }
 
@@ -353,7 +369,10 @@ export class StripeBillingStateService {
       try {
         nextSubscription = await stripe.subscriptions.resume(subscription.id);
       } catch (error) {
-        this.logger.warn({ err: error, stripe_subscription_id: subscription.id }, 'stripe_subscription_resume_failed');
+        this.logger.warn(
+          { err: error, stripe_subscription_hash: stripeIdHash(subscription.id, 'stripe_subscription_id') },
+          'stripe_subscription_resume_failed'
+        );
       }
     }
 

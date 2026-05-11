@@ -11,6 +11,7 @@
  */
 import webpush from 'web-push';
 import { logger as rootLogger } from './logger.js';
+import { hashValueForLogs } from './log-redaction.js';
 
 const VAPID_PUBLIC_KEY  = String(process.env.VAPID_PUBLIC_KEY  || '').trim();
 const VAPID_PRIVATE_KEY = String(process.env.VAPID_PRIVATE_KEY || '').trim();
@@ -31,6 +32,12 @@ export function isVapidConfigured() {
 
 export function getVapidPublicKey() {
   return VAPID_PUBLIC_KEY || null;
+}
+
+function pushEndpointHash(endpoint) {
+  const raw = String(endpoint || '').trim();
+  if (!raw) return null;
+  return hashValueForLogs(raw, { label: 'push_endpoint', length: 16 });
 }
 
 /**
@@ -59,7 +66,7 @@ export async function sendVapidPush(subscription, payload, { logger = rootLogger
     const statusCode = error?.statusCode ?? null;
     // 404/410 → subscription expired/unregistered — caller should remove it
     const expired = statusCode === 404 || statusCode === 410;
-    logger.warn({ statusCode, endpoint: subscription?.endpoint, expired }, 'vapid_push_failed');
+    logger.warn({ statusCode, endpoint_hash: pushEndpointHash(subscription?.endpoint), expired }, 'vapid_push_failed');
     return { sent: false, reason: expired ? 'subscription_expired' : 'push_failed', statusCode, expired };
   }
 }

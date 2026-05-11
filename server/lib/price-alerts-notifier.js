@@ -6,6 +6,7 @@ import { insertEmailDeliveryLog } from './sql-db.js';
 import { getPriceAlertsStore } from './price-alerts-store.js';
 import { sendVapidPush, isVapidConfigured } from './vapid-sender.js';
 import { listPushSubscriptionsForUser, removePushSubscriptionById } from './push-subscriptions-store.js';
+import { parseFlag } from './env-flags.js';
 
 const PUSH_WEBHOOK_URL = String(process.env.PUSH_WEBHOOK_URL || '').trim();
 const PUSH_TIMEOUT_MS = Math.max(2000, Number(process.env.PUSH_TIMEOUT_MS || 8000));
@@ -108,7 +109,7 @@ async function sendVapidPushToUser({ userId, title, message, metadata, logger })
 
 async function sendPush({ withDbImpl, userId, title, message, metadata, logger }) {
   // Prefer VAPID (native browser push) if configured and user has subscriptions
-  if (isVapidConfigured()) {
+  if (parseFlag(process.env.BROWSER_PUSH_ENABLED, false) && isVapidConfigured()) {
     const vapidResult = await sendVapidPushToUser({ userId, title, message, metadata, logger });
     if (vapidResult.sent || vapidResult.skipped) return vapidResult;
   }

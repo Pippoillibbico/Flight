@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { computeFlightDisplayPrice } from '../lib/pricing-engine.js';
 import { getEmailReadiness } from '../lib/email/email-readiness.js';
 import { getEmailMetrics } from '../lib/email/email-metrics.js';
+import { getAlertDeliveryReadiness, getBillingReadiness, getProviderReadiness } from '../lib/readiness.js';
 
 const pricingSimulationSchema = z
   .object({
@@ -186,7 +187,7 @@ export function buildSystemRouter({
    * Public endpoint (no auth required) — safe because all values are derived
    * from env flags, not secrets. No credentials are exposed.
    */
-  router.get('/api/system/capabilities', (_req, res) => {
+  function buildCapabilityPayload() {
     const env = process.env;
     const launch = getLaunchReadiness?.() || {};
     const parseFlag = (v, def = false) => {
@@ -200,78 +201,91 @@ export function buildSystemRouter({
       );
     const ready = (v, min = 4) => hasValue(v, min) && notPlaceholder(v);
 
-    const emailReadiness = getEmailReadiness(env);
-    const smtpReady = emailReadiness.status === 'EMAIL_READY';
+    const providerReadiness = getProviderReadiness(env);
+    const alertReadiness = getAlertDeliveryReadiness(env);
+    const billingReadiness = getBillingReadiness(env);
+    const emailReadiness = alertReadiness.emailReadiness;
+    const smtpReady = alertReadiness.smtpReady;
     const googleReady = ready(env.GOOGLE_CLIENT_ID) || ready(env.GOOGLE_CLIENT_IDS);
     const appleReady = ready(env.APPLE_CLIENT_ID) || ready(env.APPLE_CLIENT_IDS);
     const facebookReady = ready(env.FACEBOOK_CLIENT_ID) || ready(env.FACEBOOK_CLIENT_IDS);
     const openaiReady = ready(env.OPENAI_API_KEY, 8);
     const anthropicReady = ready(env.ANTHROPIC_API_KEY, 8);
     const aiReady = openaiReady || anthropicReady;
-    const stripeReady = ready(env.STRIPE_SECRET_KEY, 16);
-    const billingProvider = 'stripe';
-    const billingReady = stripeReady;
-    const duffelEnabled = parseFlag(env.ENABLE_PROVIDER_DUFFEL);
-    const duffelReady = duffelEnabled && ready(env.DUFFEL_API_KEY, 8);
-    const liveProvidersReady = duffelReady;
+    const billingProvider = billingReadiness.billingProvider;
+    const billingReady = billingReadiness.billingReady;
+    const liveProvidersReady = providerReadiness.liveProviderConfigured;
     const flightScanEnabled = parseFlag(env.FLIGHT_SCAN_ENABLED);
-    const pushReady = ready(env.PUSH_WEBHOOK_URL, 10);
-    const vapidReady = ready(env.VAPID_PUBLIC_KEY, 40) && ready(env.VAPID_PRIVATE_KEY, 30);
+    const pushReady = alertReadiness.pushWebhookReady;
+    const vapidReady = alertReadiness.vapidReady;
     const searchHistoryEnabled = parseFlag(env.SEARCH_HISTORY_PERSIST_ENABLED);
-    const allowMockBilling = parseFlag(env.ALLOW_MOCK_BILLING_UPGRADES);
+    const allowMockBilling = billingReadiness.mockBillingEnabled;
     const dbReady = ready(env.DATABASE_URL, 10);
     const cacheReady = ready(env.REDIS_URL, 10);
 
     const cap = (active, reason = null) => ({ active: Boolean(active), reason: active ? null : reason });
+    const publicCapabilities = {
+      live_flight_providers: cap(liveProvidersReady, 'Live providers are not available in this environment'),
+      flight_scan: cap(flightScanEnabled && liveProvidersReady, flightScanEnabled ? 'Flight scan is not available' : 'Flight scan disabled'),
+      data_source: liveProvidersReady ? 'live' : 'internal',
+      ai_features: cap(aiReady, 'AI features are not available in this environment'),
+      billing: cap(billingReady, 'Billing is not available in this environment'),
+      push_notifications: cap(alertReadiness.pushReady, 'Push notifications are not available'),
+      oauth_google: cap(googleReady, 'Google sign-in is not available'),
+      oauth_apple: cap(appleReady, 'Apple sign-in is not available'),
+      oauth_facebook: cap(facebookReady, 'Facebook sign-in is not available'),
+      email_verification: cap(smtpReady, 'Email verification is not available'),
+      search_history_persist: cap(searchHistoryEnabled, 'Search history is not stored in this environment'),
+      data_export: cap(true, null),
+      booking_handoff_mode: 'redirect',
+      booking_partner_configured: cap(ready(env.BOOKING_BASE_URL, 10), 'Booking redirects are disabled')
+    };
 
-    res.json({
+    const adminCapabilities = {
+      ...publicCapabilities,
+      database_postgres: cap(dbReady, 'DATABASE_URL not configured - using JSON file store'),
+      cache_redis: cap(cacheReady, 'REDIS_URL not configured - using in-memory cache'),
+      provider_readiness: launch.provider?.status || providerReadiness.status,
+      live_provider_names: providerReadiness.providerNames,
+      ai_provider: openaiReady ? 'openai' : anthropicReady ? 'anthropic' : null,
+      billing_provider: billingProvider,
+      billing_mock_mode: allowMockBilling,
+      email_readiness: emailReadiness.status,
+      email_dry_run: emailReadiness.dryRun,
+      email_provider: emailReadiness.provider,
+      email_smtp: cap(smtpReady, 'SMTP_HOST/USER/PASS not configured - emails not sent, accounts auto-verified'),
+      email_metrics: getEmailMetrics(),
+      alert_delivery: launch.alerts?.status || alertReadiness.status,
+      vapid_push: cap(vapidReady, 'VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY not configured - browser push not available'),
+      browser_push_enabled: alertReadiness.browserPushEnabled,
+      browser_push_status: alertReadiness.browserPushEnabled ? 'BROWSER_PUSH_ENABLED' : 'BROWSER_PUSH_DISABLED',
+      push_webhook: cap(pushReady, 'PUSH_WEBHOOK_URL not configured')
+    };
+
+    return {
       generated_at: new Date().toISOString(),
       launch,
-      capabilities: {
-        // Data infrastructure
-        database_postgres:    cap(dbReady,    'DATABASE_URL not configured — using JSON file store'),
-        cache_redis:          cap(cacheReady, 'REDIS_URL not configured — using in-memory cache'),
+      publicCapabilities,
+      adminCapabilities
+    };
+  }
 
-        // Flight data
-        live_flight_providers: cap(liveProvidersReady, 'No live provider configured (ENABLE_PROVIDER_DUFFEL with credentials)'),
-        flight_scan:           cap(flightScanEnabled && liveProvidersReady, flightScanEnabled ? 'Flight scan enabled but no live provider configured' : 'FLIGHT_SCAN_ENABLED=false'),
-        data_source:           liveProvidersReady ? 'live' : 'internal',
-        provider_readiness:     launch.provider?.status || (liveProvidersReady ? 'PROVIDER_READY' : 'PROVIDER_NOT_READY'),
+  router.get('/api/system/capabilities', (_req, res) => {
+    const payload = buildCapabilityPayload();
+    res.json({
+      generated_at: payload.generated_at,
+      capabilities: payload.publicCapabilities
+    });
+  });
 
-        // AI features
-        ai_features:           cap(aiReady, 'No AI API key configured (OPENAI_API_KEY or ANTHROPIC_API_KEY)'),
-        ai_provider:           openaiReady ? 'openai' : anthropicReady ? 'anthropic' : null,
-
-        // Billing
-        billing:               cap(billingReady, `Billing provider '${billingProvider}' credentials not configured`),
-        billing_provider:      billingProvider,
-        billing_mock_mode:     allowMockBilling,
-
-        // Communications
-        email_readiness:        emailReadiness.status,
-        email_dry_run:          emailReadiness.dryRun,
-        email_provider:         emailReadiness.provider,
-        email_smtp:            cap(smtpReady,   'SMTP_HOST/USER/PASS not configured — emails not sent, accounts auto-verified'),
-        push_notifications:    cap(pushReady || vapidReady, 'Neither PUSH_WEBHOOK_URL nor VAPID keys configured — alerts saved to dead-letter only'),
-        alert_delivery:         launch.alerts?.status || (smtpReady ? 'ALERT_DELIVERY_READY' : 'ALERT_DELIVERY_NOT_READY'),
-        vapid_push:            cap(vapidReady,  'VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY not configured — browser push not available'),
-        push_webhook:          cap(pushReady,   'PUSH_WEBHOOK_URL not configured'),
-
-        // Auth / OAuth
-        oauth_google:    cap(googleReady,   'GOOGLE_CLIENT_ID not configured'),
-        oauth_apple:     cap(appleReady,    'APPLE_CLIENT_ID not configured'),
-        oauth_facebook:  cap(facebookReady, 'FACEBOOK_CLIENT_ID not configured'),
-        email_verification: cap(smtpReady,  'SMTP not configured — new accounts are auto-verified'),
-        email_metrics: getEmailMetrics(),
-
-        // User features
-        search_history_persist: cap(searchHistoryEnabled, 'SEARCH_HISTORY_PERSIST_ENABLED not set — searches not stored'),
-        data_export:            cap(true, null), // always available, quota-gated per plan
-
-        // Booking
-        booking_handoff_mode: 'redirect', // always redirect, never internal booking
-        booking_partner_configured: cap(ready(env.BOOKING_BASE_URL, 10), 'BOOKING_BASE_URL not configured — booking redirects disabled')
-      }
+  router.get('/api/admin/system/capabilities', authGuard, requireSessionAuth, adminGuard, (_req, res) => {
+    const payload = buildCapabilityPayload();
+    res.json({
+      generated_at: payload.generated_at,
+      launch: payload.launch,
+      publicCapabilities: payload.publicCapabilities,
+      adminCapabilities: payload.adminCapabilities,
+      capabilities: payload.adminCapabilities
     });
   });
 

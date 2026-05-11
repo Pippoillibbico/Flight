@@ -6,7 +6,6 @@ import { ingestPriceObservation, initDealEngineStore, recomputeRouteBaselines, s
 import { findCheapestWindows } from '../lib/window-finder-engine.js';
 import { detectDealV2 } from '../lib/deal-detector.js';
 import { evaluateObservationForAlerts } from '../lib/alert-intelligence.js';
-import { getPriceDatasetStatus } from '../lib/price-history-store.js';
 import { getLiveDeals, getRealtimeStats } from '../lib/realtime-anomaly-engine.js';
 import { generateAffiliateLink, buildBookingUrl } from '../lib/affiliate-link-engine.js';
 import { insertAffiliateClick, getAffiliateStats, initAffiliateClicksStore } from '../lib/affiliate-clicks-store.js';
@@ -18,6 +17,7 @@ import { getCostCapMonitoringSnapshot } from '../lib/cost-cap-monitor.js';
 import { getSmartDeparture } from '../lib/smart-departure-service.js';
 import { logger } from '../lib/logger.js';
 import { anonymizeIpForLogs, hashValueForLogs } from '../lib/log-redaction.js';
+import { getProviderReadiness } from '../lib/readiness.js';
 
 const ingestSchema = z.object({
   origin_iata: z.string().trim().length(3),
@@ -183,29 +183,20 @@ export function buildDealEngineRouter({
 
   router.get('/api/engine/status', async (_req, res) => {
     try {
-      const dataset = await getPriceDatasetStatus();
+      const providerReadiness = getProviderReadiness(process.env);
+      const flightScanEnabled = String(process.env.FLIGHT_SCAN_ENABLED || 'false').toLowerCase() === 'true';
+      const liveAvailable = flightScanEnabled && providerReadiness.liveProviderConfigured;
       return res.json({
         ok: true,
+        status: 'ready',
         engines: {
-          baseline: true,
-          ingestion: true,
-          detector: true,
-          ranking: true,
+          flight_intelligence: true,
           discovery: true,
-          seasonalContext: true,
-          windowFinder: true,
-          anomalyDetector: true,
-          pricePredictor: true,
-          alertIntelligence: true
+          alerts: true
         },
-        dataset,
         mode: {
-          externalFlightProviders: String(process.env.ENABLE_EXTERNAL_FLIGHT_PARTNERS || 'false').toLowerCase() === 'true',
-          proprietaryLocalDefault: true,
-          // data_source is 'live' only when flight scan is enabled AND a provider is configured.
-          data_source: (process.env.FLIGHT_SCAN_ENABLED === 'true' &&
-            process.env.ENABLE_PROVIDER_DUFFEL === 'true')
-            ? 'live' : 'internal'
+          data_source: liveAvailable ? 'live' : 'internal',
+          live_available: liveAvailable
         }
       });
     } catch (error) {
@@ -379,7 +370,7 @@ export function buildDealEngineRouter({
     }
   });
 
-  router.post('/api/alerts/simulate', async (req, res) => {
+  router.post('/api/alerts/simulate', ...enforceAdminRoute, async (req, res) => {
     const parsed = alertSimSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid payload.' });
     try {
@@ -711,10 +702,8 @@ export function buildDealEngineRouter({
       }
 
       const providers = getProviderStatus();
-      const duffel = providers.find((item) => String(item?.name || '').toLowerCase() === 'duffel') || null;
-      const providerUnavailable = Boolean(
-        duffel &&
-        (duffel.enabled && (!duffel.configured || duffel.circuitOpen))
+      const providerUnavailable = providers.some(
+        (item) => item?.enabled && (!item?.configured || item?.circuitOpen)
       );
       const reason = deals.length === 0
         ? (providerUnavailable ? 'provider_unavailable' : 'no_data')
@@ -794,17 +783,51 @@ export function buildDealEngineRouter({
     }
   });
 
+  function summarizeProviderStatus(providers, { includeCounts = false } = {}) {
+    const rows = Array.isArray(providers) ? providers : [];
+    const enabledCount = rows.filter((item) => item?.enabled).length;
+    const configuredCount = rows.filter((item) => item?.configured).length;
+    const circuitOpenCount = rows.filter((item) => item?.circuitOpen).length;
+    const ready = rows.some((item) => item?.enabled && item?.configured && !item?.circuitOpen);
+    const summary = {
+      status: ready ? 'PROVIDER_READY' : 'PROVIDER_NOT_READY',
+      ready,
+      degraded: circuitOpenCount > 0
+    };
+    if (includeCounts) {
+      summary.enabled_count = enabledCount;
+      summary.configured_count = configuredCount;
+      summary.circuit_open_count = circuitOpenCount;
+    }
+    return summary;
+  }
+
   router.get('/api/engine/provider-status', async (_req, res) => {
     try {
       const providers = getProviderStatus();
       const multiSourceOn = isMultiSourceEnabled();
       return res.json({
         ok: true,
-        multi_source_enabled: multiSourceOn,
-        providers
+        multi_source_enabled: Boolean(multiSourceOn),
+        provider_summary: summarizeProviderStatus(providers)
       });
     } catch (error) {
       logger.error({ err: error }, 'provider_status_failed');
+      return res.status(500).json({ error: 'internal_error' });
+    }
+  });
+
+  router.get('/api/admin/engine/provider-status', ...enforceAdminRoute, async (_req, res) => {
+    try {
+      const providers = getProviderStatus();
+      return res.json({
+        ok: true,
+        multi_source_enabled: isMultiSourceEnabled(),
+        provider_summary: summarizeProviderStatus(providers, { includeCounts: true }),
+        providers
+      });
+    } catch (error) {
+      logger.error({ err: error }, 'admin_provider_status_failed');
       return res.status(500).json({ error: 'internal_error' });
     }
   });
