@@ -386,7 +386,6 @@ export function buildTestSafeEnv(baseEnv = process.env, urls = {}) {
     SMTP_USER: baseEnv.SMTP_USER || '',
     SMTP_PASS: baseEnv.SMTP_PASS || '',
     ENABLE_PROVIDER_DUFFEL: baseEnv.ENABLE_PROVIDER_DUFFEL || 'false',
-    ENABLE_PROVIDER_AMADEUS: baseEnv.ENABLE_PROVIDER_AMADEUS || 'false',
     ENABLE_PROVIDER_KIWI: baseEnv.ENABLE_PROVIDER_KIWI || 'false',
     AI_ALLOW_FREE_USERS: 'false',
     AI_ALLOWED_PLAN_TYPES: baseEnv.AI_ALLOWED_PLAN_TYPES || 'pro,creator',
