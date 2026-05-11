@@ -1,8 +1,12 @@
 import { Router } from 'express';
+import { createHash } from 'node:crypto';
+import Stripe from 'stripe';
 import { getSaasPool } from '../lib/saas-db.js';
 import { resolveUserPlan, setUserPlan } from '../lib/plan-access.js';
 import { redactUrlForLogs } from '../lib/log-redaction.js';
 import { parseFlag } from '../lib/env-flags.js';
+
+const STRIPE_API_VERSION = '2026-02-25.clover';
 
 export function buildAuthSessionRouter({
   authLimiter = (_req, _res, next) => next(),
@@ -33,7 +37,8 @@ export function buildAuthSessionRouter({
   QRCode,
   mfaCodeSchema,
   includeAccessTokenInResponse = true,
-  mfaSetupTtlMs = 15 * 60 * 1000
+  mfaSetupTtlMs = 15 * 60 * 1000,
+  StripeClient = Stripe
 }) {
   const router = Router();
   const saasPool = getSaasPool();
@@ -42,6 +47,220 @@ export function buildAuthSessionRouter({
     includeAccessTokenInResponse ? { token: accessToken, ...payload } : payload;
   const safeMfaSetupTtlMs = Math.max(60 * 1000, Math.min(24 * 60 * 60 * 1000, Number(mfaSetupTtlMs) || 15 * 60 * 1000));
   const consentAnonCookieName = String(process.env.CONSENT_ANON_COOKIE_NAME || 'anonId').trim() || 'anonId';
+
+  function sha256(value) {
+    return createHash('sha256').update(String(value || '')).digest('hex');
+  }
+
+  function anonymizedEmailForUser(userId) {
+    return `deleted-${sha256(`account:${userId}`).slice(0, 24)}@deleted.local`;
+  }
+
+  function stripeConfigured() {
+    return String(process.env.STRIPE_SECRET_KEY || '').trim().length >= 16;
+  }
+
+  async function collectPostgresSubscriptionRefs(pool, userId) {
+    if (!pool) return [];
+    try {
+      const result = await pool.query(
+        `SELECT stripe_subscription_id, stripe_customer_id, plan_id, status,
+                current_period_start, current_period_end, cancel_at_period_end
+         FROM user_subscriptions
+         WHERE user_id = $1`,
+        [userId]
+      );
+      return result.rows || [];
+    } catch (error) {
+      if (['42P01', '42703'].includes(error?.code)) return [];
+      throw error;
+    }
+  }
+
+  function collectJsonSubscriptionRefs(db, userId) {
+    return (db.userSubscriptions || [])
+      .filter((entry) => entry.userId === userId || entry.user_id === userId)
+      .map((entry) => ({
+        stripe_subscription_id: entry.stripeSubscriptionId || entry.stripe_subscription_id || null,
+        stripe_customer_id: entry.stripeCustomerId || entry.stripe_customer_id || null,
+        plan_id: entry.planId || entry.plan_id || null,
+        status: entry.status || null,
+        current_period_start: entry.currentPeriodStart || entry.current_period_start || null,
+        current_period_end: entry.currentPeriodEnd || entry.current_period_end || null,
+        cancel_at_period_end: Boolean(entry.cancelAtPeriodEnd || entry.cancel_at_period_end)
+      }));
+  }
+
+  function dedupeSubscriptionRefs(refs) {
+    const seen = new Set();
+    const output = [];
+    for (const ref of refs) {
+      const key = `${String(ref?.stripe_subscription_id || '')}:${String(ref?.stripe_customer_id || '')}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      output.push(ref);
+    }
+    return output;
+  }
+
+  async function cancelStripeSubscriptionsForDeletion({ refs, userId }) {
+    const subscriptionIds = [
+      ...new Set(
+        refs
+          .map((ref) => String(ref?.stripe_subscription_id || ref?.stripeSubscriptionId || '').trim())
+          .filter(Boolean)
+      )
+    ];
+    if (!subscriptionIds.length) return { attempted: false, canceled: [], skipped: [] };
+    if (!stripeConfigured()) {
+      return {
+        attempted: false,
+        canceled: [],
+        skipped: subscriptionIds.map((id) => ({ id, reason: 'stripe_not_configured' }))
+      };
+    }
+
+    const stripe = new StripeClient(String(process.env.STRIPE_SECRET_KEY || '').trim(), { apiVersion: STRIPE_API_VERSION });
+    const canceled = [];
+    const skipped = [];
+    for (const subscriptionId of subscriptionIds) {
+      try {
+        const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+        const status = String(subscription?.status || '').toLowerCase();
+        if (status === 'canceled' || status === 'incomplete_expired') {
+          skipped.push({ id: subscriptionId, reason: status || 'already_inactive' });
+          continue;
+        }
+        await stripe.subscriptions.cancel(subscriptionId, {
+          prorate: false,
+          cancellation_details: {
+            comment: `Account deletion requested by user ${userId}`
+          }
+        });
+        canceled.push(subscriptionId);
+      } catch (error) {
+        if (String(error?.code || '') === 'resource_missing') {
+          skipped.push({ id: subscriptionId, reason: 'resource_missing' });
+          continue;
+        }
+        throw error;
+      }
+    }
+    return { attempted: true, canceled, skipped };
+  }
+
+  async function ensureBillingRetentionTable(client) {
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS billing_retention_records (
+        id BIGSERIAL PRIMARY KEY,
+        user_hash TEXT NOT NULL,
+        stripe_customer_id TEXT NULL,
+        stripe_subscription_id TEXT NULL,
+        plan_id TEXT NULL,
+        status TEXT NULL,
+        current_period_start TIMESTAMPTZ NULL,
+        current_period_end TIMESTAMPTZ NULL,
+        cancel_at_period_end BOOLEAN NOT NULL DEFAULT false,
+        retained_reason TEXT NOT NULL,
+        retained_until TIMESTAMPTZ NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_billing_retention_user_hash
+      ON billing_retention_records(user_hash, created_at DESC)
+    `);
+  }
+
+  async function runPostgresAccountDeletion({ pool, userId, anonymousConsentId, subscriptionRefs }) {
+    if (!pool) return;
+    const userHash = sha256(`billing-retention:${userId}`);
+    const anonymizedEmail = anonymizedEmailForUser(userId);
+    const tablesByUserId = [
+      'usage_events',
+      'usage_counters',
+      'api_keys',
+      'monthly_quotas',
+      'free_alerts',
+      'discovery_alert_subscriptions',
+      'discovery_notification_dedupe',
+      'auth_events',
+      'notifications',
+      'watchlists',
+      'search_events',
+      'user_leads',
+      'email_delivery_log',
+      'user_consents',
+      'revoked_tokens',
+      'refresh_sessions'
+    ];
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await ensureBillingRetentionTable(client);
+      for (const ref of subscriptionRefs) {
+        if (!ref?.stripe_customer_id && !ref?.stripe_subscription_id) continue;
+        await client.query(
+          `INSERT INTO billing_retention_records
+             (user_hash, stripe_customer_id, stripe_subscription_id, plan_id, status,
+              current_period_start, current_period_end, cancel_at_period_end, retained_reason, retained_until)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'tax_and_payment_dispute_retention', NOW() + INTERVAL '10 years')`,
+          [
+            userHash,
+            ref.stripe_customer_id || null,
+            ref.stripe_subscription_id || null,
+            ref.plan_id || null,
+            ref.status || null,
+            ref.current_period_start || null,
+            ref.current_period_end || null,
+            Boolean(ref.cancel_at_period_end)
+          ]
+        );
+      }
+      await client.query(`DELETE FROM user_subscriptions WHERE user_id = $1`, [userId]).catch((error) => {
+        if (!['42P01', '42703'].includes(error?.code)) throw error;
+      });
+      for (const tableName of tablesByUserId) {
+        try {
+          await client.query(`DELETE FROM ${tableName} WHERE user_id = $1`, [userId]);
+        } catch (error) {
+          if (!['42P01', '42703'].includes(error?.code)) throw error;
+        }
+      }
+      if (anonymousConsentId) {
+        await client.query('DELETE FROM consent_sessions WHERE anonymous_id = $1', [anonymousConsentId]).catch((error) => {
+          if (!['42P01', '42703'].includes(error?.code)) throw error;
+        });
+      }
+      await client.query(
+        `UPDATE users
+         SET email = $2,
+             name = '',
+             password_hash = NULL,
+             is_premium = false,
+             plan_type = 'free',
+             plan_status = 'deleted',
+             onboarding_done = false,
+             mfa_secret = NULL,
+             mfa_temp_secret = NULL,
+             mfa_temp_created_at = NULL,
+             failed_login_count = 0,
+             lock_until = NULL,
+             email_verified = false,
+             trial_ends_at = NULL,
+             updated_at = NOW()
+         WHERE id = $1`,
+        [userId, anonymizedEmail]
+      );
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
 
   function clearAuthCookies(req, res) {
     const accessCookieOptions = authCookieOptions(req, ACCESS_COOKIE_TTL_MS);
@@ -212,10 +431,52 @@ export function buildAuthSessionRouter({
     const anonymousConsentId = String(req.cookies?.[consentAnonCookieName] || '').trim() || null;
 
     let userEmail = '';
+    let jsonSubscriptionRefs = [];
     await withDb(async (db) => {
       const user = (db.users || []).find((item) => item.id === userId) || null;
       userEmail = user?.email || '';
+      jsonSubscriptionRefs = collectJsonSubscriptionRefs(db, userId);
+      return db;
+    });
 
+    const pool = getSaasPool();
+    const pgSubscriptionRefs = await collectPostgresSubscriptionRefs(pool, userId);
+    const subscriptionRefs = dedupeSubscriptionRefs([...jsonSubscriptionRefs, ...pgSubscriptionRefs]);
+    let stripeDeletionResult = { attempted: false, canceled: [], skipped: [] };
+    try {
+      stripeDeletionResult = await cancelStripeSubscriptionsForDeletion({ refs: subscriptionRefs, userId });
+    } catch (error) {
+      logger.error(
+        {
+          request_id: req.id || null,
+          user_id: userId,
+          error: error?.message || 'stripe_subscription_cancel_failed'
+        },
+        'account_delete_stripe_subscription_cancel_failed'
+      );
+      return res.status(502).json({
+        error: 'stripe_subscription_cancel_failed',
+        message: 'Account deletion could not complete because the active Stripe subscription was not canceled.'
+      });
+    }
+
+    if (pool) {
+      try {
+        await runPostgresAccountDeletion({ pool, userId, anonymousConsentId, subscriptionRefs });
+      } catch (error) {
+        logger.error(
+          {
+            request_id: req.id || null,
+            user_id: userId,
+            error: error?.message || 'postgres_account_delete_failed'
+          },
+          'account_delete_postgres_transaction_failed'
+        );
+        return res.status(500).json({ error: 'account_delete_failed' });
+      }
+    }
+
+    await withDb(async (db) => {
       const cleanByUser = (list, keys = ['userId', 'user_id']) =>
         (Array.isArray(list) ? list : []).filter((item) => !keys.some((key) => item?.[key] === userId));
 
@@ -244,6 +505,21 @@ export function buildAuthSessionRouter({
       db.alertIntelligenceDedupe = cleanByUser(db.alertIntelligenceDedupe);
       db.revokedTokens = cleanByUser(db.revokedTokens);
       db.userConsents = cleanByUser(db.userConsents);
+      db.billingRetentionRecords = [
+        ...(db.billingRetentionRecords || []),
+        ...subscriptionRefs
+          .filter((ref) => ref?.stripe_customer_id || ref?.stripe_subscription_id)
+          .map((ref) => ({
+            userHash: sha256(`billing-retention:${userId}`),
+            stripeCustomerId: ref.stripe_customer_id || null,
+            stripeSubscriptionId: ref.stripe_subscription_id || null,
+            planId: ref.plan_id || null,
+            status: ref.status || null,
+            retainedReason: 'tax_and_payment_dispute_retention',
+            retainedUntil: new Date(Date.now() + 10 * 365 * 24 * 60 * 60 * 1000).toISOString(),
+            createdAt: new Date().toISOString()
+          }))
+      ].slice(-5000);
       if (anonymousConsentId) {
         db.consentSessions = (Array.isArray(db.consentSessions) ? db.consentSessions : []).filter(
           (item) => String(item?.anonymousId || '') !== anonymousConsentId
@@ -251,42 +527,6 @@ export function buildAuthSessionRouter({
       }
       return db;
     });
-
-    const pool = getSaasPool();
-    if (pool) {
-      const tablesByUserId = [
-        'usage_events',
-        'usage_counters',
-        'api_keys',
-        'monthly_quotas',
-        'user_subscriptions',
-        'free_alerts',
-        'discovery_alert_subscriptions',
-        'discovery_notification_dedupe',
-        'auth_events',
-        'notifications',
-        'watchlists',
-        'search_events',
-        'user_leads',
-        'email_delivery_log',
-        'user_consents'
-      ];
-      for (const tableName of tablesByUserId) {
-        try {
-          await pool.query(`DELETE FROM ${tableName} WHERE user_id = $1`, [userId]);
-        } catch (error) {
-          logger.warn(
-            {
-              request_id: req.id || null,
-              user_id: userId,
-              table: tableName,
-              error: error?.message || 'delete_failed'
-            },
-            'account_delete_table_skip'
-          );
-        }
-      }
-    }
 
     await revokeJwt(req.user);
     const refreshCookie = getRefreshTokenFromCookie(req);
@@ -309,21 +549,6 @@ export function buildAuthSessionRouter({
           'auth_refresh_revoke_failed'
         );
       }
-      if (anonymousConsentId) {
-        try {
-          await pool.query('DELETE FROM consent_sessions WHERE anonymous_id = $1', [anonymousConsentId]);
-        } catch (error) {
-          logger.warn(
-            {
-              request_id: req.id || null,
-              user_id: userId,
-              table: 'consent_sessions',
-              error: error?.message || 'delete_failed'
-            },
-            'account_delete_table_skip'
-          );
-        }
-      }
     }
 
     clearAuthCookies(req, res);
@@ -339,7 +564,8 @@ export function buildAuthSessionRouter({
       email: userEmail,
       type: 'account_deleted',
       success: true,
-      req
+      req,
+      detail: `stripe_cancel_attempted=${Boolean(stripeDeletionResult.attempted)};stripe_canceled=${stripeDeletionResult.canceled.length};stripe_skipped=${stripeDeletionResult.skipped.length}`
     });
     return res.json({ ok: true });
   });
