@@ -42,7 +42,9 @@ function resolveCapabilities(env = {}) {
   const billingReady = stripeReady;
   const duffelEnabled = parseFlag(env.ENABLE_PROVIDER_DUFFEL);
   const duffelReady = duffelEnabled && ready(env.DUFFEL_API_KEY, 8);
-  const liveProvidersReady = duffelReady;
+  const kiwiEnabled = parseFlag(env.ENABLE_PROVIDER_KIWI);
+  const kiwiReady = kiwiEnabled && ready(env.KIWI_API_KEY, 8);
+  const liveProvidersReady = duffelReady || kiwiReady;
   const flightScanEnabled = parseFlag(env.FLIGHT_SCAN_ENABLED);
   const pushReady = ready(env.PUSH_WEBHOOK_URL, 10);
   const searchHistoryEnabled = parseFlag(env.SEARCH_HISTORY_PERSIST_ENABLED);
@@ -57,6 +59,7 @@ function resolveCapabilities(env = {}) {
     live_providers: cap(liveProvidersReady, 'No live provider'),
     flight_scan: cap(flightScanEnabled && liveProvidersReady, flightScanEnabled ? 'providers missing' : 'scan disabled'),
     data_source: (flightScanEnabled && liveProvidersReady) ? 'live' : 'internal',
+    live_provider_names: [kiwiReady ? 'kiwi' : null, duffelReady ? 'duffel' : null].filter(Boolean),
     push: cap(pushReady, 'PUSH_WEBHOOK_URL missing'),
     oauth_google: cap(googleReady, 'GOOGLE_CLIENT_ID missing'),
     oauth_facebook: cap(facebookReady, 'FACEBOOK_CLIENT_ID missing'),
@@ -138,6 +141,16 @@ test('capability matrix: Duffel enabled with key → live_providers active', () 
     DUFFEL_API_KEY: 'duffel_live_abcdefgh'
   });
   assert.equal(caps.live_providers.active, true);
+  assert.deepEqual(caps.live_provider_names, ['duffel']);
+});
+
+test('capability matrix: Kiwi enabled with key -> live_providers active', () => {
+  const caps = resolveCapabilities({
+    ENABLE_PROVIDER_KIWI: 'true',
+    KIWI_API_KEY: 'kiwi_live_abcdefgh'
+  });
+  assert.equal(caps.live_providers.active, true);
+  assert.deepEqual(caps.live_provider_names, ['kiwi']);
 });
 
 test('capability matrix: flight scan enabled but no provider → scan inactive', () => {

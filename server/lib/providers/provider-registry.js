@@ -109,13 +109,14 @@ export function createProviderRegistry(options = {}) {
   const providers = Array.isArray(options?.providers) && options.providers.length > 0
     ? options.providers
     : [
+        new KiwiProvider({
+          enabled: parseFlag(process.env.ENABLE_PROVIDER_KIWI, false),
+          apiKey: process.env.KIWI_API_KEY,
+          baseUrl: process.env.KIWI_TEQUILA_BASE_URL
+        }),
         new DuffelProvider({
           enabled: parseFlag(process.env.ENABLE_PROVIDER_DUFFEL, false),
           apiKey: process.env.DUFFEL_API_KEY
-        }),
-        new KiwiProvider({
-          enabled: parseFlag(process.env.ENABLE_PROVIDER_KIWI, false),
-          apiKey: process.env.KIWI_TEQUILA_API_KEY
         }),
         new SkyscannerProvider({
           enabled: parseFlag(process.env.ENABLE_PROVIDER_SKYSCANNER, false),

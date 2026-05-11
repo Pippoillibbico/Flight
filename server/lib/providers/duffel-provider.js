@@ -25,6 +25,18 @@ function shouldRetry(status) {
   return Number(status) === 429 || (Number(status) >= 500 && Number(status) <= 599);
 }
 
+function providerErrorCode(status) {
+  const code = Number(status);
+  if (code === 401 || code === 403) return 'auth_failed';
+  if (code === 404) return 'not_found';
+  if (code === 408) return 'timeout';
+  if (code === 409) return 'conflict';
+  if (code === 422) return 'invalid_request';
+  if (code === 429) return 'rate_limited';
+  if (code >= 500) return 'upstream_error';
+  return 'request_failed';
+}
+
 function parseIsoDurationMinutes(value) {
   const text = String(value || '').trim().toUpperCase();
   if (!text) return null;
@@ -120,8 +132,11 @@ export class DuffelProvider extends BaseProvider {
     );
 
     if (!response.ok) {
-      const errBody = await response.text().catch(() => '');
-      throw new Error(`Duffel request failed (${response.status}): ${errBody.slice(0, 200)}`);
+      throw Object.assign(new Error(`Duffel request failed (${response.status})`), {
+        code: providerErrorCode(response.status),
+        status: response.status,
+        provider: 'duffel'
+      });
     }
 
     const json = await response.json();

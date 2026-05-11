@@ -44,8 +44,35 @@ test('soft launch runtime audit can pass without Duffel when product is cached-o
   assert.equal(audit.blockingFailedKeys.includes('SOFT_LAUNCH_PROVIDER_PROFILE'), false);
 });
 
-test('soft launch blocks unsupported live provider mix', () => {
-  const audit = getRuntimeConfigAudit(productionSoftEnv({ ENABLE_PROVIDER_KIWI: 'true' }));
+test('soft launch allows Kiwi as the primary live provider when configured', () => {
+  const audit = getRuntimeConfigAudit(
+    productionSoftEnv({
+      ENABLE_PROVIDER_KIWI: 'true',
+      KIWI_API_KEY: 'kiwi_live_key_123456789'
+    })
+  );
+  assert.equal(audit.ok, true);
+  assert.equal(audit.blockingFailedKeys.includes('SOFT_LAUNCH_PROVIDER_PROFILE'), false);
+});
+
+test('soft launch allows Kiwi primary with Duffel secondary when both are configured', () => {
+  const audit = getRuntimeConfigAudit(
+    productionSoftEnv({
+      ENABLE_PROVIDER_KIWI: 'true',
+      KIWI_API_KEY: 'kiwi_live_key_123456789',
+      ENABLE_PROVIDER_DUFFEL: 'true',
+      DUFFEL_API_KEY: 'duffel_live_key_123456789',
+      PROVIDER_COLLECTION_ENABLED: 'true',
+      FLIGHT_SCAN_ENABLED: 'true'
+    })
+  );
+  assert.equal(audit.ok, true);
+  assert.equal(audit.blockingFailedKeys.includes('SOFT_LAUNCH_PROVIDER_PROFILE'), false);
+  assert.equal(audit.blockingFailedKeys.includes('AT_LEAST_ONE_PROVIDER_CONFIGURED'), false);
+});
+
+test('soft launch blocks Kiwi when enabled without credentials', () => {
+  const audit = getRuntimeConfigAudit(productionSoftEnv({ ENABLE_PROVIDER_KIWI: 'true', KIWI_API_KEY: '' }));
   assert.equal(audit.ok, false);
   assert.equal(audit.blockingFailedKeys.includes('SOFT_LAUNCH_PROVIDER_PROFILE'), true);
 });
@@ -87,7 +114,7 @@ test('public legal pages are generated from versioned privacy docs', () => {
   const terms = renderTermsOfService();
 
   assert.match(privacy, /data-legal-source="docs\/privacy\/privacy-policy\.md"/);
-  assert.match(privacy, /Version: v1\.1-final/);
+  assert.match(privacy, /Version: v1\.3-flight-provider-activation/);
   assert.match(privacy, /Data Controller/);
   assert.match(privacy, /docs\/privacy\/dpa-fornitori\.md/);
   assert.match(privacy, /docs\/security\/data-breach-72h-procedure\.md/);

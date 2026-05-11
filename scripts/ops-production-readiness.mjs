@@ -15,6 +15,8 @@ const REQUIRED_SECRETS = [
   'STRIPE_WEBHOOK_SECRET',
   'STRIPE_PRICE_PRO',
   'STRIPE_PRICE_CREATOR',
+  'KIWI_API_KEY',
+  'DUFFEL_API_KEY',
   'AFFILIATE_TRAVELPAYOUTS_MARKER'
 ];
 
@@ -272,8 +274,10 @@ async function run() {
 
   if (strict) {
     expectExactEnv('ENABLE_PROVIDER_DUFFEL', 'true');
-    expectExactEnv('ENABLE_PROVIDER_KIWI', 'false');
+    expectExactEnv('ENABLE_PROVIDER_KIWI', 'true');
     expectExactEnv('ENABLE_PROVIDER_SKYSCANNER', 'false');
+    expectExactEnv('FLIGHT_SCAN_ENABLED', 'true');
+    expectExactEnv('FLIGHT_SCAN_RUN_DOWNSTREAM', 'true');
     expectExactEnv('ENABLE_TRAVELPAYOUTS_AFFILIATE', 'true');
     expectExactEnv('AI_ALLOW_FREE_USERS', 'false');
     expectExactEnv('ALLOW_MOCK_BILLING_UPGRADES', 'false');

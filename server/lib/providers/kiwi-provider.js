@@ -7,12 +7,12 @@
  * Auth: API key in `apikey` header (obtained via Kiwi.com partner portal).
  *
  * This adapter is DISABLED by default.
- * Enable via: ENABLE_PROVIDER_KIWI=true  +  KIWI_TEQUILA_API_KEY=<key>
+ * Enable via: ENABLE_PROVIDER_KIWI=true  +  KIWI_API_KEY=<key>
  *
  * Integration status:
  *   - Code complete and ready for commercial activation.
  *   - Requires Tequila partner account: https://tequila.kiwi.com/portal
- *   - No hard dependency — if unconfigured the provider returns [] gracefully.
+ *   - No hard dependency - if unconfigured the provider returns [] gracefully.
  */
 
 import { BaseProvider } from './base-provider.js';
@@ -23,9 +23,7 @@ const DEFAULT_RETRIES = Math.max(0, Math.min(IS_PRODUCTION ? 1 : 4, Number(proce
 
 const MAX_OFFERS_PER_REQUEST = 20;
 
-const KIWI_SEARCH_BASE = 'https://tequila.kiwi.com/v2/search';
-
-// Map internal cabin class → Tequila selected_cabins values
+// Map internal cabin class to Tequila selected_cabins values.
 const CABIN_MAP = {
   economy:          'M',    // Economy
   premium:          'W',    // Premium economy
@@ -40,6 +38,18 @@ function sleep(ms) {
 
 function shouldRetry(status) {
   return Number(status) === 429 || (Number(status) >= 500 && Number(status) <= 599);
+}
+
+function providerErrorCode(status) {
+  const code = Number(status);
+  if (code === 401 || code === 403) return 'auth_failed';
+  if (code === 404) return 'not_found';
+  if (code === 408) return 'timeout';
+  if (code === 409) return 'conflict';
+  if (code === 422) return 'invalid_request';
+  if (code === 429) return 'rate_limited';
+  if (code >= 500) return 'upstream_error';
+  return 'request_failed';
 }
 
 async function fetchWithTimeoutRetry(url, options = {}, { timeoutMs = DEFAULT_TIMEOUT_MS, retries = DEFAULT_RETRIES } = {}) {
@@ -99,10 +109,11 @@ function toYMD(value) {
 }
 
 export class KiwiProvider extends BaseProvider {
-  constructor({ apiKey, enabled } = {}) {
+  constructor({ apiKey, enabled, baseUrl } = {}) {
     super('kiwi');
     this.apiKey  = String(apiKey  || '').trim();
     this.enabled = Boolean(enabled);
+    this.baseUrl = String(baseUrl || process.env.KIWI_TEQUILA_BASE_URL || 'https://api.tequila.kiwi.com').replace(/\/+$/, '');
   }
 
   isEnabled() {
@@ -158,7 +169,7 @@ export class KiwiProvider extends BaseProvider {
       sort:              'price',
       asc:               '1',
       selected_cabins:   cabin,
-      mix_with_cabins:   '',     // strict cabin — no mixing
+      mix_with_cabins:   '',     // strict cabin - no mixing
       partner_market:    'us'
     });
 
@@ -174,7 +185,7 @@ export class KiwiProvider extends BaseProvider {
       params.set('flight_type', 'oneway');
     }
 
-    const url = `${KIWI_SEARCH_BASE}?${params.toString()}`;
+    const url = `${this.baseUrl}/v2/search?${params.toString()}`;
 
     const response = await fetchWithTimeoutRetry(url, {
       method:  'GET',
@@ -185,8 +196,11 @@ export class KiwiProvider extends BaseProvider {
     });
 
     if (!response.ok) {
-      const body = await response.text().catch(() => '');
-      throw new Error(`Kiwi/Tequila request failed (${response.status}): ${body.slice(0, 200)}`);
+      throw Object.assign(new Error(`Kiwi/Tequila request failed (${response.status})`), {
+        code: providerErrorCode(response.status),
+        status: response.status,
+        provider: 'kiwi'
+      });
     }
 
     const json = await response.json();
