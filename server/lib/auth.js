@@ -8,6 +8,7 @@ if (!SECRET || SECRET.length < 32) {
 }
 const JWT_ISSUER = process.env.JWT_ISSUER || 'flight-suite';
 const JWT_AUDIENCE = process.env.JWT_AUDIENCE || 'flight-suite-web';
+const JWT_ALGORITHM = 'HS256';
 const ACCESS_TOKEN_EXPIRES_IN = process.env.ACCESS_TOKEN_EXPIRES_IN || process.env.JWT_EXPIRES_IN || '15m';
 const REFRESH_TOKEN_EXPIRES_IN = process.env.REFRESH_TOKEN_EXPIRES_IN || '30d';
 
@@ -21,6 +22,7 @@ export async function verifyPassword(password, hash) {
 
 export function signAccessToken(payload) {
   return jwt.sign(payload, SECRET, {
+    algorithm: JWT_ALGORITHM,
     expiresIn: ACCESS_TOKEN_EXPIRES_IN,
     issuer: JWT_ISSUER,
     audience: JWT_AUDIENCE,
@@ -30,6 +32,7 @@ export function signAccessToken(payload) {
 
 export function signRefreshToken(payload) {
   return jwt.sign({ ...payload, typ: 'refresh' }, SECRET, {
+    algorithm: JWT_ALGORITHM,
     expiresIn: REFRESH_TOKEN_EXPIRES_IN,
     issuer: JWT_ISSUER,
     audience: JWT_AUDIENCE,
@@ -39,6 +42,7 @@ export function signRefreshToken(payload) {
 
 export function verifyAccessToken(token) {
   return jwt.verify(token, SECRET, {
+    algorithms: [JWT_ALGORITHM],
     issuer: JWT_ISSUER,
     audience: JWT_AUDIENCE
   });
@@ -46,6 +50,7 @@ export function verifyAccessToken(token) {
 
 export function verifyRefreshToken(token) {
   const payload = jwt.verify(token, SECRET, {
+    algorithms: [JWT_ALGORITHM],
     issuer: JWT_ISSUER,
     audience: JWT_AUDIENCE
   });
