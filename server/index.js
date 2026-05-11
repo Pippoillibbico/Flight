@@ -23,16 +23,8 @@ import { DESTINATIONS, ORIGINS } from './data/flights-data.js';
 import pg from 'pg';
 import { getOrCreateSubscription, getPricingConfig, PLANS, setSaasPool, grantPremiumTrial, checkAndExpireTrial } from './lib/saas-db.js';
 import { quotaGuard, apiKeyAuth, requireApiScope } from './middleware/quotaGuard.js';
-import { buildApiKeysRouter } from './routes/apikeys.js';
-import { buildBillingRouter } from './routes/billing.js';
-import { buildUsageRouter } from './routes/usage.js';
-import { buildFreeRouter } from './routes/free.js';
 import { buildFreeFoundationRouter } from './routes/free-foundation.js';
-import { buildDealEngineRouter } from './routes/deal-engine.js';
-import { buildDiscoveryRouter } from './routes/discovery.js';
-import { buildOpportunitiesRouter } from './routes/opportunities.js';
 import { buildOutboundRouter } from './routes/outbound.js';
-import { buildUserExportRouter } from './routes/user-export.js';
 import { renderPrivacyPolicy, renderCookiePolicy, renderTermsOfService } from './lib/legal-pages.js';
 import { buildAlertsRouter } from './routes/alerts.js';
 import { buildSystemRouter } from './routes/system.js';
@@ -40,8 +32,6 @@ import { buildSearchRouter } from './routes/search.js';
 import { buildAuthSessionRouter } from './routes/auth-session.js';
 import { buildAuthLocalRouter } from './routes/auth-local.js';
 import { buildAuthOAuthRouter } from './routes/auth-oauth.js';
-import { buildPushRouter } from './routes/push.js';
-import { buildEmailPreferencesRouter } from './routes/email-preferences.js';
 import { buildAdminTelemetryRouter } from './routes/admin-telemetry.js';
 import { buildPublicUtilityRouter } from './routes/public-utility.js';
 import { buildConsentRouter } from './routes/consent.js';
@@ -49,6 +39,7 @@ import { startRuntimeLifecycle } from './bootstrap/runtime-lifecycle.js';
 import { createRuntimeAppContext } from './bootstrap/app-context.js';
 import { createDomainServices } from './bootstrap/domain-services.js';
 import { createAuthRuntime } from './bootstrap/auth-runtime.js';
+import { registerSaasRoutes } from './bootstrap/register-saas-routes.js';
 import { enforceStartupReadinessOrFail, logStartupCapabilityWarnings, verifyPrimaryInfrastructureOrFail } from './bootstrap/startup-guards.js';
 import { runNightlyFreePrecompute } from './jobs/free-precompute.js';
 import { runFreeAlertWorkerOnce } from './jobs/free-alert-worker.js';
@@ -1395,17 +1386,22 @@ app.use(
   })
 );
 // ── SaaS routes ───────────────────────────────────────────────────
-// Mount routers (they receive authGuard/csrfGuard from closure)
-app.use('/api/push',    buildPushRouter({ authGuard, csrfGuard }));
-app.use('/api',         buildEmailPreferencesRouter({ authGuard, csrfGuard, withDb }));
-app.use('/api/keys',    buildApiKeysRouter({ authGuard, csrfGuard }));
-app.use('/api/billing', buildBillingRouter({ authGuard, requireSessionAuth, csrfGuard }));
-app.use('/api/usage',   buildUsageRouter({ authGuard }));
-app.use('/api/free',    buildFreeRouter());
-app.use('/api',         buildUserExportRouter({ authGuard, requireSessionAuth, quotaGuard, withDb, readDb, fetchCurrentUser, appendImmutableAudit }));
-app.use('/', buildDealEngineRouter({ authGuard, optionalAuth, requireSessionAuth, adminGuard, attachUserConsent, canTrack, outboundRepo }));
-app.use('/api/discovery', buildDiscoveryRouter({ authGuard, csrfGuard, quotaGuard, requireApiScope }));
-app.use('/api/opportunities', buildOpportunitiesRouter({ authGuard, requireSessionAuth, adminGuard, csrfGuard, requireApiScope, quotaGuard, withDb, optionalAuth }));
+registerSaasRoutes(app, {
+  adminGuard,
+  appendImmutableAudit,
+  attachUserConsent,
+  authGuard,
+  canTrack,
+  csrfGuard,
+  fetchCurrentUser,
+  optionalAuth,
+  outboundRepo,
+  quotaGuard,
+  readDb,
+  requireApiScope,
+  requireSessionAuth,
+  withDb
+});
 
 app.use(errorHandler);
 

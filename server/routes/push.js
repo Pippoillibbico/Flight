@@ -28,9 +28,15 @@ const UnsubscribeSchema = z.object({
 
 export function buildPushRouter({
   authGuard   = (_req, _res, next) => next(),
-  csrfGuard   = (_req, _res, next) => next()
+  csrfGuard   = (_req, _res, next) => next(),
+  enabled     = false
 } = {}) {
   const router = Router();
+
+  router.use((req, res, next) => {
+    if (enabled) return next();
+    return res.status(404).json({ error: 'browser_push_not_enabled' });
+  });
 
   // Public — frontend needs this to call PushManager.subscribe()
   router.get('/vapid-public-key', (_req, res) => {
