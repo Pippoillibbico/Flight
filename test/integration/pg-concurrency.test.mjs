@@ -1,9 +1,8 @@
 /**
  * PostgreSQL concurrency integration tests.
  *
- * Requires a running PostgreSQL instance and DATABASE_URL set, e.g.:
- *   DATABASE_URL=postgresql://flight:flight@localhost:5432/flight \
- *     node --test test/integration/pg-concurrency.test.mjs
+ * Requires the isolated test runner, which provisions PostgreSQL and sets
+ * DATABASE_URL before this file is executed.
  *
  * Covers the four TOCTOU gaps fixed in the PG paths:
  *  A. issueApiKey  — concurrent requests cannot exceed maxKeys
@@ -22,13 +21,10 @@ import pg from 'pg';
 
 const { Pool } = pg;
 
-const DATABASE_URL =
-  process.env.DATABASE_URL || 'postgresql://flight:flight@localhost:5432/flight';
-const RUN_PG_INTEGRATION_TESTS = String(process.env.RUN_PG_INTEGRATION_TESTS || '')
-  .trim()
-  .toLowerCase() === 'true';
-const testPg = RUN_PG_INTEGRATION_TESTS ? test : test.skip;
-
+const DATABASE_URL = process.env.DATABASE_URL;
+if (!DATABASE_URL) {
+  throw new Error('DATABASE_URL is required; run this test through npm test so isolated PostgreSQL is provisioned.');
+}
 const pool = new Pool({ connectionString: DATABASE_URL, max: 10 });
 
 // ── helpers ────────────────────────────────────────────────────────────────────
@@ -210,7 +206,7 @@ async function cleanSubscriptions(userId) {
 
 // ── Test A: issueApiKey — concurrent requests cannot exceed maxKeys ─────────
 
-testPg('issueApiKey PG: 5 concurrent requests with maxKeys=2 → exactly 2 succeed', async () => {
+test('issueApiKey PG: 5 concurrent requests with maxKeys=2 → exactly 2 succeed', async () => {
   const userId = uniqueUserId();
   const MAX = 2;
 
@@ -242,7 +238,7 @@ testPg('issueApiKey PG: 5 concurrent requests with maxKeys=2 → exactly 2 succe
 
 // ── Test B: createAlert — concurrent requests cannot exceed maxAlerts ───────
 
-testPg('createAlert PG: 5 concurrent requests with maxAlerts=3 → exactly 3 succeed', async () => {
+test('createAlert PG: 5 concurrent requests with maxAlerts=3 → exactly 3 succeed', async () => {
   const userId = uniqueUserId();
   const MAX = 3;
 
@@ -273,7 +269,7 @@ testPg('createAlert PG: 5 concurrent requests with maxAlerts=3 → exactly 3 suc
 
 // ── Test C: rotateApiKey — only one of two concurrent rotations wins ────────
 
-testPg('rotateApiKey PG: 2 concurrent rotations on same key → exactly 1 wins', async () => {
+test('rotateApiKey PG: 2 concurrent rotations on same key → exactly 1 wins', async () => {
   const userId = uniqueUserId();
   const keyId = await insertApiKey(userId, 'rotate-me');
 
@@ -309,7 +305,7 @@ testPg('rotateApiKey PG: 2 concurrent rotations on same key → exactly 1 wins',
 
 // ── Test D: getOrCreateSubscription — no duplicate rows ────────────────────
 
-testPg('getOrCreateSubscription PG: 5 concurrent calls for new user → 1 row, all callers get same id', async () => {
+test('getOrCreateSubscription PG: 5 concurrent calls for new user → 1 row, all callers get same id', async () => {
   const userId = uniqueUserId();
 
   try {

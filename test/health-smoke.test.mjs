@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { createServer } from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
 
 async function waitForHealth(baseUrl, { retries = 80, intervalMs = 250, child, getLogs } = {}) {
@@ -19,8 +20,21 @@ async function waitForHealth(baseUrl, { retries = 80, intervalMs = 250, child, g
   throw new Error(`Server did not become healthy in time.\n${logs}`);
 }
 
-test('smoke /api/health returns ok', async (t) => {
-  const port = 3200 + Math.floor(Math.random() * 200);
+async function getFreeLocalPort() {
+  const server = createServer();
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  const address = server.address();
+  const port = address && typeof address === 'object' ? address.port : null;
+  await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  assert.ok(port, 'test helper must allocate a local port');
+  return port;
+}
+
+test('smoke /api/health returns ok', async () => {
+  const port = await getFreeLocalPort();
   const baseUrl = `http://127.0.0.1:${port}`;
   let stdout = '';
   let stderr = '';
@@ -39,11 +53,7 @@ test('smoke /api/health returns ok', async (t) => {
       windowsHide: true
     });
   } catch (error) {
-    if (error?.code === 'EPERM') {
-      t.skip('spawn not permitted in this sandboxed environment');
-      return;
-    }
-    throw error;
+    throw new Error(`Unable to spawn health smoke server: ${error?.message || error}`);
   }
   child.stdout.on('data', (chunk) => {
     stdout += String(chunk);
