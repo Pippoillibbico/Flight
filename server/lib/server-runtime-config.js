@@ -233,11 +233,11 @@ export function loadServerRuntimeConfig({ env = process.env, logger }) {
       .trim()
       .toLowerCase() !== 'false';
   const AUTH_RETURN_ACCESS_TOKEN =
-    String(env.AUTH_RETURN_ACCESS_TOKEN || (NODE_ENV === 'production' ? 'false' : 'true'))
+    String(env.AUTH_RETURN_ACCESS_TOKEN || 'false')
       .trim()
-      .toLowerCase() === 'true';
+      .toLowerCase() === 'true' && NODE_ENV !== 'production';
   const REGISTRATION_ENABLED = String(env.AUTH_REGISTRATION_ENABLED || env.REGISTRATION_ENABLED || 'true').trim().toLowerCase() !== 'false';
-  const LEGACY_AUTH_ROUTES_ENABLED = parseFlag(env.LEGACY_AUTH_ROUTES_ENABLED, NODE_ENV !== 'production');
+  const LEGACY_AUTH_ROUTES_ENABLED = parseFlag(env.LEGACY_AUTH_ROUTES_ENABLED, false);
   const MOCK_BILLING_UPGRADES_ENABLED = parseFlag(env.ALLOW_MOCK_BILLING_UPGRADES, NODE_ENV !== 'production');
   const RUNTIME_MODE_RAW = String(env.RUNTIME_MODE || 'all').trim().toLowerCase();
   const RUNTIME_MODE = new Set(['all', 'api', 'worker']).has(RUNTIME_MODE_RAW) ? RUNTIME_MODE_RAW : 'all';

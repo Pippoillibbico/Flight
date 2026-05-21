@@ -162,35 +162,36 @@ test('Docker Desktop is not required when INFRA_MODE is wsl-docker or external',
   assert.match(docs, /INFRA_MODE=wsl-docker/);
 });
 
-test('capabilities expose runtime profile and safe soft-zero-cost cache state', async () => {
+test('public capabilities expose safe UI gates only', async () => {
   const harness = buildTestSystemApp(softZeroCostEnv({ REDIS_URL: '', EMAIL_DRY_RUN: 'true' }));
   try {
     await withServer(harness.app, async (baseUrl) => {
       const res = await fetch(`${baseUrl}/api/system/capabilities`);
       assert.equal(res.status, 200);
       const body = await res.json();
-      assert.equal(body.runtimeProfile, 'soft-zero-cost');
-      assert.equal(body.cacheBackend, 'memory');
-      assert.equal(body.redisStatus, 'optional_missing_safe');
-      assert.equal(body.freeCostStatus, 'zero_cost_confirmed');
-      assert.equal(body.aiStatus, 'paid_only');
-      assert.equal(body.providerStatus, 'gated');
+      assert.equal(body.runtimeProfile, undefined);
+      assert.equal(body.cacheBackend, undefined);
+      assert.equal(body.redisStatus, undefined);
+      assert.equal(body.capabilities.data_source, 'internal');
+      assert.equal(body.capabilities.ai_features.active, false);
+      assert.equal(body.capabilities.live_flight_providers.active, false);
     });
   } finally {
     harness.restore();
   }
 });
 
-test('readyz reports production-full missing Redis as not ready', async () => {
+test('readyz reports readiness without exposing infrastructure details', async () => {
   const harness = buildTestSystemApp(productionFullEnv({ REDIS_URL: '', CACHE_BACKEND: 'memory' }));
   try {
     await withServer(harness.app, async (baseUrl) => {
       const res = await fetch(`${baseUrl}/readyz`);
       const body = await res.json();
       assert.equal(res.status, 503);
-      assert.equal(body.runtimeProfile, 'production-full');
-      assert.equal(body.redisStatus, 'required_missing');
-      assert.equal(body.checks.redis.ok, false);
+      assert.equal(body.ok, false);
+      assert.equal(body.runtimeProfile, undefined);
+      assert.equal(body.redisStatus, undefined);
+      assert.equal(body.checks, undefined);
     });
   } finally {
     harness.restore();

@@ -127,8 +127,7 @@ import { scoreItineraries, sortItinerariesByTravelScore } from './features/trave
 import {
   createAdminDashboardApi,
   mapFunnelEventToAdminTelemetry,
-  mapUpgradeEventToAdminTelemetry,
-  resolveAdminAccess
+  mapUpgradeEventToAdminTelemetry
 } from './features/admin-dashboard';
 
 const prefetchAdvancedAnalyticsChunk = () => import('./components/AdvancedAnalyticsSection');
@@ -617,15 +616,7 @@ function App() {
   const isMfaChallengeActive = Boolean(authMfa.ticket);
   const isAdvancedMode = uiMode === 'advanced';
   const showAuthGateModal = false;
-  const adminAccess = useMemo(
-    () =>
-      resolveAdminAccess({
-        userEmail: user?.email,
-        allowlistCsv: import.meta?.env?.VITE_ADMIN_ALLOWLIST_EMAILS || ''
-      }),
-    [user?.email]
-  );
-  const isAdminUser = adminAccess.isAdmin;
+  const isAdminUser = Boolean(user?.isAdmin);
 
   useEffect(() => {
     writeStoredUserPlan(localUserPlan);

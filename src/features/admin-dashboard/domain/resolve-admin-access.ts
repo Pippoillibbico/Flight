@@ -1,6 +1,5 @@
 import type { AdminAccessContext, AdminAccessResult } from '../types/index.ts';
 
-// No default allowlist — configure via VITE_ADMIN_ALLOWLIST_EMAILS in your environment.
 const DEFAULT_ALLOWLIST: string[] = [];
 
 function normalizeEmail(value: unknown): string {
@@ -19,9 +18,10 @@ function parseAllowlist(rawCsv?: string | null): string[] {
 
 export function resolveAdminAccess(context: AdminAccessContext): AdminAccessResult {
   const normalizedEmail = normalizeEmail(context?.userEmail);
+  const serverAdmin = context?.isServerAdmin === true;
   const allowlist = parseAllowlist(context?.allowlistCsv);
   return {
-    isAdmin: Boolean(normalizedEmail && allowlist.includes(normalizedEmail)),
+    isAdmin: serverAdmin || Boolean(normalizedEmail && allowlist.includes(normalizedEmail)),
     normalizedEmail,
     allowlist
   };

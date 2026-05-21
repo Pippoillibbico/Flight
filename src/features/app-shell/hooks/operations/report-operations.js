@@ -51,6 +51,11 @@ export function createReportOperations({
   }
 
   async function runFeatureAuditCheck() {
+    if (!isAuthenticated || !isAdminUser) {
+      setFeatureAudit(null);
+      setFeatureAuditError('Admin access required.');
+      return;
+    }
     setFeatureAuditLoading(true);
     setFeatureAuditError('');
     try {

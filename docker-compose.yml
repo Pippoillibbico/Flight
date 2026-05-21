@@ -47,6 +47,8 @@ services:
       FRONTEND_URL: http://127.0.0.1:8080
       CORS_ALLOWLIST: http://127.0.0.1:8080,http://localhost:8080,http://127.0.0.1:3000,http://localhost:3000
       AUTH_REQUIRE_TRUSTED_ORIGIN: "false"
+      AUTH_RETURN_ACCESS_TOKEN: "false"
+      EXPOSE_ERROR_DETAILS: "false"
       JWT_SECRET: dev-only-jwt-secret-change-before-production-000000
       OUTBOUND_CLICK_SECRET: dev-only-outbound-click-secret-000000
       AUDIT_LOG_HMAC_KEY: dev-only-audit-log-hmac-key-000000

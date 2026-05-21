@@ -225,7 +225,7 @@ export const api = {
     return request('/health', { auth: false });
   },
   healthFeatures() {
-    return request('/health/features', { auth: false });
+    return request('/health/features');
   },
   healthCompliance() {
     return request('/health/compliance', { auth: false });

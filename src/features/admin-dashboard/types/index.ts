@@ -165,6 +165,7 @@ export interface AdminTelemetryEventPayload {
 export interface AdminAccessContext {
   userEmail?: unknown;
   allowlistCsv?: string | null;
+  isServerAdmin?: boolean;
 }
 
 export interface AdminAccessResult {

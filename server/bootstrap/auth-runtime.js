@@ -790,7 +790,8 @@ export function createAuthRuntime({
         isPremium: Boolean(user.isPremium),
         planType: resolveUserPlan(user).planType,
         planStatus: resolveUserPlan(user).planStatus,
-        onboardingDone: Boolean(user.onboardingDone)
+        onboardingDone: Boolean(user.onboardingDone),
+        isAdmin: isAdminEmail(user.email)
       }
     });
   }
@@ -824,6 +825,7 @@ export function createAuthRuntime({
     registerFailedLogin,
     requireSessionAuth,
     resetUserLoginFailures,
+    isAdminEmail,
     resolveOAuthBindingHash,
     revokeJwt,
     revokeRefreshFamily,

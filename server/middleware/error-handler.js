@@ -2,6 +2,8 @@ import { logger } from '../lib/logger.js';
 import { redactUrlForLogs } from '../lib/log-redaction.js';
 
 const isProd = process.env.NODE_ENV === 'production';
+const exposeErrorDetails =
+  !isProd && String(process.env.EXPOSE_ERROR_DETAILS || 'false').trim().toLowerCase() === 'true';
 
 export function getErrorStatus(err) {
   const status = Number(err?.status || err?.statusCode || 500);
@@ -62,7 +64,7 @@ export function buildErrorPayload(req, { status = 500, error = 'request_failed',
 export function errorHandler(err, req, res, _next) {
   const status = getErrorStatus(err);
   const code = getErrorCode(err, status);
-  const fallbackMessage = !isProd ? String(err?.message || '').trim() : '';
+  const fallbackMessage = exposeErrorDetails ? String(err?.message || '').trim() : '';
 
   const logPayload = {
     request_id: req?.id || null,
@@ -73,7 +75,7 @@ export function errorHandler(err, req, res, _next) {
   };
 
   if (status >= 500) {
-    logger.error({ ...logPayload, err: isProd ? undefined : err }, 'unhandled_error');
+    logger.error({ ...logPayload, err: exposeErrorDetails ? err : undefined }, 'unhandled_error');
   } else {
     logger.warn(logPayload, 'handled_error');
   }
@@ -84,7 +86,7 @@ export function errorHandler(err, req, res, _next) {
     message: fallbackMessage,
     resetAt: err?.resetAt
   });
-  if (!isProd && err?.stack) payload.stack = err.stack;
+  if (exposeErrorDetails && err?.stack) payload.stack = err.stack;
 
   return res.status(status).json(payload);
 }

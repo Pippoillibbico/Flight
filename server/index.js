@@ -919,6 +919,7 @@ const {
   getRefreshTokenFromCookie,
   hashEmailVerifyToken,
   hashPasswordResetToken,
+  isAdminEmail,
   isTrustedOrigin,
   issueSessionTokens,
   logAuthEvent,
@@ -1266,7 +1267,8 @@ app.use(
     speakeasy,
     loginDummyPasswordHash: LOGIN_DUMMY_PASSWORD_HASH,
     grantPremiumTrial,
-    checkAndExpireTrial
+    checkAndExpireTrial,
+    isAdminEmail
   })
 );
 app.use(
@@ -1321,7 +1323,8 @@ app.use(
     speakeasy,
     QRCode,
     mfaCodeSchema,
-    includeAccessTokenInResponse: AUTH_RETURN_ACCESS_TOKEN
+    includeAccessTokenInResponse: AUTH_RETURN_ACCESS_TOKEN,
+    isAdminEmail
   })
 );
 app.use(

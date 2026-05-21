@@ -36,7 +36,8 @@ export function buildAuthSessionRouter({
   speakeasy,
   QRCode,
   mfaCodeSchema,
-  includeAccessTokenInResponse = true,
+  includeAccessTokenInResponse = false,
+  isAdminEmail = () => false,
   mfaSetupTtlMs = 15 * 60 * 1000,
   StripeClient = Stripe
 }) {
@@ -318,7 +319,8 @@ export function buildAuthSessionRouter({
         planStatus: plan.planStatus,
         onboardingDone: Boolean(user.onboardingDone),
         authChannel: String(user.authChannel || 'direct'),
-        emailVerified: Boolean(user.emailVerified)
+        emailVerified: Boolean(user.emailVerified),
+        isAdmin: Boolean(isAdminEmail(user.email))
       },
       session: {
         cookie: req.authSource === 'cookie',
@@ -700,7 +702,8 @@ export function buildAuthSessionRouter({
         planType: resolveUserPlan(user).planType,
         planStatus: resolveUserPlan(user).planStatus,
         onboardingDone: Boolean(user.onboardingDone),
-        authChannel
+        authChannel,
+        isAdmin: Boolean(isAdminEmail(user.email))
       }
     }));
   });

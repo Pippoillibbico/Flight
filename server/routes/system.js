@@ -63,27 +63,24 @@ export function buildSystemRouter({
 }) {
   const router = Router();
 
-  router.get('/api/health', (_req, res) => {
+  router.get('/api/health', (req, res) => {
     res.json({
       ok: true,
       service: 'flight-suite-api',
-      version: BUILD_VERSION,
-      uptimeSeconds: Number(process.uptime().toFixed(1)),
-      now: new Date().toISOString()
+      now: new Date().toISOString(),
+      request_id: req.id || null
     });
   });
 
-  router.get('/health', (_req, res) => {
+  router.get('/health', (req, res) => {
     return res.status(200).json({
       status: 'ok',
-      database: pgPool ? 'configured' : 'local',
-      engine: 'ready',
-      uptime: Number(process.uptime().toFixed(1)),
-      timestamp: new Date().toISOString()
+      now: new Date().toISOString(),
+      request_id: req.id || null
     });
   });
 
-  router.get('/health/db', async (_req, res) => {
+  router.get('/health/db', authGuard, requireSessionAuth, adminGuard, async (_req, res) => {
     try {
       if (pgPool) await pgPool.query('SELECT 1');
       return res.status(200).json({
@@ -99,7 +96,7 @@ export function buildSystemRouter({
     }
   });
 
-  router.get('/health/engine', async (_req, res) => {
+  router.get('/health/engine', authGuard, requireSessionAuth, adminGuard, async (_req, res) => {
     try {
       const dataset = await getPriceDatasetStatus();
       return res.status(200).json({
@@ -173,25 +170,14 @@ export function buildSystemRouter({
       detail: emailReadiness.reason
     };
     const ready = checks.postgres.ok && checks.redis.ok && checks.email.ok;
-    const runtime = getRuntimeProfileSummary(process.env);
     return res.status(ready ? 200 : 503).json({
       ok: ready,
-      runtimeProfile: runtime.runtimeProfile,
-      cacheBackend: runtime.cacheBackend,
-      redisStatus: runtime.redisStatus,
-      emailStatus: checks.email.status,
-      aiStatus: runtime.ai,
-      providerStatus: runtime.providerLive,
-      billingStatus: runtime.billing,
-      pushStatus: getAlertDeliveryReadiness(process.env).pushReady ? 'configured' : 'gated',
-      freeCostStatus: runtime.freeCostStatus,
-      checks,
       now: new Date().toISOString(),
       request_id: req.id || null
     });
   });
 
-  router.get('/api/health/features', (_req, res) => {
+  router.get('/api/health/features', authGuard, requireSessionAuth, adminGuard, (_req, res) => {
     const audit = runFeatureAudit();
     res.json(audit);
   });
@@ -303,15 +289,6 @@ export function buildSystemRouter({
     const payload = buildCapabilityPayload();
     res.json({
       generated_at: payload.generated_at,
-      runtimeProfile: payload.runtimeProfile,
-      cacheBackend: payload.cacheBackend,
-      redisStatus: payload.redisStatus,
-      emailStatus: payload.emailStatus,
-      aiStatus: payload.aiStatus,
-      providerStatus: payload.providerStatus,
-      billingStatus: payload.billingStatus,
-      pushStatus: payload.pushStatus,
-      freeCostStatus: payload.freeCostStatus,
       capabilities: payload.publicCapabilities
     });
   });

@@ -44,7 +44,8 @@ export function buildAuthLocalRouter({
   speakeasy,
   loginDummyPasswordHash,
   grantPremiumTrial = async () => null,
-  checkAndExpireTrial = async () => false
+  checkAndExpireTrial = async () => false,
+  isAdminEmail = () => false
 }) {
   const router = Router();
   const saasPool = getSaasPool();
@@ -377,7 +378,8 @@ export function buildAuthLocalRouter({
           onboardingDone: Boolean(createdUser.onboardingDone),
           emailVerified: Boolean(createdUser.emailVerified),
           isInTrial: Boolean(createdUser.trialEndsAt && new Date(createdUser.trialEndsAt) > new Date()),
-          trialEndsAt: createdUser.trialEndsAt ?? null
+          trialEndsAt: createdUser.trialEndsAt ?? null,
+          isAdmin: Boolean(isAdminEmail(createdUser.email))
         }
       })
     );
@@ -518,7 +520,8 @@ export function buildAuthLocalRouter({
           planStatus: resolveUserPlan(user).planStatus,
           onboardingDone: Boolean(user.onboardingDone),
           isInTrial: Boolean(user.trialEndsAt && new Date(user.trialEndsAt) > new Date()),
-          trialEndsAt: user.trialEndsAt ?? null
+          trialEndsAt: user.trialEndsAt ?? null,
+          isAdmin: Boolean(isAdminEmail(user.email))
         }
       })
     );
@@ -603,7 +606,8 @@ export function buildAuthLocalRouter({
           planStatus: resolveUserPlan(user).planStatus,
           onboardingDone: Boolean(user.onboardingDone),
           isInTrial: Boolean(user.trialEndsAt && new Date(user.trialEndsAt) > new Date()),
-          trialEndsAt: user.trialEndsAt ?? null
+          trialEndsAt: user.trialEndsAt ?? null,
+          isAdmin: Boolean(isAdminEmail(user.email))
         }
       })
     );
