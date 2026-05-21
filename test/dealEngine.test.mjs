@@ -33,8 +33,8 @@ test('ingestion dedupe blocks duplicate fingerprint', async () => {
 test('dealScore rules map to scream and great correctly', async () => {
   await initDealEngineStore();
   const stamp = Date.now();
-  const origin = 'QWE';
-  const destination = 'RTY';
+  const origin = 'MXP';
+  const destination = 'FCO';
   const departure = '2027-03-10';
   const prices = [100, 120, 140, 160, 180];
 

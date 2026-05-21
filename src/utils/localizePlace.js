@@ -1,3 +1,5 @@
+import { OURAIRPORTS_IATA_SET } from '../data/ourairports-iata.js';
+
 const SUPPORTED_LANGS = new Set(['en', 'it', 'de', 'fr', 'es', 'pt']);
 
 const COUNTRY_TO_ISO2 = {
@@ -247,29 +249,7 @@ const AIRPORT_CITY_FALLBACKS = {
   ORY: 'Paris',
   CDG: 'Paris',
   STN: 'London',
-
-  // Demo/internal feed codes. Surface readable city names in the UI instead of
-  // leaking synthetic airport-like identifiers.
-  AXJ: 'Ajaccio',
-  ENR: 'Edinburgh',
-  EPG: 'Porto',
-  FMI: 'Milan',
-  FMZ: 'Fuerteventura',
-  FNL: 'Faro',
-  FOA: 'Faro',
-  IEU: 'Ibiza',
-  IFX: 'Innsbruck',
-  JBX: 'Bilbao',
-  JEH: 'Milan',
-  JEY: 'Jersey',
-  JFK: 'New York',
-  KHI: 'Karachi',
-  NWT: 'Nantes',
-  QWE: 'Milan',
-  RTY: 'Rome',
-  WXX: 'Warsaw',
-  XDA: 'Madrid',
-  ZCQ: 'Zurich'
+  JFK: 'New York'
 };
 
 function normalizeLanguage(language) {
@@ -409,10 +389,19 @@ function normalizeAirportCode(value) {
   return /^[A-Z]{3}$/.test(code) ? code : '';
 }
 
+export function getAirportCatalogEntry(value) {
+  const airport = normalizeAirportCode(value);
+  return airport && OURAIRPORTS_IATA_SET.has(airport) ? { code: airport } : null;
+}
+
+export function isKnownIataAirportCode(value) {
+  return Boolean(getAirportCatalogEntry(value));
+}
+
 export function resolveAirportCityName(value, language) {
   const airport = normalizeAirportCode(value);
   if (!airport) return localizeCityName(value, language);
-  const cityName = AIRPORT_CITY_FALLBACKS[airport];
+  const cityName = AIRPORT_CITY_FALLBACKS[airport] || '';
   return cityName ? localizeCityName(cityName, language) : airport;
 }
 

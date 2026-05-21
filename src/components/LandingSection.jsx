@@ -226,8 +226,6 @@ function LandingSection(props) {
               {item.label}
             </button>
           ))}
-          <span className="landing-nav-sep" aria-hidden="true" />
-
           <button
             type="button"
             className="landing-ctrl-btn landing-theme-btn app-header-control-btn"

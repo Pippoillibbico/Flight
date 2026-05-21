@@ -27,6 +27,7 @@ import { inferDealType, rankDealV2 } from './deal-ranking-engine.js';
 import { buildSeasonalContext } from './seasonal-context-engine.js';
 import { getCacheClient } from './free-cache.js';
 import { logger } from './logger.js';
+import { OURAIRPORTS_IATA_SET } from '../../src/data/ourairports-iata.js';
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
@@ -74,6 +75,11 @@ const BASELINE_CACHE_TTL_SEC = 3600;
 
 // Dedup window: same fingerprint won't be processed twice within this period
 const DEDUP_TTL_SEC = 1800;
+
+function isKnownIata(value) {
+  const code = String(value || '').trim().toUpperCase();
+  return /^[A-Z]{3}$/.test(code) && OURAIRPORTS_IATA_SET.has(code);
+}
 
 // ── Key builders ────────────────────────────────────────────────────────────
 
@@ -278,6 +284,11 @@ export async function processRealtimePriceObservation(normalized, insertResult) 
   );
 
   try {
+    if (!isKnownIata(origin) || !isKnownIata(dest)) {
+      logger.warn({ origin, dest, reason: 'unknown_iata' }, 'rt_deal_skipped');
+      return;
+    }
+
     // Rate limit — prevents cascade if a provider dumps thousands of observations at once
     if (await isRateLimited(origin, dest)) {
       logger.info({ origin, dest, reason: 'rate_limited' }, 'rt_deal_skipped');
@@ -449,6 +460,7 @@ export async function getLiveDeals(opts = {}) {
   for (const m of (members || [])) {
     try {
       const deal = JSON.parse(m);
+      if (!isKnownIata(deal.origin) || !isKnownIata(deal.destination)) continue;
       if (deal.deal_confidence < minConf) continue;
       if (deal.deal_delta < minDelta) continue;
       if (originFilter && deal.origin !== originFilter) continue;

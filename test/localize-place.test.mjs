@@ -1,16 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { formatRouteDisplayName, resolveAirportCityName } from '../src/utils/localizePlace.js';
+import { formatRouteDisplayName, isKnownIataAirportCode, resolveAirportCityName } from '../src/utils/localizePlace.js';
 
-test('airport labels resolve city names for known and internal feed codes', () => {
+test('airport labels resolve city names from real IATA airport codes', () => {
   assert.equal(resolveAirportCityName('MXP', 'en'), 'Milan');
-  assert.equal(resolveAirportCityName('QWE', 'en'), 'Milan');
-  assert.equal(resolveAirportCityName('RTY', 'en'), 'Rome');
+  assert.equal(resolveAirportCityName('FCO', 'en'), 'Rome');
+  assert.equal(isKnownIataAirportCode('QWE'), false);
+  assert.equal(isKnownIataAirportCode('RTY'), true);
+  assert.notEqual(resolveAirportCityName('RTY', 'en'), 'Rome');
 });
 
-test('route display includes readable cities instead of bare airport codes', () => {
+test('route display includes readable cities for real airport codes', () => {
   assert.equal(
-    formatRouteDisplayName({ origin: 'QWE', destination: 'RTY' }, 'en'),
+    formatRouteDisplayName({ origin: 'MXP', destination: 'FCO' }, 'en'),
     'Milan -> Rome'
   );
 });
