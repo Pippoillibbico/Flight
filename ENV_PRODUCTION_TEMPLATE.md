@@ -15,7 +15,7 @@ Use this file as deployment handoff input for production environment configurati
 | `INTERNAL_INGEST_TOKEN` | Yes | missing/placeholder | startup readiness fails (blocking runtime check) | Yes | `INTERNAL_INGEST_TOKEN=9e51...<48 random chars>...0a7f` |
 | `FRONTEND_ORIGIN` | Yes | empty, non-URL, non-HTTPS (prod) | startup policy/runtime check fails | Yes | `FRONTEND_ORIGIN=https://app.example.com` |
 | `CORS_ALLOWLIST` or `CORS_ORIGIN` | Yes | empty in production | startup blocked (unless insecure bypass flags) | Yes | `CORS_ALLOWLIST=https://app.example.com,https://admin.example.com` |
-| `DATABASE_URL` | Yes | empty/invalid | startup readiness infra/runtime blocking | Yes | `DATABASE_URL=postgresql://flight_app:***@db-prod:5432/flight` |
+| `DATABASE_URL` | Yes | empty/invalid | startup readiness infra/runtime blocking | Yes | `DATABASE_URL=<production-postgres-url>` |
 | `REDIS_URL` | Yes | empty/invalid | startup readiness infra/runtime blocking | Yes | `REDIS_URL=rediss://:***@redis-prod:6379/0` |
 | `BILLING_PROVIDER` | Yes | unsupported value | runtime blocking check fails | Yes | `BILLING_PROVIDER=stripe` |
 | `STRIPE_SECRET_KEY` | Yes (Stripe active) | empty/placeholder | runtime blocking check fails | Yes (conditional) | `STRIPE_SECRET_KEY=sk_live_***` |
@@ -74,7 +74,7 @@ OUTBOUND_CLICK_SECRET=<48-char-random-secret-different-from-jwt>
 AUDIT_LOG_HMAC_KEY=<48-char-random-secret>
 INTERNAL_INGEST_TOKEN=<48-char-random-token>
 
-DATABASE_URL=postgresql://flight_app:<redacted>@db-prod:5432/flight
+DATABASE_URL=<production-postgres-url>
 REDIS_URL=rediss://:<redacted>@redis-prod:6379/0
 
 CORS_ALLOWLIST=https://app.example.com,https://admin.example.com

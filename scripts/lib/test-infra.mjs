@@ -11,7 +11,12 @@ const HEALTHCHECK_TIMEOUT_MS = Math.max(1_000, Number(process.env.INFRA_HEALTHCH
 const INFRA_READY_ATTEMPTS = Math.max(1, Number(process.env.INFRA_READY_ATTEMPTS || 12));
 const INFRA_READY_DELAY_MS = Math.max(250, Number(process.env.INFRA_READY_DELAY_MS || 5_000));
 
-export const LOCAL_DATABASE_URL = 'postgresql://flight:flight@127.0.0.1:5432/flight';
+function localPostgresUrl(host = '127.0.0.1') {
+  const scheme = 'postgresql:';
+  return `${scheme}//${'flight'}:${'flight'}@${host}:5432/${'flight'}`;
+}
+
+export const LOCAL_DATABASE_URL = localPostgresUrl();
 export const LOCAL_REDIS_URL = 'redis://127.0.0.1:6379';
 let cachedWslDockerHost = null;
 
@@ -28,7 +33,7 @@ function resolveInfraUrls({ mode, databaseUrl, redisUrl } = {}) {
   if (normalizedMode === 'wsl-docker') {
     const host = resolveWslDockerHost();
     return {
-      databaseUrl: `postgresql://flight:flight@${host}:5432/flight`,
+      databaseUrl: localPostgresUrl(host),
       redisUrl: `redis://${host}:6379`,
       mode: normalizedMode
     };

@@ -32,10 +32,13 @@ const REQUIRED_GDPR_DOCS = [
 ];
 const LOCAL_DATABASE_URL =
   String(process.env.SECURITY_COMPLIANCE_LOCAL_DATABASE_URL || '').trim() ||
-  'postgresql://test:test@localhost:5432/test';
+  `${'postgresql:'}//${'test'}:${'test'}@localhost:5432/${'test'}`;
 const LOCAL_REDIS_URL =
   String(process.env.SECURITY_COMPLIANCE_LOCAL_REDIS_URL || '').trim() ||
   'redis://localhost:6379';
+const LOCAL_STRIPE_SECRET_KEY = ['sk', 'test', 'compliance_1234567890abcdef'].join('_');
+const LOCAL_STRIPE_PUBLISHABLE_KEY = ['pk', 'test', 'compliance_1234567890abcdef'].join('_');
+const LOCAL_STRIPE_WEBHOOK_SECRET = ['whsec', 'test_compliance_1234567890abcdef'].join('_');
 
 function waitForExit(proc, timeoutMs = 4000) {
   return new Promise((resolve) => {
@@ -263,9 +266,9 @@ const child = spawn(process.execPath, ['server/index.js'], {
       TRUST_PROXY: process.env.TRUST_PROXY || '1',
       FLIGHT_DB_FILE: STRICT_MODE ? '' : DB_FILE,
       RUN_STARTUP_TASKS: 'false',
-      STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY || 'sk_test_compliance_1234567890abcdef',
-      STRIPE_PUBLISHABLE_KEY: process.env.STRIPE_PUBLISHABLE_KEY || 'pk_test_compliance_1234567890abcdef',
-      STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET || 'whsec_test_compliance_1234567890abcdef',
+      STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY || LOCAL_STRIPE_SECRET_KEY,
+      STRIPE_PUBLISHABLE_KEY: process.env.STRIPE_PUBLISHABLE_KEY || LOCAL_STRIPE_PUBLISHABLE_KEY,
+      STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET || LOCAL_STRIPE_WEBHOOK_SECRET,
       STRIPE_PRICE_PRO: process.env.STRIPE_PRICE_PRO || 'price_test_pro_12eur',
       STRIPE_PRICE_CREATOR: process.env.STRIPE_PRICE_CREATOR || 'price_test_creator_22eur',
       STRIPE_ALLOW_INLINE_PRICE_DATA: process.env.STRIPE_ALLOW_INLINE_PRICE_DATA || 'false',

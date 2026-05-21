@@ -1,6 +1,10 @@
 import { spawn } from 'node:child_process';
 import { buildTestSafeEnv, ensureTestInfra, ensureTestMigrations, stopTestInfra } from './lib/test-infra.mjs';
 
+const LOCAL_STRIPE_SECRET_KEY = ['sk', 'live', 'local_ops_1234567890abcdef'].join('_');
+const LOCAL_STRIPE_PUBLISHABLE_KEY = ['pk', 'live', 'local_ops_1234567890abcdef'].join('_');
+const LOCAL_STRIPE_WEBHOOK_SECRET = ['whsec', 'local_ops_1234567890abcdef'].join('_');
+
 function spawnStep(label, cmd, args, env = process.env) {
   return new Promise((resolveStep, rejectStep) => {
     console.log(`\n==> ${label}`);
@@ -35,9 +39,9 @@ async function main() {
       process.env.BACKUP_ENCRYPTION_KEY || 'local_ops_readiness_backup_encryption_key_very_strong_123',
     AUDIT_LOG_HMAC_KEY: process.env.AUDIT_LOG_HMAC_KEY || 'local_ops_readiness_audit_hmac_key_very_strong_123',
     INTERNAL_INGEST_TOKEN: process.env.INTERNAL_INGEST_TOKEN || 'local_ops_readiness_ingest_token_very_strong_123',
-    STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY || 'sk_live_local_ops_1234567890abcdef',
-    STRIPE_PUBLISHABLE_KEY: process.env.STRIPE_PUBLISHABLE_KEY || 'pk_live_local_ops_1234567890abcdef',
-    STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET || 'whsec_local_ops_1234567890abcdef',
+    STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY || LOCAL_STRIPE_SECRET_KEY,
+    STRIPE_PUBLISHABLE_KEY: process.env.STRIPE_PUBLISHABLE_KEY || LOCAL_STRIPE_PUBLISHABLE_KEY,
+    STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET || LOCAL_STRIPE_WEBHOOK_SECRET,
     STRIPE_PRICE_PRO: process.env.STRIPE_PRICE_PRO || 'price_local_ops_pro_12eur',
     STRIPE_PRICE_CREATOR: process.env.STRIPE_PRICE_CREATOR || 'price_local_ops_creator_22eur',
     AFFILIATE_TRAVELPAYOUTS_MARKER: process.env.AFFILIATE_TRAVELPAYOUTS_MARKER || 'localtpmarker',

@@ -36,7 +36,7 @@
     "billing:stripe:sync-plans": "node scripts/stripe-sync-plans.mjs",
     "seed:price-observations": "node scripts/seed-price-observations.mjs",
     "test": "node scripts/run-node-tests-isolated.mjs -- node --test --test-concurrency=1 --test-isolation=none test/**/*.test.mjs",
-    "test:pg": "cross-env RUN_PG_INTEGRATION_TESTS=true DATABASE_URL=postgresql://flight:flight@localhost:5432/flight node --test test/integration/pg-concurrency.test.mjs",
+    "test:pg": "cross-env RUN_PG_INTEGRATION_TESTS=true node --test scripts/run-pg-concurrency.mjs",
     "test:smoke": "node --test --test-concurrency=1 test/health-smoke.test.mjs",
     "ci": "npm run lint && npm run lint:providers && npm test && npm run test:unit && npm run build && npm run ci:git-clean",
     "test:security": "node scripts/security-smoke.mjs",

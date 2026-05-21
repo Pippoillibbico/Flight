@@ -71,7 +71,7 @@ The gate runs Docker commands inside WSL and verifies Postgres/Redis from Window
 Use this when Postgres and Redis are already running locally or are reachable externally.
 
 ```bash
-set DATABASE_URL=postgresql://user:password@host:5432/database
+set DATABASE_URL=<postgres-url>
 set REDIS_URL=redis://host:6379
 npm run release:prod:gate:external
 ```
@@ -79,7 +79,7 @@ npm run release:prod:gate:external
 PowerShell:
 
 ```powershell
-$env:DATABASE_URL="postgresql://user:password@host:5432/database"
+$env:DATABASE_URL="<postgres-url>"
 $env:REDIS_URL="redis://host:6379"
 npm run release:prod:gate:external
 ```
@@ -144,7 +144,7 @@ The gate then performs real Postgres and Redis healthchecks before running tests
 - Docker Desktop is opt-in only via `INFRA_MODE=docker-desktop` or `ALLOW_DOCKER_DESKTOP_FALLBACK=true`.
 - External Redis must be dedicated to the release gate before enabling `SECURITY_GATE_ALLOW_EXTERNAL_REDIS_FLUSH=true`.
 - `INFRA_MODE=auto` can use explicit env URLs or the local defaults:
-  - `postgresql://flight:flight@127.0.0.1:5432/flight`
+  - local Postgres on `127.0.0.1:5432`
   - `redis://127.0.0.1:6379`
 - Docker Desktop errors such as `dockerDesktopLinuxEngine`, `500 Internal Server Error`, or daemon unavailable are not blockers if WSL Docker Engine or external services are available.
 - A PASS is only valid after real Postgres and Redis healthchecks, security gate, compliance check, and build all pass.

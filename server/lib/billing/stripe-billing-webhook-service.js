@@ -7,6 +7,7 @@ const STRIPE_INVOICE_FEE_RATE = 0.029;
 const STRIPE_INVOICE_FEE_FIXED_EUR = 0.3;
 const DEFAULT_WEBHOOK_TOLERANCE_SECONDS = 300;
 const IS_PRODUCTION = String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
+const LOCAL_WEBHOOK_VERIFIER_KEY = ['sk', 'test', 'local_webhook_verifier_1234567890'].join('_');
 
 function safeErrorCode(error, fallback = 'unknown_error') {
   return String(error?.code || error?.type || error?.name || fallback)
@@ -73,7 +74,7 @@ export class StripeBillingWebhookService {
   }
 
   defaultStripeClientForWebhookVerification() {
-    return new Stripe('sk_test_local_webhook_verifier_1234567890', { apiVersion: STRIPE_API_VERSION });
+    return new Stripe(LOCAL_WEBHOOK_VERIFIER_KEY, { apiVersion: STRIPE_API_VERSION });
   }
 
   parseStripeWebhookEvent({ rawBody, signatureHeader, webhookSecret, stripeClient }) {

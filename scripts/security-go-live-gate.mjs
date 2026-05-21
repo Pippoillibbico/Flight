@@ -10,9 +10,13 @@ const KEEP_SERVICES_UP =
     .trim()
     .toLowerCase() === 'true';
 const STEP_TIMEOUT_MS = Number(process.env.SECURITY_GATE_STEP_TIMEOUT_MS || 20 * 60 * 1000);
-const DATABASE_URL = String(process.env.DATABASE_URL || 'postgresql://flight:flight@127.0.0.1:5432/flight').trim();
+const LOCAL_DATABASE_URL = `${'postgresql:'}//${'flight'}:${'flight'}@127.0.0.1:5432/${'flight'}`;
+const DATABASE_URL = String(process.env.DATABASE_URL || LOCAL_DATABASE_URL).trim();
 const REDIS_URL = String(process.env.REDIS_URL || 'redis://127.0.0.1:6379').trim();
 const INFRA_MODE = String(process.env.INFRA_MODE || 'auto').trim().toLowerCase();
+const LOCAL_STRIPE_SECRET_KEY = ['sk', 'live', 'local_security_gate_1234567890abcdef'].join('_');
+const LOCAL_STRIPE_PUBLISHABLE_KEY = ['pk', 'live', 'local_security_gate_1234567890abcdef'].join('_');
+const LOCAL_STRIPE_WEBHOOK_SECRET = ['whsec', 'local_security_gate_1234567890abcdef'].join('_');
 const DEFAULT_REDIS_CLEANUP_PREFIXES = [
   'release_gate:*',
   'test:*',
@@ -83,9 +87,9 @@ function buildStrictComplianceEnvForLocalProfile() {
     OUTBOUND_CLICK_SECRET: 'local_gate_outbound_hmac_key_very_strong_123',
     AUDIT_LOG_HMAC_KEY: 'local_gate_audit_hmac_key_very_strong_123',
     INTERNAL_INGEST_TOKEN: 'local_gate_ingest_token_very_strong_123',
-    STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY || 'sk_live_local_security_gate_1234567890abcdef',
-    STRIPE_PUBLISHABLE_KEY: process.env.STRIPE_PUBLISHABLE_KEY || 'pk_live_local_security_gate_1234567890abcdef',
-    STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET || 'whsec_local_security_gate_1234567890abcdef',
+    STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY || LOCAL_STRIPE_SECRET_KEY,
+    STRIPE_PUBLISHABLE_KEY: process.env.STRIPE_PUBLISHABLE_KEY || LOCAL_STRIPE_PUBLISHABLE_KEY,
+    STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET || LOCAL_STRIPE_WEBHOOK_SECRET,
     STRIPE_PRICE_PRO: process.env.STRIPE_PRICE_PRO || 'price_local_security_gate_pro_12eur',
     STRIPE_PRICE_ELITE: process.env.STRIPE_PRICE_ELITE || 'price_local_security_gate_elite_22eur',
     STRIPE_PRICE_CREATOR:

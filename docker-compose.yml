@@ -4,9 +4,9 @@ services:
     restart: unless-stopped
     command: ["postgres", "-c", "statement_timeout=15s"]
     environment:
-      POSTGRES_DB: flight
-      POSTGRES_USER: flight
-      POSTGRES_PASSWORD: flight
+      POSTGRES_DB: ${POSTGRES_DB:-flight}
+      POSTGRES_USER: ${POSTGRES_USER:-flight}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-flight}
     ports:
       - "5432:5432"
     volumes:
@@ -41,7 +41,10 @@ services:
       RUNTIME_PROFILE: soft-zero-cost
       CACHE_BACKEND: redis
       PORT: 3000
-      DATABASE_URL: postgresql://flight:flight@postgres:5432/flight
+      POSTGRES_DB: ${POSTGRES_DB:-flight}
+      POSTGRES_USER: ${POSTGRES_USER:-flight}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-flight}
+      DATABASE_URL_SCHEME: "postgresql:"
       REDIS_URL: redis://redis:6379
       FRONTEND_ORIGIN: http://127.0.0.1:8080
       FRONTEND_URL: http://127.0.0.1:8080
@@ -72,7 +75,7 @@ services:
         condition: service_healthy
     ports:
       - "3000:3000"
-    command: ["sh", "-c", "node scripts/db-migrate.mjs && node server/index.js"]
+    command: ["sh", "-c", "export DATABASE_URL=\"$${DATABASE_URL_SCHEME}//$${POSTGRES_USER}:$${POSTGRES_PASSWORD}@postgres:5432/$${POSTGRES_DB}\" && node scripts/db-migrate.mjs && node server/index.js"]
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health || exit 1"]
       interval: 15s

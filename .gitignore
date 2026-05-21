@@ -41,6 +41,7 @@ dist
 test-results/
 tmp/
 .playwright-mcp/
+docs/audit/*.log
 
 # local tooling
 .claude/

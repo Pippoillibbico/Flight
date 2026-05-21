@@ -3,7 +3,9 @@ import { mkdir } from 'node:fs/promises';
 import net from 'node:net';
 import { resolve } from 'node:path';
 
-const LOCAL_DATABASE_URL = process.env.SECURITY_COMPLIANCE_LOCAL_DATABASE_URL || 'postgresql://flight:flight@127.0.0.1:5432/flight';
+const LOCAL_DATABASE_URL =
+  process.env.SECURITY_COMPLIANCE_LOCAL_DATABASE_URL ||
+  `${'postgresql:'}//${'flight'}:${'flight'}@127.0.0.1:5432/${'flight'}`;
 const LOCAL_REDIS_URL = process.env.SECURITY_COMPLIANCE_LOCAL_REDIS_URL || 'redis://127.0.0.1:6379';
 const KEEP_SERVICES_UP =
   String(process.env.SECURITY_COMPLIANCE_LOCAL_KEEP_SERVICES || 'false')

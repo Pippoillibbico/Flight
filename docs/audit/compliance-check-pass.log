@@ -1,5 +1,0 @@
-
-> flight-suite@3.0.0 compliance:check
-> node scripts/compliance-check.mjs
-
-[compliance-check] PASS

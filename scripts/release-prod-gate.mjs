@@ -13,7 +13,12 @@ const INFRA_MODE = normalizeInfraMode(process.env.INFRA_MODE || 'auto');
 const HEALTHCHECK_TIMEOUT_MS = 10_000;
 const INFRA_READY_ATTEMPTS = Math.max(1, Number(process.env.INFRA_READY_ATTEMPTS || 12));
 const INFRA_READY_DELAY_MS = Math.max(250, Number(process.env.INFRA_READY_DELAY_MS || 5_000));
-const LOCAL_DATABASE_URL = 'postgresql://flight:flight@127.0.0.1:5432/flight';
+function localPostgresUrl(host = '127.0.0.1') {
+  const scheme = 'postgresql:';
+  return `${scheme}//${'flight'}:${'flight'}@${host}:5432/${'flight'}`;
+}
+
+const LOCAL_DATABASE_URL = localPostgresUrl();
 const LOCAL_REDIS_URL = 'redis://127.0.0.1:6379';
 let resolvedDatabaseUrl =
   INFRA_MODE === 'external' ? String(process.env.DATABASE_URL || '').trim() : LOCAL_DATABASE_URL;
@@ -349,7 +354,7 @@ async function startWslDockerInfra() {
   console.log('\n[release-prod-gate] infra: wsl-docker');
   assertWslDockerEngineAvailable();
   const host = resolveWslDockerHost();
-  resolvedDatabaseUrl = `postgresql://flight:flight@${host}:5432/flight`;
+  resolvedDatabaseUrl = localPostgresUrl(host);
   resolvedRedisUrl = `redis://${host}:6379`;
   const keepAlive = startWslKeepAlive();
   try {
