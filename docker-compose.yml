@@ -35,14 +35,34 @@ services:
       context: .
       dockerfile: Dockerfile.server
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
       NODE_ENV: development
+      LAUNCH_MODE: soft
+      RUNTIME_PROFILE: soft-zero-cost
+      CACHE_BACKEND: redis
       PORT: 3000
       DATABASE_URL: postgresql://flight:flight@postgres:5432/flight
       REDIS_URL: redis://redis:6379
-      FRONTEND_ORIGIN: http://localhost
+      FRONTEND_ORIGIN: http://127.0.0.1:8080
+      FRONTEND_URL: http://127.0.0.1:8080
+      CORS_ALLOWLIST: http://127.0.0.1:8080,http://localhost:8080,http://127.0.0.1:3000,http://localhost:3000
+      AUTH_REQUIRE_TRUSTED_ORIGIN: "false"
+      JWT_SECRET: dev-only-jwt-secret-change-before-production-000000
+      OUTBOUND_CLICK_SECRET: dev-only-outbound-click-secret-000000
+      AUDIT_LOG_HMAC_KEY: dev-only-audit-log-hmac-key-000000
+      INTERNAL_INGEST_TOKEN: dev-only-internal-ingest-token-000000
+      ENABLE_PROVIDER_DUFFEL: "false"
+      ENABLE_PROVIDER_KIWI: "false"
+      ENABLE_PROVIDER_SKYSCANNER: "false"
+      FLIGHT_SCAN_ENABLED: "false"
+      PROVIDER_COLLECTION_ENABLED: "false"
+      AI_ALLOW_FREE_USERS: "false"
+      FREE_AI_ENABLED: "false"
+      EMAIL_DRY_RUN: "true"
+      BILLING_PROVIDER: stripe
+      STRIPE_ALLOW_INLINE_PRICE_DATA: "false"
+      ALLOW_MOCK_BILLING_UPGRADES: "false"
+      RUN_STARTUP_TASKS: "true"
     depends_on:
       postgres:
         condition: service_healthy
