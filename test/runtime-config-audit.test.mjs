@@ -4,6 +4,8 @@ import { getRuntimeConfigAudit } from '../server/lib/runtime-config.js';
 
 test('runtime config audit flags blocking keys when missing', () => {
   const audit = getRuntimeConfigAudit({
+    NODE_ENV: 'production',
+    RUNTIME_PROFILE: 'production-full',
     JWT_SECRET: 'a'.repeat(32)
   });
 
@@ -30,6 +32,7 @@ test('runtime config audit blocks production when outbound click secret is weak 
   const jwtSecret = 'x'.repeat(48);
   const audit = getRuntimeConfigAudit({
     NODE_ENV: 'production',
+    RUNTIME_PROFILE: 'production-full',
     BILLING_PROVIDER: 'stripe',
     JWT_SECRET: jwtSecret,
     OUTBOUND_CLICK_SECRET: jwtSecret,
@@ -64,6 +67,7 @@ test('runtime config audit rejects unsupported billing provider values', () => {
 test('runtime config audit blocks production when mock billing upgrades are enabled', () => {
   const audit = getRuntimeConfigAudit({
     NODE_ENV: 'production',
+    RUNTIME_PROFILE: 'production-full',
     BILLING_PROVIDER: 'stripe',
     ALLOW_MOCK_BILLING_UPGRADES: 'true',
     JWT_SECRET: 'a'.repeat(48),
@@ -82,6 +86,7 @@ test('runtime config audit blocks production when mock billing upgrades are enab
 test('runtime config audit blocks production when Stripe publishable key and prices are missing', () => {
   const audit = getRuntimeConfigAudit({
     NODE_ENV: 'production',
+    RUNTIME_PROFILE: 'production-full',
     BILLING_PROVIDER: 'stripe',
     STRIPE_SECRET_KEY: 'sk_live_example_key_1234567890',
     STRIPE_WEBHOOK_SECRET: 'whsec_live_example_1234567890',
@@ -104,6 +109,7 @@ test('runtime config audit blocks production when Stripe publishable key and pri
 test('runtime config audit blocks production when STRIPE_SECRET_KEY is missing with billing provider stripe', () => {
   const audit = getRuntimeConfigAudit({
     NODE_ENV: 'production',
+    RUNTIME_PROFILE: 'production-full',
     BILLING_PROVIDER: 'stripe',
     STRIPE_SECRET_KEY: '',
     ALLOW_MOCK_BILLING_UPGRADES: 'false',
@@ -123,6 +129,7 @@ test('runtime config audit blocks production when STRIPE_SECRET_KEY is missing w
 test('runtime config audit blocks production when AI free-user bypass is enabled', () => {
   const audit = getRuntimeConfigAudit({
     NODE_ENV: 'production',
+    RUNTIME_PROFILE: 'production-full',
     BILLING_PROVIDER: 'stripe',
     STRIPE_SECRET_KEY: 'sk_live_example_key_1234567890',
     STRIPE_WEBHOOK_SECRET: 'whsec_live_example_1234567890',
@@ -266,56 +273,4 @@ test('runtime config audit passes scanner provider consistency when one provider
   assert.equal(audit.ok, true);
   assert.ok(!audit.blockingFailedKeys.includes('AT_LEAST_ONE_PROVIDER_CONFIGURED'));
   assert.ok(!audit.blockingFailedKeys.includes('DUFFEL_PROVIDER_CREDENTIALS'));
-});
-
-test('runtime config audit fails in production when deals content has no delivery channel', () => {
-  const audit = getRuntimeConfigAudit({
-    NODE_ENV: 'production',
-    BILLING_PROVIDER: 'stripe',
-    JWT_SECRET: 'a'.repeat(48),
-    OUTBOUND_CLICK_SECRET: 'z'.repeat(32),
-    AUDIT_LOG_HMAC_KEY: 'b'.repeat(32),
-    INTERNAL_INGEST_TOKEN: 'c'.repeat(32),
-    FRONTEND_ORIGIN: 'https://app.flightsuite.test',
-    DATABASE_URL: 'postgresql://user:pass@db.flightsuite.internal:5432/flight',
-    REDIS_URL: 'redis://cache.flightsuite.internal:6379',
-    DEALS_CONTENT_ENABLED: 'true',
-    DEALS_CONTENT_INAPP_ENABLED: 'false',
-    PUSH_WEBHOOK_URL: '',
-    DEALS_CONTENT_SOCIAL_WEBHOOK_URL: '',
-    DEALS_CONTENT_NEWSLETTER_RECIPIENTS: ''
-  });
-
-  assert.equal(audit.ok, false);
-  assert.ok(audit.blockingFailedKeys.includes('DEALS_CONTENT_DELIVERY_CHANNELS'));
-});
-
-test('runtime config audit passes deals content channel check with in-app delivery enabled', () => {
-  const audit = getRuntimeConfigAudit({
-    NODE_ENV: 'production',
-    BILLING_PROVIDER: 'stripe',
-    STRIPE_SECRET_KEY: 'sk_live_prod_key_1234567890abcdef',
-    STRIPE_WEBHOOK_SECRET: 'whsec_live_prod_1234567890',
-    STRIPE_PUBLISHABLE_KEY: 'pk_live_prod_key_1234567890abcdef',
-    STRIPE_PRICE_PRO: 'price_live_pro_12345',
-    STRIPE_PRICE_CREATOR: 'price_live_creator_12345',
-    JWT_SECRET: 'a'.repeat(48),
-    OUTBOUND_CLICK_SECRET: 'z'.repeat(32),
-    AUDIT_LOG_HMAC_KEY: 'b'.repeat(32),
-    INTERNAL_INGEST_TOKEN: 'c'.repeat(32),
-    FRONTEND_ORIGIN: 'https://app.flightsuite.test',
-    DATABASE_URL: 'postgresql://user:pass@db.flightsuite.internal:5432/flight',
-    REDIS_URL: 'redis://cache.flightsuite.internal:6379',
-    ENABLE_PROVIDER_DUFFEL: 'true',
-    ENABLE_PROVIDER_KIWI: 'false',
-    ENABLE_PROVIDER_SKYSCANNER: 'false',
-    DUFFEL_API_KEY: 'duffel_live_key_123456',
-    ENABLE_TRAVELPAYOUTS_AFFILIATE: 'true',
-    AFFILIATE_TRAVELPAYOUTS_MARKER: 'tp_marker_prod_123',
-    DEALS_CONTENT_ENABLED: 'true',
-    DEALS_CONTENT_INAPP_ENABLED: 'true'
-  });
-
-  assert.equal(audit.ok, true);
-  assert.ok(!audit.blockingFailedKeys.includes('DEALS_CONTENT_DELIVERY_CHANNELS'));
 });

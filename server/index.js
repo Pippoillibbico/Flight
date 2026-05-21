@@ -56,7 +56,6 @@ import { runFlightScanCycleOnce, runFlightScanSchedulerOnce, runFlightScanWorker
 import { runDetectedDealsWorkerOnce } from './jobs/detected-deals-worker.js';
 import { runRoutePriceStatsWorkerOnce } from './jobs/route-price-stats-worker.js';
 import { runPriceAlertsWorkerOnce } from './jobs/price-alerts-worker.js';
-import { runDealsContentWorkerOnce } from './jobs/deals-content-worker.js';
 import { captureUserPriceObservation } from './lib/observation-capture.js';
 import { closeCacheClient, getCacheClient } from './lib/cache/index.js';
 import { createFlightProviderRegistry, createProviderRegistry } from './lib/providers/index.js';
@@ -234,10 +233,6 @@ const {
   DETECTED_DEALS_ENABLED,
   DETECTED_DEALS_CRON,
   DETECTED_DEALS_TIMEZONE,
-  DEALS_CONTENT_ENABLED,
-  DEALS_CONTENT_CRON,
-  DEALS_CONTENT_TIMEZONE,
-  DEALS_CONTENT_RUN_ON_STARTUP,
   PRICE_ALERTS_ENABLED,
   PRICE_ALERTS_CRON,
   PRICE_ALERTS_TIMEZONE,
@@ -1473,8 +1468,6 @@ startRuntimeLifecycle({
     routePriceStatsTimezone: ROUTE_PRICE_STATS_TIMEZONE,
     detectedDealsCron: DETECTED_DEALS_CRON,
     detectedDealsTimezone: DETECTED_DEALS_TIMEZONE,
-    dealsContentCron: DEALS_CONTENT_CRON,
-    dealsContentTimezone: DEALS_CONTENT_TIMEZONE,
     priceAlertsCron: PRICE_ALERTS_CRON,
     priceAlertsTimezone: PRICE_ALERTS_TIMEZONE,
     radarMatchPrecomputeCron: RADAR_MATCH_PRECOMPUTE_CRON,
@@ -1488,8 +1481,6 @@ startRuntimeLifecycle({
   flags: {
     routePriceStatsEnabled: ROUTE_PRICE_STATS_ENABLED,
     detectedDealsEnabled: DETECTED_DEALS_ENABLED,
-    dealsContentEnabled: DEALS_CONTENT_ENABLED,
-    dealsContentRunOnStartup: DEALS_CONTENT_RUN_ON_STARTUP,
     priceAlertsEnabled: PRICE_ALERTS_ENABLED,
     flightScanEnabled: FLIGHT_SCAN_ENABLED,
     providerCollectionEffectiveEnabled: providerCollectionEffectiveEnabledFromContext
@@ -1510,7 +1501,6 @@ startRuntimeLifecycle({
     runIngestionJobsMaintenance,
     runRoutePriceStatsWorkerOnce,
     runDetectedDealsWorkerOnce,
-    runDealsContentWorkerOnce,
     runPriceAlertsWorkerOnce,
     runRadarMatchPrecomputeOnce,
     runFlightScanSchedulerOnce,

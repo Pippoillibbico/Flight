@@ -247,14 +247,30 @@ function formatAirportPlace(city, code) {
   return city || code || '';
 }
 
+function buildDiscoveryFallbackLink({ originCode, destinationCode, departureDate, returnDate }) {
+  const queryParts = [
+    'flights',
+    originCode,
+    destinationCode,
+    departureDate,
+    returnDate
+  ].filter(Boolean);
+  return `https://www.google.com/travel/flights?q=${encodeURIComponent(queryParts.join(' '))}`;
+}
+
 function DiscoveryCard({ item, origin, copy, language }) {
   const savingsPct = Number(item.savings_pct_vs_avg);
   const hasSavings = Number.isFinite(savingsPct) && savingsPct > 0;
   const categoryLabel = copy.categories[item.category] || item.category;
   const visibleTags = (item.tags || []).filter((tag) => tag !== 'hidden_gem' || item.category !== 'unusual_route').slice(0, 2);
-  const bookingLink = String(item.booking_link || '').trim();
   const originCode = readIata(item.origin_iata, item.origin_airport, item.origin, origin);
   const destinationCode = readIata(item.destination_iata, item.destination_airport, item.destination);
+  const bookingLink = String(item.booking_link || '').trim() || buildDiscoveryFallbackLink({
+    originCode,
+    destinationCode,
+    departureDate: item.departure_date,
+    returnDate: item.return_date
+  });
   const originCity = resolveCityLabel({
     city: item.origin_city,
     name: item.origin_name,
@@ -275,9 +291,30 @@ function DiscoveryCard({ item, origin, copy, language }) {
     formatAirportPlace(destinationCity, destinationCode)
   ].filter(Boolean).join(' -> ');
   const countryLabel = localizeCountryName(item.country, language) || item.country;
+  const isInteractive = Boolean(bookingLink);
+
+  function openBookingLink(event) {
+    if (!bookingLink) return;
+    if (event.target.closest('a')) return;
+    window.open(bookingLink, '_blank', 'noopener,noreferrer');
+  }
 
   return (
-    <article className="disc-feed-card" data-category={item.category}>
+    <article
+      className={`disc-feed-card${isInteractive ? ' disc-feed-card--interactive' : ''}`}
+      data-category={item.category}
+      role={isInteractive ? 'link' : undefined}
+      tabIndex={isInteractive ? 0 : undefined}
+      aria-label={isInteractive ? `${copy.explore}: ${routeLabel}` : undefined}
+      onClick={openBookingLink}
+      onKeyDown={(event) => {
+        if (!isInteractive) return;
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          window.open(bookingLink, '_blank', 'noopener,noreferrer');
+        }
+      }}
+    >
       <div className="disc-feed-card-head">
         <div className="disc-feed-card-route">
           <strong className="disc-feed-card-route-main">{routeLabel}</strong>

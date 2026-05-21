@@ -4,6 +4,7 @@ import { computeFlightDisplayPrice } from '../lib/pricing-engine.js';
 import { getEmailReadiness } from '../lib/email/email-readiness.js';
 import { getEmailMetrics } from '../lib/email/email-metrics.js';
 import { getAlertDeliveryReadiness, getBillingReadiness, getProviderReadiness } from '../lib/readiness.js';
+import { evaluateCachePolicy, getRuntimeProfileSummary } from '../lib/runtime-profile.js';
 
 const pricingSimulationSchema = z
   .object({
@@ -124,9 +125,16 @@ export function buildSystemRouter({
   });
 
   async function runReadinessChecks() {
+    const cachePolicy = evaluateCachePolicy(process.env);
     const checks = {
       postgres: { ok: true, mode: process.env.DATABASE_URL ? 'postgres' : 'local' },
-      redis: { ok: true, mode: process.env.REDIS_URL ? 'redis' : 'in-memory' }
+      redis: {
+        ok: cachePolicy.ok,
+        mode: cachePolicy.cacheBackend,
+        status: cachePolicy.redisStatus,
+        required: cachePolicy.redisRequired,
+        detail: cachePolicy.reasons.join(',') || null
+      }
     };
 
     if (pgPool) {
@@ -142,6 +150,7 @@ export function buildSystemRouter({
         const cache = getCacheClient();
         if (typeof cache.ping === 'function') {
           await cache.ping();
+          checks.redis.ok = cachePolicy.ok;
         } else {
           checks.redis = { ok: false, mode: 'redis', detail: 'redis_ping_not_supported' };
         }
@@ -164,8 +173,18 @@ export function buildSystemRouter({
       detail: emailReadiness.reason
     };
     const ready = checks.postgres.ok && checks.redis.ok && checks.email.ok;
+    const runtime = getRuntimeProfileSummary(process.env);
     return res.status(ready ? 200 : 503).json({
       ok: ready,
+      runtimeProfile: runtime.runtimeProfile,
+      cacheBackend: runtime.cacheBackend,
+      redisStatus: runtime.redisStatus,
+      emailStatus: checks.email.status,
+      aiStatus: runtime.ai,
+      providerStatus: runtime.providerLive,
+      billingStatus: runtime.billing,
+      pushStatus: getAlertDeliveryReadiness(process.env).pushReady ? 'configured' : 'gated',
+      freeCostStatus: runtime.freeCostStatus,
       checks,
       now: new Date().toISOString(),
       request_id: req.id || null
@@ -204,6 +223,7 @@ export function buildSystemRouter({
     const providerReadiness = getProviderReadiness(env);
     const alertReadiness = getAlertDeliveryReadiness(env);
     const billingReadiness = getBillingReadiness(env);
+    const runtime = getRuntimeProfileSummary(env);
     const emailReadiness = alertReadiness.emailReadiness;
     const smtpReady = alertReadiness.smtpReady;
     const googleReady = ready(env.GOOGLE_CLIENT_ID) || ready(env.GOOGLE_CLIENT_IDS);
@@ -264,6 +284,15 @@ export function buildSystemRouter({
 
     return {
       generated_at: new Date().toISOString(),
+      runtimeProfile: runtime.runtimeProfile,
+      cacheBackend: runtime.cacheBackend,
+      redisStatus: runtime.redisStatus,
+      emailStatus: emailReadiness.status,
+      aiStatus: runtime.ai,
+      providerStatus: runtime.providerLive,
+      billingStatus: runtime.billing,
+      pushStatus: alertReadiness.pushReady ? 'configured' : 'gated',
+      freeCostStatus: runtime.freeCostStatus,
       launch,
       publicCapabilities,
       adminCapabilities
@@ -274,6 +303,15 @@ export function buildSystemRouter({
     const payload = buildCapabilityPayload();
     res.json({
       generated_at: payload.generated_at,
+      runtimeProfile: payload.runtimeProfile,
+      cacheBackend: payload.cacheBackend,
+      redisStatus: payload.redisStatus,
+      emailStatus: payload.emailStatus,
+      aiStatus: payload.aiStatus,
+      providerStatus: payload.providerStatus,
+      billingStatus: payload.billingStatus,
+      pushStatus: payload.pushStatus,
+      freeCostStatus: payload.freeCostStatus,
       capabilities: payload.publicCapabilities
     });
   });
@@ -282,6 +320,15 @@ export function buildSystemRouter({
     const payload = buildCapabilityPayload();
     res.json({
       generated_at: payload.generated_at,
+      runtimeProfile: payload.runtimeProfile,
+      cacheBackend: payload.cacheBackend,
+      redisStatus: payload.redisStatus,
+      emailStatus: payload.emailStatus,
+      aiStatus: payload.aiStatus,
+      providerStatus: payload.providerStatus,
+      billingStatus: payload.billingStatus,
+      pushStatus: payload.pushStatus,
+      freeCostStatus: payload.freeCostStatus,
       launch: payload.launch,
       publicCapabilities: payload.publicCapabilities,
       adminCapabilities: payload.adminCapabilities,

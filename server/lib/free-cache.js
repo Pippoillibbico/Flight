@@ -1,5 +1,6 @@
 import Redis from 'ioredis';
 import { logger } from './logger.js';
+import { evaluateCachePolicy } from './runtime-profile.js';
 
 function nowSec() {
   return Math.floor(Date.now() / 1000);
@@ -318,11 +319,22 @@ let singleton = null;
 export function getCacheClient() {
   if (singleton) return singleton;
   const redisUrl = String(process.env.REDIS_URL || '').trim();
-  const isProduction = String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
   const isTest = String(process.env.NODE_ENV || '').trim().toLowerCase() === 'test';
+  const cachePolicy = evaluateCachePolicy(process.env);
   if (!redisUrl) {
-    if (isProduction) {
-      throw new Error('[FATAL] REDIS_URL required in production. InMemoryCache fallback is not allowed.');
+    if (!cachePolicy.memoryAllowed) {
+      const reasons = cachePolicy.reasons.length ? cachePolicy.reasons.join(',') : 'memory_cache_not_allowed';
+      throw new Error(`[FATAL] REDIS_URL required or safe memory policy required. ${reasons}`);
+    }
+    if (cachePolicy.runtimeProfile === 'soft-zero-cost') {
+      logger.warn(
+        {
+          runtimeProfile: cachePolicy.runtimeProfile,
+          cacheBackend: cachePolicy.cacheBackend,
+          redisStatus: cachePolicy.redisStatus
+        },
+        'free_cache_memory_backend_enabled_soft_launch'
+      );
     }
     singleton = new InMemoryCache();
     return singleton;

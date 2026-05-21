@@ -174,7 +174,18 @@ function LandingSection(props) {
       {/* -- HEADER --------------------------------------- */}
       <header className="landing-header">
         <div className="landing-brand">
-          <span className="landing-brand-logo" aria-label="Jetly" role="img">
+          <a
+            href="/"
+            className="landing-brand-logo landing-brand-home-link"
+            aria-label="Torna alla home"
+            onClick={(event) => {
+              event.preventDefault();
+              if (typeof window !== 'undefined') {
+                window.location.hash = '';
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }
+            }}
+          >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 44" width="180" height="44" aria-hidden="true">
               <defs>
                 <linearGradient id="ldg-j" gradientUnits="userSpaceOnUse" x1="7" y1="3" x2="25" y2="41">
@@ -200,7 +211,7 @@ function LandingSection(props) {
                 fill="currentColor"
               >JETLY</text>
             </svg>
-          </span>
+          </a>
         </div>
 
         {/* Desktop nav */}

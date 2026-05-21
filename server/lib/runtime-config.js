@@ -1,5 +1,6 @@
 import { parseFlag } from './env-flags.js';
 import { getAlertDeliveryReadiness, getBillingReadiness, getProviderReadiness, hasReadyValue } from './readiness.js';
+import { evaluateCachePolicy, getRuntimeProfileConfig, RUNTIME_PROFILES } from './runtime-profile.js';
 
 const PLACEHOLDER_PATTERNS = [
   'replace-with',
@@ -79,10 +80,11 @@ function isValidBillingProvider(rawValue, env) {
 function evaluateCheck({ key, label, severity, validator, detailOnFail, detailOnPass }, env) {
   const rawValue = env[key];
   const ok = Boolean(validator(rawValue, env));
+  const resolvedSeverity = typeof severity === 'function' ? severity(env) : severity;
   return {
     key,
     label,
-    severity,
+    severity: resolvedSeverity,
     ok,
     detail: ok ? detailOnPass : detailOnFail
   };
@@ -193,10 +195,10 @@ const CHECKS = [
   {
     key: 'REDIS_URL',
     label: 'Redis cache URL',
-    severity: 'blocking',
-    validator: (value) => isLikelyUrl(value) && !valueLooksPlaceholder(value),
-    detailOnFail: 'missing or invalid URL',
-    detailOnPass: 'configured'
+    severity: (env) => evaluateCachePolicy(env).redisRequired ? 'blocking' : 'recommended',
+    validator: (_value, env) => evaluateCachePolicy(env).ok,
+    detailOnFail: 'Redis missing or cache policy unsafe for selected runtime profile',
+    detailOnPass: 'configured or optional safe for runtime profile'
   },
   {
     key: 'STRIPE_WEBHOOK_SECRET',
@@ -399,6 +401,8 @@ const CHECKS = [
 export function getRuntimeConfigAudit(env = process.env) {
   const checks = CHECKS.map((check) => evaluateCheck(check, env));
   const isProduction = String(env.NODE_ENV || '').trim().toLowerCase() === 'production';
+  const runtimeProfileConfig = getRuntimeProfileConfig(env);
+  const cachePolicy = evaluateCachePolicy(env);
   const launchMode = String(env.LAUNCH_MODE || 'public').trim().toLowerCase() === 'soft' ? 'soft' : 'public';
   const isSoftLaunch = launchMode === 'soft';
   const providerReadiness = getProviderReadiness(env);
@@ -406,18 +410,42 @@ export function getRuntimeConfigAudit(env = process.env) {
   const duffelEnabled = parseFlag(env.ENABLE_PROVIDER_DUFFEL, false);
   const scanEnabled = parseFlag(env.FLIGHT_SCAN_ENABLED, false);
   const providerCollectionEnabled = parseFlag(env.PROVIDER_COLLECTION_ENABLED, false);
-  const dealsContentEnabled = parseFlag(env.DEALS_CONTENT_ENABLED, true);
-  const dealsContentInAppEnabled = parseFlag(env.DEALS_CONTENT_INAPP_ENABLED, true);
-  const dealsContentPushReady = alertReadiness.pushWebhookReady;
-  const dealsContentSocialReady =
-    isLikelyUrl(env.DEALS_CONTENT_SOCIAL_WEBHOOK_URL) && !valueLooksPlaceholder(env.DEALS_CONTENT_SOCIAL_WEBHOOK_URL);
-  const dealsNewsletterRecipients = parseList(env.DEALS_CONTENT_NEWSLETTER_RECIPIENTS);
-  const dealsContentNewsletterReady =
-    dealsNewsletterRecipients.length > 0 &&
-    alertReadiness.smtpReady;
-  const dealsContentAtLeastOneChannel =
-    dealsContentInAppEnabled || dealsContentPushReady || dealsContentSocialReady || dealsContentNewsletterReady;
   const emailReadiness = alertReadiness.emailReadiness;
+
+  checks.push(
+    evaluateCheck(
+      {
+        key: 'RUNTIME_PROFILE',
+        label: 'Runtime profile',
+        severity: isProduction && !env.RUNTIME_PROFILE && !env.LAUNCH_MODE ? 'blocking' : 'recommended',
+        validator: (_value, envContext) => {
+          const explicit = String(envContext.RUNTIME_PROFILE || '').trim();
+          if (explicit && !RUNTIME_PROFILES.includes(explicit.toLowerCase())) return false;
+          if (String(envContext.NODE_ENV || '').trim().toLowerCase() === 'production') {
+            return Boolean(explicit || String(envContext.LAUNCH_MODE || '').trim().toLowerCase() === 'soft');
+          }
+          return true;
+        },
+        detailOnFail: 'set RUNTIME_PROFILE=soft-zero-cost|paid-live|production-full (or LAUNCH_MODE=soft for soft-zero-cost)',
+        detailOnPass: `configured (${runtimeProfileConfig.runtimeProfile})`
+      },
+      env
+    )
+  );
+
+  checks.push(
+    evaluateCheck(
+      {
+        key: 'CACHE_BACKEND',
+        label: 'Cache backend policy',
+        severity: cachePolicy.redisRequired || cachePolicy.cacheBackend === 'memory' ? 'blocking' : 'recommended',
+        validator: () => cachePolicy.ok,
+        detailOnFail: cachePolicy.reasons.length ? cachePolicy.reasons.join(',') : 'cache policy failed',
+        detailOnPass: `${cachePolicy.cacheBackend}/${cachePolicy.redisStatus}`
+      },
+      env
+    )
+  );
 
   checks.push(
     evaluateCheck(
@@ -428,21 +456,6 @@ export function getRuntimeConfigAudit(env = process.env) {
         validator: () => emailReadiness.status === 'EMAIL_READY' || emailReadiness.status === 'EMAIL_DRY_RUN',
         detailOnFail: 'EMAIL_DRY_RUN=false requires EMAIL_PROVIDER=smtp and SMTP_HOST/SMTP_USER/SMTP_PASS configured',
         detailOnPass: emailReadiness.status
-      },
-      env
-    )
-  );
-
-  checks.push(
-    evaluateCheck(
-      {
-        key: 'DEALS_CONTENT_DELIVERY_CHANNELS',
-        label: 'Deals content delivery channels',
-        severity: dealsContentEnabled && isProduction ? 'blocking' : 'recommended',
-        validator: () => !dealsContentEnabled || dealsContentAtLeastOneChannel,
-        detailOnFail:
-          'DEALS_CONTENT enabled but no delivery channel configured (enable in-app or configure push/social/newsletter)',
-        detailOnPass: !dealsContentEnabled ? 'deals content disabled' : 'at least one channel configured'
       },
       env
     )

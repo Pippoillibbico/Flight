@@ -2,6 +2,12 @@
 
 This release gate requires real Postgres and Redis connectivity. It does not skip infra, security, or compliance checks.
 
+Runtime profile policy is documented in `docs/ops/runtime-profiles.md`. In short:
+
+- `soft-zero-cost` can run without Redis only when it is single-instance, cached-only, and Free zero-cost guards are safe.
+- `paid-live` requires Redis when live scans, provider collection, or scan workers are enabled.
+- `production-full` requires Redis and Postgres.
+
 ## Recommended free path
 
 Docker Desktop is not required for this repository. On Windows, prefer Docker Engine inside WSL2 or already running Postgres/Redis services.
@@ -80,6 +86,8 @@ npm run release:prod:gate:external
 
 No Docker command is executed in this mode.
 
+External mode is valid only after real Postgres and Redis healthchecks pass. For `soft-zero-cost` local app development, Redis may be omitted only through the runtime profile policy; release gates still use real Redis unless the specific gate is changed to a soft-launch-only check.
+
 Use a dedicated staging/test Postgres and Redis for release gates. The security gate resets Redis state; for non-local Redis URLs you must explicitly confirm it is isolated:
 
 ```bash
@@ -133,6 +141,7 @@ The gate then performs real Postgres and Redis healthchecks before running tests
 
 - `INFRA_MODE=external` requires both `DATABASE_URL` and `REDIS_URL`.
 - `INFRA_MODE=wsl-docker` and `release:prod:gate:free` require a real Docker Engine inside WSL2. If `docker` resolves to `/mnt/wsl/docker-desktop/...` or the daemon reports `Docker Desktop`, the gate fails instead of silently using Desktop.
+- Docker Desktop is opt-in only via `INFRA_MODE=docker-desktop` or `ALLOW_DOCKER_DESKTOP_FALLBACK=true`.
 - External Redis must be dedicated to the release gate before enabling `SECURITY_GATE_ALLOW_EXTERNAL_REDIS_FLUSH=true`.
 - `INFRA_MODE=auto` can use explicit env URLs or the local defaults:
   - `postgresql://flight:flight@127.0.0.1:5432/flight`

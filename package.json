@@ -33,7 +33,6 @@
     "worker:route-price-stats": "node scripts/run-worker.mjs route-price-stats",
     "worker:detected-deals": "node scripts/run-worker.mjs detected-deals",
     "worker:price-alerts": "node scripts/run-worker.mjs price-alerts",
-    "worker:deals-content": "node scripts/run-worker.mjs deals-content",
     "billing:stripe:sync-plans": "node scripts/stripe-sync-plans.mjs",
     "seed:price-observations": "node scripts/seed-price-observations.mjs",
     "test": "node scripts/run-node-tests-isolated.mjs -- node --test --test-concurrency=1 --test-isolation=none test/**/*.test.mjs",
@@ -75,7 +74,6 @@
     "start:api": "node server/api.js",
     "start:worker": "node server/worker.js",
     "start:all": "node server/index.js",
-    "facebook:server": "node server.js",
     "start:prod": "npm run build && node server/api.js",
     "test:e2e": "playwright test",
     "test:unit": "node scripts/run-node-tests-isolated.mjs -- node --experimental-strip-types --test --test-concurrency=1 --test-isolation=none test/multi-city/**/*.test.ts test/booking-handoff/**/*.test.ts test/funnel-tracking/**/*.test.ts test/travel-score/**/*.test.ts test/deal-engine/**/*.test.ts test/radar-engine/**/*.test.ts test/itinerary-generator/**/*.test.ts test/upgrade-flow/**/*.test.ts test/ai-gateway/**/*.test.ts test/monetization/**/*.test.ts test/admin-dashboard/**/*.test.ts",
@@ -87,7 +85,6 @@
     "app:start": "powershell -ExecutionPolicy Bypass -File scripts/start-app.ps1"
   },
   "dependencies": {
-    "axios": "^1.13.6",
     "bcryptjs": "^3.0.2",
     "clsx": "^2.1.1",
     "concurrently": "^9.2.1",

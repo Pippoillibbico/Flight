@@ -5,6 +5,7 @@ import { evaluateStartupReadiness } from '../server/lib/startup-readiness.js';
 function baseProdEnv() {
   return {
     NODE_ENV: 'production',
+    RUNTIME_PROFILE: 'production-full',
     JWT_SECRET: 'a'.repeat(48),
     OUTBOUND_CLICK_SECRET: 'd'.repeat(48),
     ALLOW_MOCK_BILLING_UPGRADES: 'false',

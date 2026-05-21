@@ -6,7 +6,6 @@ import { runOpportunityPipelineOnce } from '../server/jobs/opportunity-pipeline-
 import { runRadarMatchPrecomputeOnce } from '../server/jobs/radar-match-precompute-worker.js';
 import { runRoutePriceStatsWorkerOnce } from '../server/jobs/route-price-stats-worker.js';
 import { runPriceAlertsWorkerOnce } from '../server/jobs/price-alerts-worker.js';
-import { runDealsContentWorkerOnce } from '../server/jobs/deals-content-worker.js';
 import { runNightlyRouteBaselineJob } from '../server/jobs/route-baselines.js';
 import { closeCacheClient } from '../server/lib/free-cache.js';
 import { runPriceIngestionWorkerOnce } from '../server/lib/price-ingestion-worker.js';
@@ -101,14 +100,8 @@ async function run() {
     printWorkerResult(worker, result);
     return;
   }
-  if (worker === 'deals-content') {
-    const result = await runDealsContentWorkerOnce();
-    printWorkerResult(worker, result);
-    return;
-  }
-
   console.error(
-    'Usage: node scripts/run-worker.mjs <price-ingestion|route-baseline|discovery-alert|opportunity-pipeline|radar-match-precompute|flight-scan-scheduler|flight-scan-worker|flight-scan-cycle|route-price-stats|detected-deals|price-alerts|deals-content>'
+    'Usage: node scripts/run-worker.mjs <price-ingestion|route-baseline|discovery-alert|opportunity-pipeline|radar-match-precompute|flight-scan-scheduler|flight-scan-worker|flight-scan-cycle|route-price-stats|detected-deals|price-alerts>'
   );
   process.exit(1);
 }

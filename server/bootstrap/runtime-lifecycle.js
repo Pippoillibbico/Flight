@@ -183,11 +183,6 @@ export function startRuntimeLifecycle({
         timezone: schedules.detectedDealsTimezone
       });
     }
-    if (flags.dealsContentEnabled) {
-      scheduleCronJob('deals_content_worker', schedules.dealsContentCron, () => jobs.runDealsContentWorkerOnce(), {
-        timezone: schedules.dealsContentTimezone
-      });
-    }
     if (flags.priceAlertsEnabled) {
       scheduleCronJob('price_alerts_worker', schedules.priceAlertsCron, () => jobs.runPriceAlertsWorkerOnce({ limit: limits.priceAlertsWorkerLimit }), {
         timezone: schedules.priceAlertsTimezone
@@ -225,9 +220,6 @@ export function startRuntimeLifecycle({
       }
       if (flags.detectedDealsEnabled) {
         runStartupTask('detected_deals_startup', () => jobs.runDetectedDealsWorkerOnce());
-      }
-      if (flags.dealsContentEnabled && flags.dealsContentRunOnStartup) {
-        runStartupTask('deals_content_startup', () => jobs.runDealsContentWorkerOnce());
       }
       if (flags.priceAlertsEnabled) {
         runStartupTask('price_alerts_startup', () => jobs.runPriceAlertsWorkerOnce({ limit: limits.priceAlertsWorkerLimit }));

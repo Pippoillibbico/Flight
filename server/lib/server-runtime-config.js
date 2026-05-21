@@ -139,10 +139,6 @@ export function loadServerRuntimeConfig({ env = process.env, logger }) {
   const DETECTED_DEALS_ENABLED = String(env.DETECTED_DEALS_ENABLED || 'true').trim().toLowerCase() === 'true';
   const DETECTED_DEALS_CRON = env.DETECTED_DEALS_CRON || '*/20 * * * *';
   const DETECTED_DEALS_TIMEZONE = env.DETECTED_DEALS_TIMEZONE || FREE_JOBS_TIMEZONE;
-  const DEALS_CONTENT_ENABLED = String(env.DEALS_CONTENT_ENABLED || 'true').trim().toLowerCase() === 'true';
-  const DEALS_CONTENT_CRON = env.DEALS_CONTENT_CRON || '15 8 * * *';
-  const DEALS_CONTENT_TIMEZONE = env.DEALS_CONTENT_TIMEZONE || FREE_JOBS_TIMEZONE;
-  const DEALS_CONTENT_RUN_ON_STARTUP = String(env.DEALS_CONTENT_RUN_ON_STARTUP || 'false').trim().toLowerCase() === 'true';
   const PRICE_ALERTS_ENABLED = String(env.PRICE_ALERTS_ENABLED || 'true').trim().toLowerCase() === 'true';
   const PRICE_ALERTS_CRON = env.PRICE_ALERTS_CRON || '*/10 * * * *';
   const PRICE_ALERTS_TIMEZONE = env.PRICE_ALERTS_TIMEZONE || FREE_JOBS_TIMEZONE;
@@ -385,10 +381,6 @@ export function loadServerRuntimeConfig({ env = process.env, logger }) {
     DETECTED_DEALS_ENABLED,
     DETECTED_DEALS_CRON,
     DETECTED_DEALS_TIMEZONE,
-    DEALS_CONTENT_ENABLED,
-    DEALS_CONTENT_CRON,
-    DEALS_CONTENT_TIMEZONE,
-    DEALS_CONTENT_RUN_ON_STARTUP,
     PRICE_ALERTS_ENABLED,
     PRICE_ALERTS_CRON,
     PRICE_ALERTS_TIMEZONE,

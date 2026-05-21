@@ -28,8 +28,6 @@ function productionSoftEnv(extra = {}) {
     ENABLE_PROVIDER_DUFFEL: 'false',
     ENABLE_PROVIDER_KIWI: 'false',
     ENABLE_PROVIDER_SKYSCANNER: 'false',
-    DEALS_CONTENT_ENABLED: 'true',
-    DEALS_CONTENT_INAPP_ENABLED: 'true',
     ENABLE_TRAVELPAYOUTS_AFFILIATE: 'true',
     AFFILIATE_TRAVELPAYOUTS_MARKER: 'tp_marker_prod_123',
     ...extra

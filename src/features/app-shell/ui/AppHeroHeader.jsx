@@ -34,11 +34,28 @@ export default function AppHeroHeader({
 
   const radarMatchCount = Number(radarMatchesCount) || 0;
   const shouldShowRadarPreview = isAuthenticated || radarMatchCount > 0 || radarSessionActivated;
+  const goHome = () => {
+    setActiveMainSection('home');
+    if (typeof window !== 'undefined') {
+      window.history.replaceState(null, '', window.location.pathname);
+      window.requestAnimationFrame(() => {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      });
+    }
+  };
 
   return (
     <header className="hero">
       <div className="hero-top-row">
-        <span className="hero-brand-logo" aria-label="Jetly" role="img">
+        <a
+          href="/"
+          className="hero-brand-logo landing-brand-home-link"
+          aria-label="Torna alla home"
+          onClick={(event) => {
+            event.preventDefault();
+            goHome();
+          }}
+        >
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 44" width="180" height="44" aria-hidden="true">
             <defs>
               <linearGradient id="hdr-j" gradientUnits="userSpaceOnUse" x1="7" y1="3" x2="25" y2="41">
@@ -67,7 +84,7 @@ export default function AppHeroHeader({
               JETLY
             </text>
           </svg>
-        </span>
+        </a>
         <nav className="landing-nav hero-controls">
           <button type="button" className="landing-ctrl-btn landing-theme-btn app-header-control-btn" onClick={() => setDarkMode((prev) => !prev)}>
             {darkMode ? (
