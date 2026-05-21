@@ -595,7 +595,7 @@ body.landing-dark-active {
 
 /* Landing page: keep yellow hover accent.
    Excluded: billing toggle (.landing-pricing-cycle-btn) — manages its own hover states. */
-.landing-shell button:hover:not(.landing-lang-trigger):not(.landing-hero-card-btn):not(.landing-pricing-cycle-btn):not(.ck-btn):not(.ck-toggle__btn):not(.ck-modal__close):not(.ck-pill):not(.ck-link),
+.landing-shell button:hover:not(.landing-nav-link):not(.landing-lang-trigger):not(.landing-hero-card-btn):not(.landing-pricing-cycle-btn):not(.ck-btn):not(.ck-toggle__btn):not(.ck-modal__close):not(.ck-pill):not(.ck-link),
 .landing-shell .tab:hover,
 .landing-shell .ghost:hover,
 .landing-shell .landing-ctrl-btn:hover,
@@ -609,7 +609,7 @@ body.landing-dark-active {
 }
 
 /* App pages: remove yellow hover everywhere except ghost buttons (they have their own hover). */
-.app-shell button:hover:not(.ghost),
+.app-shell button:hover:not(.ghost):not(.landing-nav-link),
 .app-shell .tab:hover,
 .app-shell .item-actions > a:hover,
 .app-shell .landing-ctrl-btn:hover,

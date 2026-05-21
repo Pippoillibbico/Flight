@@ -378,7 +378,7 @@ button,
   box-shadow: 0 10px 20px var(--brand-glow);
 }
 
-button:hover:not(.landing-lang-trigger):not(.landing-hero-card-btn):not(.cookie-banner-link):not(.cookie-banner-details-toggle):not(.cookie-btn):not(.ck-link):not(.ck-btn):not(.ck-toggle__btn):not(.ck-modal__close):not(.ck-pill):not(.landing-pricing-cycle-btn):not(.ph-cycle-btn):not(.ph-cta),
+button:hover:not(.landing-nav-link):not(.landing-lang-trigger):not(.landing-hero-card-btn):not(.cookie-banner-link):not(.cookie-banner-details-toggle):not(.cookie-btn):not(.ck-link):not(.ck-btn):not(.ck-toggle__btn):not(.ck-modal__close):not(.ck-pill):not(.landing-pricing-cycle-btn):not(.ph-cycle-btn):not(.ph-cta),
 .tab:hover {
   background: var(--brand-dark);
   border-color: var(--hover-gold);
@@ -386,7 +386,7 @@ button:hover:not(.landing-lang-trigger):not(.landing-hero-card-btn):not(.cookie-
   transform: translateY(-1px);
 }
 
-button:hover:not(.landing-lang-trigger):not(.landing-hero-card-btn):not(.cookie-banner-link):not(.cookie-banner-details-toggle):not(.cookie-btn):not(.ck-link):not(.ck-btn):not(.ck-toggle__btn):not(.ck-modal__close):not(.ck-pill):not(.landing-pricing-cycle-btn):not(.ph-cycle-btn):not(.ph-cta),
+button:hover:not(.landing-nav-link):not(.landing-lang-trigger):not(.landing-hero-card-btn):not(.cookie-banner-link):not(.cookie-banner-details-toggle):not(.cookie-btn):not(.ck-link):not(.ck-btn):not(.ck-toggle__btn):not(.ck-modal__close):not(.ck-pill):not(.landing-pricing-cycle-btn):not(.ph-cycle-btn):not(.ph-cta),
 .tab:hover,
 .ghost:hover,
 .item-actions > a:hover,
