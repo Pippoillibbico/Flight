@@ -72,6 +72,9 @@ test('smoke /api/health returns ok', async () => {
     const response = await waitForHealth(baseUrl, { child, getLogs });
     const payload = await response.json();
     assert.equal(payload.ok, true);
+    assert.equal(payload.service, undefined);
+    assert.match(response.headers.get('cache-control') || '', /no-store/);
+    assert.equal(response.headers.get('x-powered-by'), null);
   } finally {
     child.kill('SIGTERM');
     await delay(200);

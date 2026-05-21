@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { api } from '../api';
+import { resolveAirportCityName } from '../utils/localizePlace';
 import { validateProps } from '../utils/validateProps';
 
 const RETURN_STATE_KEY = 'live_deals_last_redirect_v1';
@@ -45,12 +46,12 @@ function formatPrice(value, currency = 'EUR') {
   return normalizedCurrency === 'EUR' ? `€${rounded}` : `${rounded} ${normalizedCurrency}`;
 }
 
-function dealBadgeLabel(type) {
+function dealBadgeKey(type) {
   const normalized = String(type || '').trim().toLowerCase();
-  if (normalized === 'error_fare') return 'Error Fare';
-  if (normalized === 'hidden_deal') return 'Hidden Deal';
-  if (normalized === 'flash_sale') return 'Just Dropped';
-  return 'Live Deal';
+  if (normalized === 'error_fare') return 'liveDealsBadgeErrorFare';
+  if (normalized === 'hidden_deal') return 'liveDealsBadgeHiddenDeal';
+  if (normalized === 'flash_sale') return 'liveDealsBadgeJustDropped';
+  return 'liveDealsBadgeLiveDeal';
 }
 
 function toRouteSlug(origin, destination) {
@@ -157,7 +158,7 @@ function normalizeDeal(rawDeal) {
     bookingUrl,
     routeSlug: toRouteSlug(origin, destination),
     detectedAt: String(rawDeal.detected_at || ''),
-    badge: dealBadgeLabel(rawDeal.deal_type),
+    badgeKey: dealBadgeKey(rawDeal.deal_type),
     freshnessTs: new Date(String(rawDeal.detected_at || 0)).getTime() || 0,
     rankingScore: dealConfidence * 2 + (savingsPct || 0) + relevanceBoost,
     smartDeparture: normalizeSmartDeparture(rawDeal.smartDeparture, rawDeal.currency || 'EUR')
@@ -264,6 +265,18 @@ export default function LiveDealsRadarSection(props) {
     const normalized = translated.trim();
     return normalized && normalized !== key ? translated : fallback;
   };
+
+  const routeLabel = (origin, destination) => {
+    const formatAirport = (code) => {
+      const normalizedCode = String(code || '').trim().toUpperCase();
+      if (!/^[A-Z]{3}$/.test(normalizedCode)) return normalizedCode || '-';
+      const city = resolveAirportCityName(normalizedCode, language);
+      return city && city !== normalizedCode ? `${city} (${normalizedCode})` : normalizedCode;
+    };
+    return `${formatAirport(origin)} -> ${formatAirport(destination)}`;
+  };
+
+  const dealBadgeLabel = (deal) => tt(deal?.badgeKey || 'liveDealsBadgeLiveDeal', isEnglish ? 'Live Deal' : 'Deal live');
 
   function trackLiveDealEvent(eventType, deal = null, extra = {}) {
     if (typeof sendAdminTelemetryEvent !== 'function') return;
@@ -420,7 +433,7 @@ export default function LiveDealsRadarSection(props) {
       await api.followEntity(token, {
         entityType: 'route',
         slug: routeSlug.toLowerCase(),
-        displayName: `${deal.origin} -> ${deal.destination}`,
+        displayName: routeLabel(deal.origin, deal.destination),
         followType: 'radar',
         metadata: {
           source,
@@ -433,8 +446,8 @@ export default function LiveDealsRadarSection(props) {
       persistSavedRoutes(next);
       setActionMessage(
         isEnglish
-          ? `Route ${deal.origin} -> ${deal.destination} saved.`
-          : `Rotta ${deal.origin} -> ${deal.destination} salvata.`
+          ? `Route ${routeLabel(deal.origin, deal.destination)} saved.`
+          : `Rotta ${routeLabel(deal.origin, deal.destination)} salvata.`
       );
     } catch (saveError) {
       setActionMessage(String(saveError?.message || (isEnglish ? 'Unable to save route.' : 'Impossibile salvare la rotta.')));
@@ -578,17 +591,22 @@ export default function LiveDealsRadarSection(props) {
     <section className="panel live-deals-panel" data-testid="live-deals-panel">
       <div className="live-deals-hero">
         <p className="live-deals-eyebrow">Radar Live</p>
-        <h2>{tt('liveDealsHeroTitle', 'Voli che non dovresti riuscire a trovare')}</h2>
+        <h2>{tt('liveDealsHeroTitle', isEnglish ? 'Flights you should not be able to find' : 'Voli che non dovresti riuscire a trovare')}</h2>
         <p className="live-deals-subtitle">
-          {tt('liveDealsHeroSubtitle', 'Prezzi anomali, ribassi reali e opportunita rilevate in tempo quasi reale.')}
+          {tt(
+            'liveDealsHeroSubtitle',
+            isEnglish
+              ? 'Anomalous fares, real drops and opportunities detected almost in real time.'
+              : 'Prezzi anomali, ribassi reali e opportunita rilevate in tempo quasi reale.'
+          )}
         </p>
         <div className="item-actions live-deals-hero-actions">
           <button type="button" className="live-deals-primary-cta" onClick={() => setSelectedDealId('')} data-testid="live-deals-hero-cta">
-            {tt('liveDealsHeroCta', 'Guarda i deal live')}
+            {tt('liveDealsHeroCta', isEnglish ? 'View live deals' : 'Guarda i deal live')}
           </button>
           {!canUseRadarPlan ? (
             <button type="button" className="ghost" onClick={() => onUpgradePro?.('live_deals_hero')}>
-              {tt('liveDealsUpgradeCta', 'Sblocca accesso anticipato Pro')}
+              {tt('liveDealsUpgradeCta', isEnglish ? 'Unlock early PRO access' : 'Sblocca accesso anticipato Pro')}
             </button>
           ) : null}
         </div>
@@ -613,17 +631,17 @@ export default function LiveDealsRadarSection(props) {
               onClick={() => (returnDeal ? saveRoute(returnDeal, 'return_state') : requireSectionLogin('radar'))}
               disabled={busyRouteSlug === returnDeal?.routeSlug}
             >
-              {tt('liveDealsReturnAlertCta', 'Attiva alert sulla rotta')}
+              {tt('liveDealsReturnAlertCta', isEnglish ? 'Activate route alert' : 'Attiva alert sulla rotta')}
             </button>
             {!canUseRadarPlan ? (
               <button type="button" className="ghost" onClick={() => onUpgradeElite?.('live_deals_return_state')}>
-                {tt('liveDealsReturnUpgradeCta', 'Passa a ELITE per segnali prioritari')}
+                {tt('liveDealsReturnUpgradeCta', isEnglish ? 'Upgrade to ELITE for priority signals' : 'Passa a ELITE per segnali prioritari')}
               </button>
             ) : null}
           </div>
           {returnSimilarDeals.length > 0 ? (
             <div className="live-deals-return-similar">
-              <strong>{tt('liveDealsReturnSimilarTitle', 'Potrebbero interessarti anche questi deal simili')}</strong>
+              <strong>{tt('liveDealsReturnSimilarTitle', isEnglish ? 'You may also like these similar deals' : 'Potrebbero interessarti anche questi deal simili')}</strong>
               <div className="live-deals-similar-list">
                 {returnSimilarDeals.map((item) => (
                   <button
@@ -632,7 +650,7 @@ export default function LiveDealsRadarSection(props) {
                     className="live-deals-similar-card"
                     onClick={() => openDetail(item)}
                   >
-                    <span>{item.origin} {'->'} {item.destination}</span>
+                    <span>{routeLabel(item.origin, item.destination)}</span>
                     <span>{formatPrice(item.price, item.currency)}</span>
                   </button>
                 ))}
@@ -672,37 +690,37 @@ export default function LiveDealsRadarSection(props) {
           return (
             <article key={`live_deal_${identifier}`} className="live-deal-card" data-testid={`live-deal-card-${identifier}`}>
               <div className="live-deal-card-top">
-                <span className="live-deal-badge">{deal.badge}</span>
+                <span className="live-deal-badge">{dealBadgeLabel(deal)}</span>
                 <span className="live-deal-detected">{relativeDetectedAt(deal.detectedAt, language)}</span>
               </div>
               {deal?.smartDeparture?.best ? (
                 <div className="live-deal-smart-departure-badge" data-testid={`smart-departure-badge-${identifier}`}>
-                  <span className="live-deal-badge live-deal-badge--secondary">Smart Departure</span>
+                  <span className="live-deal-badge live-deal-badge--secondary">{tt('liveDealsSmartDeparture', isEnglish ? 'Smart departure' : 'Partenza intelligente')}</span>
                   <span className="live-deal-smart-departure-hint">
                     {isEnglish
-                      ? `From ${deal.smartDeparture.best.origin} save ~${formatPrice(deal.smartDeparture.best.savingAbs, deal.currency)}`
-                      : `Da ${deal.smartDeparture.best.origin} risparmi ~${formatPrice(deal.smartDeparture.best.savingAbs, deal.currency)}`}
+                      ? `From ${routeLabel(deal.smartDeparture.best.origin, deal.destination).split(' -> ')[0]} save ~${formatPrice(deal.smartDeparture.best.savingAbs, deal.currency)}`
+                      : `Da ${routeLabel(deal.smartDeparture.best.origin, deal.destination).split(' -> ')[0]} risparmi ~${formatPrice(deal.smartDeparture.best.savingAbs, deal.currency)}`}
                   </span>
                 </div>
               ) : null}
-              <h3 className="live-deal-route">{deal.origin} {'->'} {deal.destination}</h3>
+              <h3 className="live-deal-route">{routeLabel(deal.origin, deal.destination)}</h3>
               <p className="live-deal-price">{formatPrice(deal.price, deal.currency)}</p>
               <div className="live-deal-metrics">
                 <p>
-                  <span>{tt('liveDealsNormalPrice', 'Prezzo normale')}</span>
+                  <span>{tt('liveDealsNormalPrice', isEnglish ? 'Typical price' : 'Prezzo normale')}</span>
                   <strong>{referenceLabel}</strong>
                 </p>
                 <p>
-                  <span>{tt('liveDealsSaving', 'Risparmio')}</span>
+                  <span>{tt('liveDealsSaving', isEnglish ? 'Saving' : 'Risparmio')}</span>
                   <strong>{savingLabel}</strong>
                 </p>
               </div>
               <div className="item-actions live-deal-actions">
                 <button type="button" className="live-deals-primary-cta" onClick={() => openPreRedirect(deal)}>
-                  {tt('liveDealsBookCta', 'Vai al deal')}
+                  {tt('liveDealsBookCta', isEnglish ? 'Go to deal' : 'Vai al deal')}
                 </button>
                 <button type="button" className="ghost" onClick={() => openDetail(deal)}>
-                  {tt('liveDealsDetailCta', 'Vedi dettagli')}
+                  {tt('liveDealsDetailCta', isEnglish ? 'View details' : 'Vedi dettagli')}
                 </button>
                 <button
                   type="button"
@@ -710,7 +728,9 @@ export default function LiveDealsRadarSection(props) {
                   onClick={() => saveRoute(deal, 'detail_alert')}
                   disabled={busyRouteSlug === deal.routeSlug}
                 >
-                  {saved ? tt('liveDealsSavedRouteCta', 'Alert attivo') : tt('liveDealsSaveRouteCta', 'Attiva alert')}
+                  {saved
+                    ? tt('liveDealsSavedRouteCta', isEnglish ? 'Alert active' : 'Alert attivo')
+                    : tt('liveDealsSaveRouteCta', isEnglish ? 'Activate alert' : 'Attiva alert')}
                 </button>
               </div>
             </article>
@@ -721,36 +741,38 @@ export default function LiveDealsRadarSection(props) {
       {selectedDeal ? (
         <section className="live-deal-detail" data-testid="live-deal-detail">
           <div className="panel-head">
-            <h3>{tt('liveDealsDetailTitle', 'Dettaglio deal')}</h3>
+            <h3>{tt('liveDealsDetailTitle', isEnglish ? 'Deal details' : 'Dettaglio deal')}</h3>
             <button type="button" className="ghost" onClick={() => setSelectedDealId('')}>
-              {tt('close', 'Chiudi')}
+              {tt('close', isEnglish ? 'Close' : 'Chiudi')}
             </button>
           </div>
           <div className="live-deal-detail-grid">
-            <p><strong>{tt('liveDealsDetailRoute', 'Tratta')}</strong><span>{selectedDeal.origin} {'->'} {selectedDeal.destination}</span></p>
-            <p><strong>{tt('liveDealsDetailCurrentPrice', 'Prezzo attuale')}</strong><span>{formatPrice(selectedDeal.price, selectedDeal.currency)}</span></p>
-            <p><strong>{tt('liveDealsDetailSaving', 'Risparmio')}</strong><span>{selectedDeal.savingsPct > 0 ? `${Math.round(selectedDeal.savingsPct)}%` : formatPrice(selectedDeal.savingsAmount, selectedDeal.currency)}</span></p>
-            <p><strong>{tt('liveDealsDetailType', 'Tipo deal')}</strong><span>{selectedDeal.badge}</span></p>
-            <p><strong>{tt('liveDealsDetailDetectedAt', 'Ultimo rilevamento')}</strong><span>{relativeDetectedAt(selectedDeal.detectedAt, language)}</span></p>
+            <p><strong>{tt('liveDealsDetailRoute', isEnglish ? 'Route' : 'Tratta')}</strong><span>{routeLabel(selectedDeal.origin, selectedDeal.destination)}</span></p>
+            <p><strong>{tt('liveDealsDetailCurrentPrice', isEnglish ? 'Current price' : 'Prezzo attuale')}</strong><span>{formatPrice(selectedDeal.price, selectedDeal.currency)}</span></p>
+            <p><strong>{tt('liveDealsDetailSaving', isEnglish ? 'Saving' : 'Risparmio')}</strong><span>{selectedDeal.savingsPct > 0 ? `${Math.round(selectedDeal.savingsPct)}%` : formatPrice(selectedDeal.savingsAmount, selectedDeal.currency)}</span></p>
+            <p><strong>{tt('liveDealsDetailType', isEnglish ? 'Deal type' : 'Tipo deal')}</strong><span>{dealBadgeLabel(selectedDeal)}</span></p>
+            <p><strong>{tt('liveDealsDetailDetectedAt', isEnglish ? 'Last detected' : 'Ultimo rilevamento')}</strong><span>{relativeDetectedAt(selectedDeal.detectedAt, language)}</span></p>
             {detailLevel !== 'teaser' ? (
-              <p><strong>{tt('liveDealsDetailNormalPrice', 'Prezzo normale')}</strong><span>{selectedDeal.baselinePrice ? formatPrice(selectedDeal.baselinePrice, selectedDeal.currency) : '-'}</span></p>
+              <p><strong>{tt('liveDealsDetailNormalPrice', isEnglish ? 'Typical price' : 'Prezzo normale')}</strong><span>{selectedDeal.baselinePrice ? formatPrice(selectedDeal.baselinePrice, selectedDeal.currency) : '-'}</span></p>
             ) : null}
             {detailLevel === 'full' ? (
               <>
                 <p><strong>{tt('liveDealsDetailDates', 'Date')}</strong><span>{selectedDeal.departure_date || '-'} {selectedDeal.return_date ? `- ${selectedDeal.return_date}` : ''}</span></p>
-                <p><strong>{tt('liveDealsDetailCabin', 'Cabina')}</strong><span>{String(selectedDeal.cabin_class || 'economy')}</span></p>
+                <p><strong>{tt('liveDealsDetailCabin', isEnglish ? 'Cabin' : 'Cabina')}</strong><span>{String(selectedDeal.cabin_class || 'economy')}</span></p>
               </>
             ) : null}
           </div>
           <div className="live-deal-trust-box">
             {tt(
               'liveDealsTrustCopy',
-              'Questo prezzo e stato rilevato dal nostro motore confrontandolo con lo storico della tratta.'
+              isEnglish
+                ? 'This fare was detected by comparing it with the historical price pattern for this route.'
+                : 'Questo prezzo e stato rilevato dal nostro motore confrontandolo con lo storico della tratta.'
             )}
           </div>
           {selectedDeal?.smartDeparture?.alternatives?.length > 0 ? (
             <section className="live-deal-smart-departure" data-testid="live-deal-smart-departure">
-              <h4>{isEnglish ? 'Smart departure' : 'Partenza intelligente'}</h4>
+              <h4>{tt('liveDealsSmartDeparture', isEnglish ? 'Smart departure' : 'Partenza intelligente')}</h4>
               <p className="muted">
                 {isEnglish
                   ? 'Same destination, better starting airport when convenient.'
@@ -764,7 +786,7 @@ export default function LiveDealsRadarSection(props) {
                     className="live-deal-smart-departure-item"
                     onClick={() => onSmartDepartureClick(selectedDeal, alt)}
                   >
-                    <span>{alt.origin} {'->'} {selectedDeal.destination}</span>
+                    <span>{routeLabel(alt.origin, selectedDeal.destination)}</span>
                     <span>{formatPrice(alt.price, selectedDeal.currency)}</span>
                     <span>
                       {isEnglish
@@ -778,14 +800,14 @@ export default function LiveDealsRadarSection(props) {
           ) : null}
           <div className="item-actions">
             <button type="button" className="live-deals-primary-cta" onClick={() => openPreRedirect(selectedDeal)}>
-              {tt('liveDealsGoBookingCta', 'Vai alla prenotazione')}
+              {tt('liveDealsGoBookingCta', isEnglish ? 'Go to booking' : 'Vai alla prenotazione')}
             </button>
             <button type="button" className="ghost" onClick={() => saveRoute(selectedDeal, 'detail_alert')}>
-              {tt('liveDealsAlertCta', 'Attiva alert')}
+              {tt('liveDealsAlertCta', isEnglish ? 'Activate alert' : 'Attiva alert')}
             </button>
             {detailLevel === 'full' ? (
               <button type="button" className="ghost" onClick={() => saveRoute(selectedDeal, 'detail_save_route')}>
-                {tt('liveDealsSaveRouteCta', 'Salva questa rotta')}
+                {tt('liveDealsSaveRouteCta', isEnglish ? 'Save this route' : 'Salva questa rotta')}
               </button>
             ) : null}
             {detailLevel !== 'full' ? (
@@ -797,13 +819,13 @@ export default function LiveDealsRadarSection(props) {
                   onUpgradePro?.('more_deals');
                 }}
               >
-                {tt('liveDealsUpgradeCta', 'Sblocca piu deal')}
+                {tt('liveDealsUpgradeCta', isEnglish ? 'Unlock more deals' : 'Sblocca piu deal')}
               </button>
             ) : null}
           </div>
           {similarDeals.length > 0 ? (
             <div className="live-deals-similar-wrap">
-              <strong>{tt('liveDealsSimilarTitle', 'Alternative vicine')}</strong>
+              <strong>{tt('liveDealsSimilarTitle', isEnglish ? 'Nearby alternatives' : 'Alternative vicine')}</strong>
               <div className="live-deals-similar-list">
                 {similarDeals.map((item) => (
                   <button
@@ -812,7 +834,7 @@ export default function LiveDealsRadarSection(props) {
                     className="live-deals-similar-card"
                     onClick={() => openDetail(item)}
                   >
-                    <span>{item.origin} {'->'} {item.destination}</span>
+                    <span>{routeLabel(item.origin, item.destination)}</span>
                     <span>{formatPrice(item.price, item.currency)}</span>
                   </button>
                 ))}
@@ -825,25 +847,27 @@ export default function LiveDealsRadarSection(props) {
       {preRedirectDeal ? (
         <div className="live-deals-preredirect-backdrop" role="dialog" aria-modal="true" data-testid="live-deals-preredirect">
           <div className="live-deals-preredirect">
-            <h4>{tt('liveDealsPreRedirectTitle', 'Prima di andare alla prenotazione')}</h4>
-            <p className="live-deals-preredirect-route">{preRedirectDeal.origin} {'->'} {preRedirectDeal.destination}</p>
+            <h4>{tt('liveDealsPreRedirectTitle', isEnglish ? 'Before you continue to booking' : 'Prima di andare alla prenotazione')}</h4>
+            <p className="live-deals-preredirect-route">{routeLabel(preRedirectDeal.origin, preRedirectDeal.destination)}</p>
             <p className="live-deals-preredirect-price">{formatPrice(preRedirectDeal.price, preRedirectDeal.currency)}</p>
             <p className="live-deals-preredirect-time">{relativeDetectedAt(preRedirectDeal.detectedAt, language)}</p>
             <p className="live-deals-preredirect-warning">
               {tt(
                 'liveDealsPreRedirectWarning',
-                'Ti stiamo portando alla prenotazione. Questo prezzo potrebbe cambiare rapidamente.'
+                isEnglish
+                  ? 'We are sending you to the booking page. This fare can change quickly.'
+                  : 'Ti stiamo portando alla prenotazione. Questo prezzo potrebbe cambiare rapidamente.'
               )}
             </p>
             <div className="item-actions">
               <button type="button" className="live-deals-primary-cta" onClick={continueToBooking} data-testid="live-deals-continue-booking">
-                {tt('liveDealsPreRedirectContinue', 'Continua alla prenotazione')}
+                {tt('liveDealsPreRedirectContinue', isEnglish ? 'Continue to booking' : 'Continua alla prenotazione')}
               </button>
               <button type="button" className="ghost" onClick={() => saveRoute(preRedirectDeal, 'preredirect')}>
-                {tt('liveDealsPreRedirectAlert', 'Avvisami se scende ancora')}
+                {tt('liveDealsPreRedirectAlert', isEnglish ? 'Alert me if it drops again' : 'Avvisami se scende ancora')}
               </button>
               <button type="button" className="ghost" onClick={() => setPreRedirectDealId('')}>
-                {tt('cancel', 'Annulla')}
+                {tt('cancel', isEnglish ? 'Cancel' : 'Annulla')}
               </button>
             </div>
           </div>

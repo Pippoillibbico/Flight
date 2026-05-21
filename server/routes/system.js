@@ -66,7 +66,6 @@ export function buildSystemRouter({
   router.get('/api/health', (req, res) => {
     res.json({
       ok: true,
-      service: 'flight-suite-api',
       now: new Date().toISOString(),
       request_id: req.id || null
     });
@@ -116,7 +115,6 @@ export function buildSystemRouter({
   router.get('/healthz', (_req, res) => {
     return res.status(200).json({
       ok: true,
-      service: 'flight-suite-api',
       now: new Date().toISOString()
     });
   });
@@ -313,7 +311,7 @@ export function buildSystemRouter({
     });
   });
 
-  router.get('/api/health/compliance', (_req, res) => {
+  router.get('/api/health/compliance', authGuard, requireSessionAuth, adminGuard, (_req, res) => {
     res.json({
       ok: true,
       policy: {

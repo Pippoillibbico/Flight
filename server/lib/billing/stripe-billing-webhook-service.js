@@ -1,6 +1,6 @@
 import Stripe from 'stripe';
 import { logEconomicEvent } from '../economic-logger.js';
-import { hashValueForLogs } from '../log-redaction.js';
+import { hashValueForLogs, sanitizeHeaderLikeValue } from '../log-redaction.js';
 
 const STRIPE_API_VERSION = '2026-02-25.clover';
 const STRIPE_INVOICE_FEE_RATE = 0.029;
@@ -12,6 +12,14 @@ function safeErrorCode(error, fallback = 'unknown_error') {
   return String(error?.code || error?.type || error?.name || fallback)
     .replace(/[^a-zA-Z0-9_.:-]/g, '_')
     .slice(0, 80);
+}
+
+function safeStripeErrorForLogs(error, fallback = 'stripe_error') {
+  return {
+    error_code: safeErrorCode(error, fallback),
+    message: sanitizeHeaderLikeValue(error?.message || fallback, { maxLength: 180 })
+      .replace(/\b(payload|header|signature)\s*[:=]\s*[^,\s]+/gi, '$1=[REDACTED]')
+  };
 }
 
 function resolveWebhookToleranceSeconds() {
@@ -103,7 +111,7 @@ export class StripeBillingWebhookService {
       await this.stateService.persistStripeSubscriptionState(subscription, { auditAction });
     } catch (error) {
       this.logger.warn(
-        { err: error, ...stripeLogRefs({ subscriptionId }), stripe_invoice_id: invoice?.id || null },
+        { ...safeStripeErrorForLogs(error), ...stripeLogRefs({ subscriptionId }), stripe_invoice_id: invoice?.id || null },
         'stripe_invoice_subscription_sync_failed'
       );
     }
@@ -161,7 +169,7 @@ export class StripeBillingWebhookService {
               auditAction: 'billing.checkout.completed'
             });
           } catch (error) {
-            this.logger.warn({ err: error, ...stripeLogRefs({ subscriptionId }) }, 'stripe_checkout_subscription_sync_failed');
+            this.logger.warn({ ...safeStripeErrorForLogs(error), ...stripeLogRefs({ subscriptionId }) }, 'stripe_checkout_subscription_sync_failed');
             throw Object.assign(error, { code: 'stripe_checkout_subscription_sync_failed' });
           }
         } else {
@@ -344,8 +352,7 @@ export class StripeBillingWebhookService {
     } catch (error) {
       this.logger.warn(
         {
-          error_code: safeErrorCode(error, 'stripe_signature_invalid'),
-          ...(IS_PRODUCTION ? {} : { err: error }),
+          ...safeStripeErrorForLogs(error, 'stripe_signature_invalid'),
           endpoint: '/api/billing/webhook'
         },
         'stripe_webhook_signature_invalid'
@@ -425,12 +432,7 @@ export class StripeBillingWebhookService {
         {
           code: 'STRIPE_WEBHOOK_PROCESSING_FAILED',
           error_code: safeErrorCode(error, 'webhook_processing_failed'),
-          ...(IS_PRODUCTION
-            ? {}
-            : {
-                error: error?.message || String(error),
-                stack: error?.stack
-              }),
+          message: safeStripeErrorForLogs(error, 'webhook_processing_failed').message,
           stripeEventId: event?.id || null,
           stripeEventType: event?.type || null,
           endpoint: '/api/billing/webhook',

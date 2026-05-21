@@ -805,11 +805,10 @@ export function buildDealEngineRouter({
   router.get('/api/engine/provider-status', async (_req, res) => {
     try {
       const providers = getProviderStatus();
-      const multiSourceOn = isMultiSourceEnabled();
+      const ready = providers.some((item) => item?.enabled && item?.configured && !item?.circuitOpen);
       return res.json({
         ok: true,
-        multi_source_enabled: Boolean(multiSourceOn),
-        provider_summary: summarizeProviderStatus(providers)
+        ready
       });
     } catch (error) {
       logger.error({ err: error }, 'provider_status_failed');

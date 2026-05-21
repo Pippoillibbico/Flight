@@ -265,6 +265,8 @@ const AIRPORT_CITY_FALLBACKS = {
   JFK: 'New York',
   KHI: 'Karachi',
   NWT: 'Nantes',
+  QWE: 'Milan',
+  RTY: 'Rome',
   WXX: 'Warsaw',
   XDA: 'Madrid',
   ZCQ: 'Zurich'

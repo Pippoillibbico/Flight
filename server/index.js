@@ -693,6 +693,41 @@ app.use('/api', (req, res, next) => {
   if (req.method === 'OPTIONS') return res.status(204).send();
   return next();
 });
+app.use('/api', (req, res, next) => {
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+
+  const path = String(req.path || '').toLowerCase();
+  const hasCredentials = Boolean(req.headers.authorization || req.headers.cookie);
+  const sensitivePrefix = [
+    '/admin',
+    '/analytics',
+    '/auth',
+    '/billing',
+    '/health',
+    '/keys',
+    '/monetization',
+    '/notifications',
+    '/outbound/report',
+    '/preferences',
+    '/security',
+    '/system',
+    '/usage',
+    '/user',
+    '/watchlist'
+  ].some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
+  const sensitiveOpportunityPath =
+    path.startsWith('/opportunities/me') ||
+    path.startsWith('/opportunities/follows') ||
+    path.startsWith('/opportunities/radar/preferences');
+  const sensitiveAlertPath = path.startsWith('/alerts') || path.startsWith('/price-alerts');
+
+  if (hasCredentials || sensitivePrefix || sensitiveOpportunityPath || sensitiveAlertPath) {
+    res.setHeader('Cache-Control', 'no-store');
+  }
+  return next();
+});
 app.use('/auth', strictAuthPathLimiter);
 app.use('/demo', moderateDemoLimiter);
 app.use('/api/auth', strictAuthPathLimiter);
