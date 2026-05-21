@@ -61,6 +61,8 @@ services:
       ENABLE_PROVIDER_SKYSCANNER: "false"
       FLIGHT_SCAN_ENABLED: "false"
       PROVIDER_COLLECTION_ENABLED: "false"
+      OURAIRPORTS_REFRESH_CRON: "0 4 * * 0"
+      OURAIRPORTS_REFRESH_TIMEZONE: Europe/Rome
       AI_ALLOW_FREE_USERS: "false"
       FREE_AI_ENABLED: "false"
       EMAIL_DRY_RUN: "true"

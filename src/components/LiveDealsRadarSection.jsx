@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { api } from '../api';
-import { isKnownIataAirportCode, resolveAirportCityName } from '../utils/localizePlace';
+import { resolveAirportCityName } from '../utils/localizePlace';
 import { validateProps } from '../utils/validateProps';
 
 const RETURN_STATE_KEY = 'live_deals_last_redirect_v1';
@@ -70,7 +70,6 @@ function normalizeSmartDeparture(raw, fallbackCurrency = 'EUR') {
       const savingAbs = toFiniteNumber(item?.savingAbs);
       const savingPct = toFiniteNumber(item?.savingPct);
       if (!origin || !destination || price === null || savingAbs === null || savingAbs <= 0) return null;
-      if (!isKnownIataAirportCode(origin) || !isKnownIataAirportCode(destination)) return null;
       return {
         originIata: origin,
         destinationIata: destination,
@@ -146,7 +145,6 @@ function normalizeDeal(rawDeal) {
   const savingsAmount = toFiniteNumber(rawDeal.savings_amount);
   const bookingUrl = String(rawDeal.booking_url || '').trim();
   if (!origin || !destination || price === null || !bookingUrl) return null;
-  if (!isKnownIataAirportCode(origin) || !isKnownIataAirportCode(destination)) return null;
   const relevanceBoost = 0;
   return {
     ...rawDeal,

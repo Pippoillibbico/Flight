@@ -51,6 +51,7 @@ import { runBaselineRecomputeOnce } from './jobs/baseline-recompute-worker.js';
 import { runProviderCollectionOnce } from './jobs/provider-collection-worker.js';
 import { runSeedImportOnce } from './jobs/seed-import-worker.js';
 import { runOpportunityPipelineOnce } from './jobs/opportunity-pipeline-worker.js';
+import { runOurAirportsRefreshOnce } from './jobs/ourairports-refresh-worker.js';
 import { runRadarMatchPrecomputeOnce } from './jobs/radar-match-precompute-worker.js';
 import { runFlightScanCycleOnce, runFlightScanSchedulerOnce, runFlightScanWorkerOnce } from './jobs/flight-scan-worker.js';
 import { runDetectedDealsWorkerOnce } from './jobs/detected-deals-worker.js';
@@ -219,6 +220,8 @@ const {
   DISCOVERY_ALERT_WORKER_TIMEZONE,
   PRICE_INGEST_WORKER_CRON,
   PRICE_INGEST_WORKER_TIMEZONE,
+  OURAIRPORTS_REFRESH_CRON,
+  OURAIRPORTS_REFRESH_TIMEZONE,
   PROVIDER_COLLECTION_ENABLED,
   SCAN_PROVIDER_OVERLAP_POLICY,
   PROVIDER_COLLECTION_CRON,
@@ -1498,6 +1501,8 @@ startRuntimeLifecycle({
     discoveryAlertWorkerTimezone: DISCOVERY_ALERT_WORKER_TIMEZONE,
     priceIngestWorkerCron: PRICE_INGEST_WORKER_CRON,
     priceIngestWorkerTimezone: PRICE_INGEST_WORKER_TIMEZONE,
+    ourAirportsRefreshCron: OURAIRPORTS_REFRESH_CRON,
+    ourAirportsRefreshTimezone: OURAIRPORTS_REFRESH_TIMEZONE,
     opportunityPipelineCron: OPPORTUNITY_PIPELINE_CRON,
     opportunityPipelineTimezone: OPPORTUNITY_PIPELINE_TIMEZONE,
     ingestionJobsMaintenanceCron: INGESTION_JOBS_MAINTENANCE_CRON,
@@ -1535,6 +1540,7 @@ startRuntimeLifecycle({
     runBaselineRecomputeOnce,
     runDiscoveryAlertWorkerOnce,
     runPriceIngestionWorkerOnce,
+    runOurAirportsRefreshOnce,
     runOpportunityPipelineOnce,
     runIngestionJobsMaintenance,
     runRoutePriceStatsWorkerOnce,

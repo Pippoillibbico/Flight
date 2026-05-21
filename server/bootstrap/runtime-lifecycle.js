@@ -167,6 +167,9 @@ export function startRuntimeLifecycle({
     scheduleCronJob('price_ingestion_worker', schedules.priceIngestWorkerCron, () => jobs.runPriceIngestionWorkerOnce({ maxJobs: 500 }), {
       timezone: schedules.priceIngestWorkerTimezone
     });
+    scheduleCronJob('ourairports_refresh', schedules.ourAirportsRefreshCron, () => jobs.runOurAirportsRefreshOnce({ reason: 'scheduled' }), {
+      timezone: schedules.ourAirportsRefreshTimezone
+    });
     scheduleCronJob('opportunity_pipeline_worker', schedules.opportunityPipelineCron, () => jobs.runOpportunityPipelineOnce(), {
       timezone: schedules.opportunityPipelineTimezone
     });

@@ -16,6 +16,7 @@ data/audit-log.ndjson
 data/*.ndjson
 data/logs/
 data/logs/*.log
+data/ourairports/
 data/db-security-smoke-*.json
 data/db-security-smoke-*.json.bak
 data/db-security-compliance-*.json

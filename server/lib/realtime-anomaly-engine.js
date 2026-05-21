@@ -27,7 +27,7 @@ import { inferDealType, rankDealV2 } from './deal-ranking-engine.js';
 import { buildSeasonalContext } from './seasonal-context-engine.js';
 import { getCacheClient } from './free-cache.js';
 import { logger } from './logger.js';
-import { OURAIRPORTS_IATA_SET } from '../../src/data/ourairports-iata.js';
+import { isKnownOurAirportsIata } from './ourairports-catalog.js';
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
@@ -78,7 +78,7 @@ const DEDUP_TTL_SEC = 1800;
 
 function isKnownIata(value) {
   const code = String(value || '').trim().toUpperCase();
-  return /^[A-Z]{3}$/.test(code) && OURAIRPORTS_IATA_SET.has(code);
+  return /^[A-Z]{3}$/.test(code) && isKnownOurAirportsIata(code);
 }
 
 // ── Key builders ────────────────────────────────────────────────────────────

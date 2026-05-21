@@ -3,6 +3,7 @@ import { runDiscoveryAlertWorkerOnce } from '../server/jobs/discovery-alert-work
 import { runDetectedDealsWorkerOnce } from '../server/jobs/detected-deals-worker.js';
 import { runFlightScanCycleOnce, runFlightScanSchedulerOnce, runFlightScanWorkerOnce } from '../server/jobs/flight-scan-worker.js';
 import { runOpportunityPipelineOnce } from '../server/jobs/opportunity-pipeline-worker.js';
+import { runOurAirportsRefreshOnce } from '../server/jobs/ourairports-refresh-worker.js';
 import { runRadarMatchPrecomputeOnce } from '../server/jobs/radar-match-precompute-worker.js';
 import { runRoutePriceStatsWorkerOnce } from '../server/jobs/route-price-stats-worker.js';
 import { runPriceAlertsWorkerOnce } from '../server/jobs/price-alerts-worker.js';
@@ -100,8 +101,13 @@ async function run() {
     printWorkerResult(worker, result);
     return;
   }
+  if (worker === 'ourairports-refresh') {
+    const result = await runOurAirportsRefreshOnce({ reason: 'manual_script' });
+    printWorkerResult(worker, result);
+    return;
+  }
   console.error(
-    'Usage: node scripts/run-worker.mjs <price-ingestion|route-baseline|discovery-alert|opportunity-pipeline|radar-match-precompute|flight-scan-scheduler|flight-scan-worker|flight-scan-cycle|route-price-stats|detected-deals|price-alerts>'
+    'Usage: node scripts/run-worker.mjs <price-ingestion|route-baseline|discovery-alert|opportunity-pipeline|radar-match-precompute|flight-scan-scheduler|flight-scan-worker|flight-scan-cycle|route-price-stats|detected-deals|price-alerts|ourairports-refresh>'
   );
   process.exit(1);
 }
