@@ -49,6 +49,7 @@ docs/audit/*.log
 
 # local logs/screenshots
 /*.png
+.codex-vite*.log
 app-dev*.log
 app-devweb*.log
 cookie-*.png

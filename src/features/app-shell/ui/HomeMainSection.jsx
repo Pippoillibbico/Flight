@@ -1,4 +1,3 @@
-import DiscoveryFeedWidget from '../../../components/DiscoveryFeedWidget';
 import OpportunityDetailSection from '../../../components/OpportunityDetailSection';
 import OpportunityFeedSection from '../../../components/OpportunityFeedSection';
 import PersonalHubSection from '../../../components/PersonalHubSection';
@@ -19,7 +18,6 @@ export default function HomeMainSection({
   activateRadarFromHubWithTelemetry,
   upgradeToPremium,
   chooseElitePlan,
-  searchForm,
   opportunityFeed,
   destinationClustersLoading,
   destinationClustersError,
@@ -70,8 +68,6 @@ export default function HomeMainSection({
           onUpgradeElite={() => chooseElitePlan('personal_hub_prompt')}
         />
       ) : null}
-
-      <DiscoveryFeedWidget origin={searchForm.origin || undefined} limit={12} language={language} t={t} />
 
       {limitedResultsBanner?.show ? (
         <UpgradeInlineBanner
