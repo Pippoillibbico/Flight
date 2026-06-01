@@ -1,6 +1,7 @@
 import express from 'express';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { resolveUserPlan } from '../lib/plan-access.js';
+import { assertPaidCapability, sendCapabilityBlocked } from '../lib/plan-capabilities.js';
 import { z } from 'zod';
 import { ingestPriceObservation, initDealEngineStore, recomputeRouteBaselines, scoreDeal } from '../lib/deal-engine-store.js';
 import { findCheapestWindows } from '../lib/window-finder-engine.js';
@@ -295,8 +296,14 @@ export function buildDealEngineRouter({
   router.post('/api/engine/deals', authGuard, async (req, res) => {
     const { planType } = resolveUserPlan(req.user);
     if (planType === 'free') {
-      return res.status(402).json({ error: 'premium_required', message: 'Deal engine requires a Pro or Creator plan.' });
+      const dealCapability = await assertPaidCapability(req, 'deal_engine_live');
+      return sendCapabilityBlocked(res, dealCapability, 403, {
+        error: 'premium_required',
+        message: 'Deal engine live analysis requires Pro or Creator. Free uses cached previews and static recommendations only.'
+      });
     }
+    const dealCapability = await assertPaidCapability(req, 'deal_engine_live');
+    if (dealCapability.upgradeRequired) return sendCapabilityBlocked(res, dealCapability, 403);
     const parsed = engineDealsSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid payload.' });
     try {
@@ -633,6 +640,7 @@ export function buildDealEngineRouter({
       const minDelta = Math.max(0, Number(req.query.min_delta || 0));
 
       const rawDeals = await getLiveDeals({ limit, origin, minConfidence, minDelta });
+      const dealCapability = user ? await assertPaidCapability(req, 'deal_engine_live') : null;
       const { redisConnected, source } = readRealtimeCacheMeta();
       // Enrich live deals with booking_url + estimated_commission
       const allDeals = await Promise.all(rawDeals.map(async (deal) => {
@@ -716,6 +724,14 @@ export function buildDealEngineRouter({
           source,
           reason,
           accessTier,
+          costGovernance: planType === 'free'
+            ? {
+                mode: 'cached_preview',
+                paidCostUsed: false,
+                upgradeRequired: true,
+                reason: 'deal_engine_live_requires_paid_plan'
+              }
+            : dealCapability,
           loginRequiredAfterDetailViews: 2,
           loginRequiredAfterOutboundClicks: 1,
           upgradeTriggers: ['advanced_alerts', 'history', 'more_deals']
@@ -751,6 +767,8 @@ export function buildDealEngineRouter({
   }).strict();
 
   router.post('/api/engine/multi-source-search', internalIngestGuard, async (req, res) => {
+    // Cost governance rule: this internal endpoint can trigger live provider calls.
+    // It stays behind an internal token and an explicit feature flag.
     if (!isMultiSourceEnabled()) {
       return res.status(503).json({
         error: 'multi_source_search_disabled',

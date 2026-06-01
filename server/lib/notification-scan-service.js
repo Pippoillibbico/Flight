@@ -193,6 +193,12 @@ export function createNotificationScanService({
 
         for (const subscription of db.alertSubscriptions) {
           if (!subscription.enabled) continue;
+          const user = db.users.find((u) => u.id === subscription.userId);
+          const planType = resolveUserPlan(user).planType;
+          if (planType === 'free') {
+            // Cost governance rule: FREE plan must never trigger paid variable-cost capabilities.
+            continue;
+          }
 
           const smartDurationMode = !Number.isFinite(subscription.targetPrice) || subscription.scanMode === 'duration_auto';
           if (smartDurationMode) {
@@ -226,8 +232,6 @@ export function createNotificationScanService({
               }
             });
 
-            const user = db.users.find((u) => u.id === subscription.userId);
-            const planType = resolveUserPlan(user).planType;
             if (user?.email && planType !== 'free' && canSendEmailType(user, 'alert')) {
               pendingEmails.push({
                 userId: user.id,
@@ -290,8 +294,6 @@ export function createNotificationScanService({
             }
           });
 
-            const user = db.users.find((u) => u.id === subscription.userId);
-            const planType = resolveUserPlan(user).planType;
             if (user?.email && planType !== 'free' && canSendEmailType(user, 'alert')) {
               pendingEmails.push({
                 userId: user.id,

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { canUseRadar, canUseSmartAlerts, getUpgradeContext, resolveUserPlan } from '../lib/plan-access.js';
+import { assertPaidCapability, sendCapabilityBlocked } from '../lib/plan-capabilities.js';
 import { recordFreeProviderCallBlocked, recordUpgradePromptShown } from '../lib/free-cost-metrics.js';
 
 // Pro users get a limited number of active price alerts per month.
@@ -141,9 +142,15 @@ export function buildAlertsRouter({
   function sendFreeRefreshBlocked(res) {
     recordFreeProviderCallBlocked();
     recordUpgradePromptShown();
-    return res.status(403).json({
+    return sendCapabilityBlocked(res, {
+      mode: 'cached_preview',
+      paidCostUsed: false,
+      upgradeRequired: true,
+      reason: 'live_alerts_requires_paid_plan',
+      allowedCapabilities: ['cached_preview', 'static_recommendations', 'local_search']
+    }, 403, {
       code: 'LIVE_REFRESH_REQUIRES_PRO',
-      message: 'Free uses cached public scans. Pro unlocks live scans, AI tools, and route alerts when delivery is enabled.'
+      message: 'Free uses cached previews, snapshots, and local/static recommendations only. Live alert scans require Pro or Creator.'
     });
   }
 
@@ -247,9 +254,10 @@ export function buildAlertsRouter({
     if (planType === 'free') {
       recordFreeProviderCallBlocked();
       recordUpgradePromptShown();
-      return res.status(403).json({
+      const liveAlertsCapability = await assertPaidCapability(req, 'live_alerts');
+      return sendCapabilityBlocked(res, liveAlertsCapability, 402, {
         code: 'INSTANT_ALERTS_REQUIRE_PRO',
-        message: 'Free uses cached public scans. Pro unlocks live scans, AI tools, and route alerts when delivery is enabled.',
+        message: 'Free uses cached previews, snapshots, and local/static recommendations only. Live route alerts require Pro or Creator.',
         upgrade_context: getUpgradeContext(requestUser, 'radar'),
         request_id: req.id || null
       });
@@ -318,6 +326,10 @@ export function buildAlertsRouter({
     });
 
     if (!updatedItem) return res.status(404).json({ error: 'Subscription not found.' });
+    {
+      const liveAlertsCapability = await assertPaidCapability(req, 'live_alerts');
+      if (liveAlertsCapability.upgradeRequired) return sendCapabilityBlocked(res, liveAlertsCapability, 403);
+    }
     await scanSubscriptionsOnce();
     return res.json({ item: updatedItem });
   });
@@ -341,9 +353,10 @@ export function buildAlertsRouter({
 
     if (planType === 'free') {
       // Free users cannot create price alerts at all.
-      return res.status(402).json({
+      const liveAlertsCapability = await assertPaidCapability(req, 'live_alerts');
+      return sendCapabilityBlocked(res, liveAlertsCapability, 402, {
         error: 'premium_required',
-        message: 'Price alerts are available on the Pro and Elite plans.',
+        message: 'Price alerts require Pro or Creator because they can trigger live monitoring costs.',
         upgrade_context: getUpgradeContext(user, 'smart_alerts'),
         pro_limit: SMART_ALERTS_PRO_LIMIT,
         request_id: req.id || null
@@ -384,7 +397,10 @@ export function buildAlertsRouter({
         enabled: parsed.data.enabled
       });
       try {
-        await scanPriceAlertsOnce({ limit: 250, reason: 'alert_created' });
+        const liveAlertsCapability = await assertPaidCapability(req, 'live_alerts');
+        if (!liveAlertsCapability.upgradeRequired) {
+          await scanPriceAlertsOnce({ limit: 250, reason: 'alert_created' });
+        }
       } catch {}
       return res.status(201).json({ item });
     } catch (error) {
@@ -482,6 +498,10 @@ export function buildAlertsRouter({
   router.post('/notifications/scan', authGuard, csrfGuard, requireApiScope('alerts'), quotaGuard({ counter: 'notifications', amount: 1 }), async (req, res) => {
     const { isFree } = await isFreeRequestUser(req);
     if (isFree) return sendFreeRefreshBlocked(res);
+    {
+      const liveAlertsCapability = await assertPaidCapability(req, 'live_alerts');
+      if (liveAlertsCapability.upgradeRequired) return sendCapabilityBlocked(res, liveAlertsCapability, 403);
+    }
     await scanSubscriptionsOnce();
     return res.json({ ok: true });
   });

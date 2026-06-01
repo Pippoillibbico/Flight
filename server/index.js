@@ -29,6 +29,7 @@ import { renderPrivacyPolicy, renderCookiePolicy, renderTermsOfService } from '.
 import { buildAlertsRouter } from './routes/alerts.js';
 import { buildSystemRouter } from './routes/system.js';
 import { buildSearchRouter } from './routes/search.js';
+import { buildTriangulationRouter } from './features/triangulation/triangulation.routes.js';
 import { buildAuthSessionRouter } from './routes/auth-session.js';
 import { buildAuthLocalRouter } from './routes/auth-local.js';
 import { buildAuthOAuthRouter } from './routes/auth-oauth.js';
@@ -1266,6 +1267,16 @@ app.use(
     captureUserPriceObservation,
     searchProviderOffers: (params) => dataProviderRegistry.searchOffers(params),
     cacheClient: getCacheClient(),
+    liveFlightService
+  })
+);
+app.use(
+  '/api/triangulation',
+  buildTriangulationRouter({
+    authGuard,
+    csrfGuard,
+    requireApiScope,
+    quotaGuard,
     liveFlightService
   })
 );

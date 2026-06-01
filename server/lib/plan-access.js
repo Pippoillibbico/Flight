@@ -144,6 +144,11 @@ export function isFreeAiFeatureFlagEnabled(env = process.env) {
 
 export function buildFreeAiBlockedPayload() {
   return {
+    mode: 'cached_preview',
+    paidCostUsed: false,
+    upgradeRequired: true,
+    reason: 'ai_live_requires_paid_plan',
+    allowedCapabilities: ['cached_preview', 'static_recommendations', 'local_search'],
     code: 'AI_NOT_AVAILABLE_ON_FREE',
     error: 'AI_NOT_AVAILABLE_ON_FREE',
     message: 'Free includes public cached deals and basic route insights. AI tools are available on paid plans.',

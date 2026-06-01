@@ -5,6 +5,12 @@ import { applyPricingToOffer, computeEconomics, guardOffer, sanitizeOfferForClie
 import { logEconomicEvent } from '../lib/observability/index.js';
 import { buildFreeAiBlockedPayload, getPlanRuntimeLimits } from '../lib/plan-access.js';
 import {
+  assertPaidCapability,
+  buildCapabilityAllowedPayload,
+  buildCapabilityBlockedPayload,
+  sendCapabilityBlocked
+} from '../lib/plan-capabilities.js';
+import {
   recordAiCallByPlan,
   recordFreeAiBlocked,
   recordFreeProviderCallBlocked,
@@ -205,14 +211,14 @@ export function buildSearchRouter({
     }
     const isFreeUser = resolvedPlanId === 'free';
     // Provider gating: free users (and anonymous, when present) never trigger live Duffel search.
-    const enableLiveSearch = Boolean(req.user) && !isFreeUser;
+    let enableLiveSearch = Boolean(req.user) && !isFreeUser;
     const isMultiCityMode = searchPayload.mode === 'multi_city' && Array.isArray(searchPayload.segments) && searchPayload.segments.length >= 2;
     if (isFreeUser && isMultiCityMode) {
       recordFreeProviderCallBlocked();
-      return res.status(403).json({
+      return sendCapabilityBlocked(res, buildCapabilityBlockedPayload(resolvedPlanId, 'provider_live'), 403, {
         code: 'MULTI_CITY_LIVE_REQUIRES_PRO',
         error: 'MULTI_CITY_LIVE_REQUIRES_PRO',
-        message: 'Free uses cached public scans. Pro unlocks multi-city live search.',
+        message: 'Free uses cached previews and local/static recommendations only. Multi-city live search requires Pro or Creator.',
         upgrade_context: 'multi_city_live'
       });
     }
@@ -249,6 +255,14 @@ export function buildSearchRouter({
 
     if (isProduction && !liveFlightService) {
       return res.status(503).json({ error: 'live_flight_provider_service_unavailable' });
+    }
+
+    if (liveFlightService && syntheticFlights.length > 0 && enableLiveSearch) {
+      const providerCapability = await assertPaidCapability(req, 'provider_live');
+      if (providerCapability.upgradeRequired) {
+        recordFreeProviderCallBlocked();
+        enableLiveSearch = false;
+      }
     }
 
     if (liveFlightService && syntheticFlights.length > 0 && enableLiveSearch) {
@@ -591,7 +605,17 @@ export function buildSearchRouter({
       flights: (enhancedResult.flights || []).map(sanitizeOfferForClient)
     };
 
-    return res.json(safeResult);
+    return res.json({
+      ...safeResult,
+      costGovernance: searchMode === 'live_duffel'
+        ? buildCapabilityAllowedPayload(resolvedPlanId, 'provider_live')
+        : {
+            mode: isFreeUser ? 'cached_preview' : 'local_search',
+            paidCostUsed: false,
+            upgradeRequired: Boolean(isFreeUser),
+            reason: isFreeUser ? 'provider_live_requires_paid_plan' : null
+          }
+    });
   });
 
   router.post('/decision/just-go', rejectAnonymousAiProviderRequest, authGuard, csrfGuard, requireApiScope('search'), quotaGuard({ counter: 'decision', amount: 1 }), async (req, res) => {
@@ -601,7 +625,14 @@ export function buildSearchRouter({
     const payload = parsed.data;
     if (resolvedFreeAiRequest(req, payload.aiProvider)) {
       recordFreeAiBlocked();
-      return res.status(403).json(buildFreeAiBlockedPayload());
+      return sendCapabilityBlocked(res, buildCapabilityBlockedPayload('free', 'ai_live'), 403, buildFreeAiBlockedPayload());
+    }
+    if (String(payload.aiProvider || 'none').toLowerCase() !== 'none') {
+      const aiCapability = await assertPaidCapability(req, 'ai_live');
+      if (aiCapability.upgradeRequired) {
+        recordFreeAiBlocked();
+        return sendCapabilityBlocked(res, aiCapability, 403, buildFreeAiBlockedPayload());
+      }
     }
     const aiAccess = await ensureAiPremiumAccess(req, payload.aiProvider || 'none');
     if (!aiAccess.allowed) return sendMachineError(req, res, aiAccess.status, aiAccess.error, aiAccess.extra || {});
@@ -668,7 +699,14 @@ export function buildSearchRouter({
     const payload = parsed.data;
     if (resolvedFreeAiRequest(req, payload.aiProvider)) {
       recordFreeAiBlocked();
-      return res.status(403).json(buildFreeAiBlockedPayload());
+      return sendCapabilityBlocked(res, buildCapabilityBlockedPayload('free', 'ai_live'), 403, buildFreeAiBlockedPayload());
+    }
+    if (String(payload.aiProvider || 'none').toLowerCase() !== 'none') {
+      const aiCapability = await assertPaidCapability(req, 'ai_live');
+      if (aiCapability.upgradeRequired) {
+        recordFreeAiBlocked();
+        return sendCapabilityBlocked(res, aiCapability, 403, buildFreeAiBlockedPayload());
+      }
     }
     const aiAccess = await ensureAiPremiumAccess(req, payload.aiProvider || 'none');
     if (!aiAccess.allowed) return sendMachineError(req, res, aiAccess.status, aiAccess.error, aiAccess.extra || {});
@@ -683,6 +721,23 @@ export function buildSearchRouter({
     });
 
     return res.json(result);
+  });
+
+  router.post('/triangulation', authGuard, csrfGuard, requireApiScope('search'), quotaGuard({ counter: 'decision', amount: 1 }), async (req, res) => {
+    const capability = await assertPaidCapability(req, 'triangulation_live');
+    if (capability.upgradeRequired) {
+      recordFreeProviderCallBlocked();
+      return sendCapabilityBlocked(res, capability, 403, {
+        preview: ['ROM-BUD-BKK', 'ROM-ATH-BKK', 'ROM-AUH-BKK']
+      });
+    }
+
+    return res.status(501).json({
+      ...capability,
+      mode: 'live_triangulation',
+      results: [],
+      reason: 'triangulation_live_engine_not_configured'
+    });
   });
 
   router.get('/search/history', authGuard, requireApiScope('read'), quotaGuard({ counter: 'read', amount: 1 }), async (req, res) => {

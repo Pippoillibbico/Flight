@@ -1,6 +1,7 @@
 import express from 'express';
 import { addDays, format } from 'date-fns';
 import { resolveUserPlan } from '../lib/plan-access.js';
+import { assertPaidCapability, sendCapabilityBlocked } from '../lib/plan-capabilities.js';
 import { runDiscoveryJustGo } from '../lib/discovery-engine.js';
 import { findCheapestDestinations, findPriceDrops, findUnderratedRoutes } from '../lib/destination-discovery-engine.js';
 import {
@@ -691,6 +692,10 @@ export function buildDiscoveryRouter({ authGuard, csrfGuard, quotaGuard, require
     if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid payload.' });
 
     try {
+      const liveAlertsCapability = await assertPaidCapability(req, 'live_alerts');
+      if (liveAlertsCapability.upgradeRequired) {
+        return sendCapabilityBlocked(res, liveAlertsCapability, 403);
+      }
       const target = await resolveTargetPriceFromBaseline({
         originIata: parsed.data.originIata,
         destinationIata: parsed.data.destinationIata,
@@ -766,9 +771,8 @@ export function buildDiscoveryRouter({ authGuard, csrfGuard, quotaGuard, require
 
   router.post('/price-drop-alerts/scan', authGuard, csrfGuard, requireApiScope('alerts'), quotaGuard({ counter: 'notifications', amount: 1 }), async (req, res) => {
     const { planType } = resolveUserPlan(req.user);
-    if (planType === 'free') {
-      return res.status(402).json({ error: 'premium_required', message: 'Manual alert scans require a Pro or Elite plan.' });
-    }
+    const liveAlertsCapability = await assertPaidCapability(req, 'live_alerts');
+    if (planType === 'free' || liveAlertsCapability.upgradeRequired) return sendCapabilityBlocked(res, liveAlertsCapability, 403);
     try {
       const result = await runPriceAlertsScanOnce({ limit: 500 });
       return res.json({ ok: true, result });
@@ -784,7 +788,13 @@ export function buildDiscoveryRouter({ authGuard, csrfGuard, quotaGuard, require
     try {
       const userId = req.user?.sub || req.user?.id;
       const result = await runDiscoveryJustGo({ userId, ...parsed.data });
-      return res.json(result);
+      const discoveryCapability = await assertPaidCapability(req, 'discovery_live');
+      return res.json({
+        ...result,
+        costGovernance: discoveryCapability.upgradeRequired
+          ? { ...discoveryCapability, mode: 'cached_preview', paidCostUsed: false }
+          : discoveryCapability
+      });
     } catch (error) {
       const message = String(error?.message || '');
       if (message.toLowerCase().startsWith('invalid')) return res.status(400).json({ error: message });
@@ -839,6 +849,10 @@ export function buildDiscoveryRouter({ authGuard, csrfGuard, quotaGuard, require
     const parsed = discoverySubSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid payload.' });
     try {
+      const liveAlertsCapability = await assertPaidCapability(req, 'live_alerts');
+      if (liveAlertsCapability.upgradeRequired) {
+        return sendCapabilityBlocked(res, liveAlertsCapability, 403);
+      }
       const userId = req.user?.sub || req.user?.id;
       const item = await createDiscoverySubscription({
         userId,
