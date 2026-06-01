@@ -296,7 +296,10 @@ function updatePlan(state, planType) {
 
 export async function setupApiMocks(page, state) {
   const debugUnmatchedApi = String(process.env.E2E_LOG_UNMATCHED_API || '').trim() === '1';
-  await page.route('**/api/**', async (route) => {
+  // Keep this matcher scoped to real backend API calls. A broad glob like
+  // **/api/** also matches Vite source modules inside src/**/api/** and
+  // can make the browser receive JSON where it expects JavaScript.
+  await page.route(/^https?:\/\/[^/]+\/api(?:\/|$)/, async (route) => {
     const request = route.request();
     const url = new URL(request.url());
     const method = request.method();
@@ -587,6 +590,19 @@ export async function setupApiMocks(page, state) {
         items: state.opportunities
       });
     }
+    if (path === '/api/triangulation/intake' && method === 'POST') {
+      return json({
+        mode: 'cached_preview',
+        paidCostUsed: false,
+        upgradeRequired: true,
+        reason: 'triangulation_live_requires_paid_plan',
+        preview: [
+          { route: 'ROM-BUD-BKK', type: 'static_strategy', risk: 'medium' },
+          { route: 'ROM-ATH-BKK', type: 'static_strategy', risk: 'medium' },
+          { route: 'ROM-AUH-BKK', type: 'static_strategy', risk: 'low_medium' }
+        ]
+      });
+    }
     if (/^\/api\/opportunities\/[^/]+\/follow$/.test(path) && method === 'POST') return json({ ok: true }, 201);
     if (/^\/api\/opportunities\/[^/]+\/related$/.test(path) && method === 'GET') {
       const opportunityId = path.split('/')[3];
@@ -683,7 +699,8 @@ const SIGN_IN_BUTTON_TEXTS = new Set([
   'anmelden',
   'connexion',
   'iniciar sesión',
-  'iniciar sessao'
+  'iniciar sessao',
+  'entrar'
 ]);
 
 async function isAuthenticatedUi(page) {
@@ -783,10 +800,7 @@ async function waitForLoggedInState(page, timeoutMs = 15000) {
       .poll(
         async () => {
           if (page.isClosed()) return false;
-          if (await isAuthenticatedUi(page)) return true;
-          const appShellVisible = await isLocatorVisible(page.locator('main.page.app-shell'));
-          const authShellStillOpen = await isLocatorVisible(page.locator('.auth-shell'));
-          return appShellVisible && !authShellStillOpen;
+          return isAuthenticatedUi(page);
         },
         { timeout: timeoutMs }
       )
@@ -881,7 +895,7 @@ export async function openEmailAuth(page) {
   const backToOptionsButton = page.getByTestId('auth-back-to-options');
   const hasEmailBackButton = await isLocatorVisible(backToOptionsButton);
   if (!hasEmailBackButton) {
-    const emailButton = page.getByRole('button', { name: /email/i }).first();
+    const emailButton = page.getByRole('button', { name: /e-?mail|correo|courriel/i }).first();
     await clickLocatorIfVisible(emailButton);
   }
   const emailReady = await waitForAuthSurface(page, { timeoutMs: 5000, requireEmailForm: true });

@@ -1,7 +1,17 @@
 import { expect, test } from './helpers/guarded-test';
 import { bootLanding, createDefaultState, ensureHomeSection, loginFromUi } from './helpers/app-test-kit';
 
-test('free plan shows soft upgrade prompts across feed, radar and AI limits', async ({ page }) => {
+async function mockStripeCheckoutNavigation(page) {
+  await page.route('https://checkout.stripe.com/**', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'text/html',
+      body: '<!doctype html><html><head><title>Stripe Checkout test page</title></head><body>Stripe Checkout</body></html>'
+    })
+  );
+}
+
+test('free plan shows localized upgrade prompts and cached triangulation preview', async ({ page }) => {
   test.slow();
   const state = createDefaultState({
     user: {
@@ -28,17 +38,22 @@ test('free plan shows soft upgrade prompts across feed, radar and AI limits', as
 
   await page.getByTestId('app-nav-radar').click();
   await expect(page.locator('.radar-panel .upgrade-prompt')).toBeVisible();
+  await expect(page.locator('.radar-panel .upgrade-prompt')).toContainText('Nessun addebito in questo passaggio');
 
   await page.getByTestId('app-nav-ai-travel').click();
   await expect(page.getByTestId('ai-travel-run')).toBeEnabled();
-  await page.getByTestId('ai-travel-prompt-input').fill('Trip from Rome with best value');
   await page.getByTestId('ai-travel-run').click();
-  await expect(page.locator('.ai-travel-candidate-card')).toHaveCount(3);
-  await expect(page.locator('.ai-travel-results-section .upgrade-prompt')).toBeVisible();
-  await expect(page.locator('.ai-travel-results-section .upgrade-prompt')).toContainText('See more AI-generated itineraries');
+  await expect(page.getByTestId('upgrade-flow-modal-pro')).toBeVisible();
+  await page.getByTestId('upgrade-flow-close').click();
+
+  await page.getByTestId('triangulation-run').click();
+  await expect(page.getByTestId('triangulation-preview-list')).toBeVisible();
+  await expect(page.getByTestId('triangulation-preview-list')).toContainText('Roma -> Budapest -> Bangkok');
+  await expect(page.getByTestId('triangulation-preview-list')).toContainText('Strategia indicativa basata su rotte frequenti e dati cached');
+  await expect(page.locator('.triangulation-panel .upgrade-prompt')).toContainText('Il piano Free mostra solo preview cached/static');
 });
 
-test('free user can upgrade to PRO locally and new plan is persisted', async ({ page }) => {
+test('free user can start PRO checkout through a locally intercepted Stripe page', async ({ page }) => {
   test.slow();
   const state = createDefaultState({
     user: {
@@ -49,17 +64,38 @@ test('free user can upgrade to PRO locally and new plan is persisted', async ({ 
   await bootLanding(page, state);
   await loginFromUi(page);
   await ensureHomeSection(page);
+  await mockStripeCheckoutNavigation(page);
 
   await page.getByTestId('app-nav-premium').click();
   await page.getByTestId('premium-upgrade-pro').click();
   await expect(page.getByTestId('upgrade-flow-modal-pro')).toBeVisible();
-  await page.getByTestId('upgrade-flow-primary').click();
-  await expect(page.getByTestId('upgrade-flow-success')).toBeVisible();
-  const storedPlan = await page.evaluate(() => window.localStorage.getItem('flight_user_plan_v1'));
-  expect(storedPlan).toBe('pro');
+  await Promise.all([
+    page.waitForURL('https://checkout.stripe.com/**'),
+    page.getByTestId('upgrade-flow-primary').click()
+  ]);
+  await expect(page).toHaveURL('https://checkout.stripe.com/c/pay/test_session');
 });
 
-test('tracked-route soft limit triggers contextual upgrade and unlocks after PRO upgrade', async ({ page }) => {
+test('English Free triangulation preview stays cached and does not leak Italian copy', async ({ page }) => {
+  await bootLanding(page, createDefaultState({
+    user: {
+      isPremium: false,
+      planType: 'free'
+    }
+  }), { language: 'en' });
+  await loginFromUi(page);
+  await page.getByTestId('app-nav-ai-travel').click();
+
+  await page.getByTestId('triangulation-run').click();
+  const preview = page.getByTestId('triangulation-preview-list');
+  await expect(preview).toBeVisible();
+  await expect(preview).toContainText('Rome -> Budapest -> Bangkok');
+  await expect(preview).toContainText('Indicative strategy based on frequent routes and cached data');
+  await expect(preview).not.toContainText('Strategia indicativa');
+  await expect(page.locator('.triangulation-panel .upgrade-prompt')).toContainText('Free shows only cached/static previews');
+});
+
+test('tracked-route Free soft limit triggers contextual upgrade without bypassing checkout', async ({ page }) => {
   test.slow();
   const state = createDefaultState({
     user: {
@@ -78,21 +114,14 @@ test('tracked-route soft limit triggers contextual upgrade and unlocks after PRO
   await ensureHomeSection(page);
 
   await page.getByTestId('opportunity-track-cluster-japan').click();
-  await page.getByTestId('opportunity-track-cluster-southeast-asia').click();
-  await page.getByTestId('opportunity-track-cluster-usa-east-coast').click();
 
   await expect(page.getByTestId('opportunity-track-limit-prompt')).toBeVisible();
+  await expect(page.getByTestId('opportunity-track-cluster-southeast-asia')).toBeDisabled();
   await expect(page.getByTestId('opportunity-track-cluster-nordics')).toBeDisabled();
 
   await page.getByTestId('opportunity-track-limit-upgrade-pro').click();
   await expect(page.getByTestId('upgrade-flow-modal-pro')).toBeVisible();
-  await page.getByTestId('upgrade-flow-primary').click();
-  await expect(page.getByTestId('upgrade-flow-success')).toBeVisible();
-  await page.getByTestId('upgrade-flow-success-close').click();
-
-  await expect(page.getByTestId('opportunity-track-cluster-nordics')).toBeEnabled();
-  await page.getByTestId('opportunity-track-cluster-nordics').click();
-  await expect(page.getByTestId('opportunity-track-cluster-nordics')).toContainText('Tracking');
+  await expect(page.getByTestId('upgrade-flow-description')).toContainText('AI live');
 });
 
 test('cluster selection filters feed opportunities', async ({ page }) => {

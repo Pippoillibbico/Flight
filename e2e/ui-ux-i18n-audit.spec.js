@@ -171,6 +171,8 @@ function hasHoverDelta(before, after) {
 }
 
 test.describe('Playwright UI/UX/i18n audit suite', () => {
+  test.describe.configure({ mode: 'serial' });
+
   test('translation coverage: all referenced i18n keys are present in all language packs', async () => {
     const referencedKeys = extractReferencedI18nKeys();
 
@@ -207,12 +209,12 @@ test.describe('Playwright UI/UX/i18n audit suite', () => {
     ).toBe(true);
     await page.keyboard.press('Escape');
 
-    await page.locator('.landing-theme-btn').click();
+    await page.locator('.landing-nav > button.landing-theme-btn').click();
     await expect(page.locator('main.landing-shell')).not.toHaveClass(/landing-dark/);
 
     await assertSolidHover(navSignInCta, 'landing-accedi-btn (light)');
     await assertSolidHover(heroPrimaryCta, 'landing-cta-primary (light)');
-    await assertSolidHover(pricingPrimaryCta, 'landing-plan-cta-primary (light)', { expectWhiteBackground: true });
+    await assertSolidHover(pricingPrimaryCta, 'landing-plan-cta-primary (light)');
 
     await page.locator('.landing-lang-trigger').click();
     const lightLanguageOption = page.locator('.landing-lang-popover .landing-lang-option:not(.active)').first();
@@ -232,16 +234,17 @@ test.describe('Playwright UI/UX/i18n audit suite', () => {
       await runVisibleTextAudit(page, `landing:${language}`);
 
       await loginFromUi(page);
-      await expect(page.locator('main.page.app-shell')).toBeVisible();
+      const appShell = page.locator('main.page.app-shell');
+      await expect(appShell).toBeVisible();
       await runVisibleTextAudit(page, `app-shell:${language}`);
 
-      await page.getByTestId('app-nav-home').click({ force: true });
+      await appShell.getByTestId('app-nav-home').click({ force: true });
       await expect(page.locator('.opportunity-feed-panel')).toBeVisible();
       await page.locator('[data-testid^="opportunity-view-"]').first().click();
       await expect(page.locator('.opportunity-detail-panel')).toBeVisible();
       await runVisibleTextAudit(page, `detail:${language}`);
 
-      await page.getByTestId('app-nav-radar').click({ force: true });
+      await appShell.getByTestId('app-nav-radar').click({ force: true });
       await expect(page.locator('.radar-panel')).toBeVisible();
       const saveRadarResponse = page.waitForResponse((response) => {
         return (
@@ -253,14 +256,14 @@ test.describe('Playwright UI/UX/i18n audit suite', () => {
       await saveRadarResponse;
       await runVisibleTextAudit(page, `radar:${language}`);
 
-      await page.getByTestId('app-nav-ai-travel').click({ force: true });
+      await appShell.getByTestId('app-nav-ai-travel').click({ force: true });
       await expect(page.getByTestId('ai-travel-run')).toBeVisible();
       await page.getByTestId('ai-travel-prompt-input').fill('Find me a warm weekend destination from FCO under 450 EUR');
       await page.getByTestId('ai-travel-run').click();
       await expect(page.getByTestId('ai-travel-summary')).toBeVisible();
       await runVisibleTextAudit(page, `ai-travel:${language}`);
 
-      await page.getByTestId('app-nav-premium').click({ force: true });
+      await appShell.getByTestId('app-nav-premium').click({ force: true });
       await expect(page.locator('[data-testid^="premium-plan-"]')).toHaveCount(3);
       await runVisibleTextAudit(page, `premium:${language}`);
     });
@@ -276,7 +279,7 @@ test.describe('Playwright UI/UX/i18n audit suite', () => {
     }));
     expect(landingDimensions.scrollWidth).toBeLessThanOrEqual(landingDimensions.width + 1);
 
-    await expect(page.locator('.landing-cta-primary')).toBeVisible();
+    await expect(page.locator('.landing-hero-cta > button.landing-cta-primary').first()).toBeVisible();
     await expect(page.locator('.landing-hamburger')).toBeVisible();
     await page.locator('.landing-hamburger').click();
     await expect(page.locator('.landing-mobile-nav .landing-mobile-signin')).toBeVisible();

@@ -6,7 +6,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('landing primary CTA opens app shell for guest without forced login', async ({ page }) => {
-  await page.locator('.landing-cta-primary').click();
+  await page.locator('.landing-hero-cta > .landing-cta-primary').click();
 
   await expect(page.locator('main.page.app-shell')).toBeVisible();
   await expect(page.locator('.opportunity-feed-panel')).toBeVisible();
@@ -18,11 +18,11 @@ test('email login completes and unlocks main navigation', async ({ page }) => {
   await loginFromUi(page);
 
   const nav = page.locator('.app-main-nav');
-  await expect(nav.getByRole('button', { name: 'Home', exact: true })).toBeVisible();
-  await expect(nav.getByRole('button', { name: 'Explore', exact: true })).toBeVisible();
-  await expect(nav.getByRole('button', { name: 'Radar', exact: true })).toBeVisible();
-  await expect(nav.getByRole('button', { name: 'AI Travel', exact: true })).toBeVisible();
-  await expect(nav.getByRole('button', { name: 'Premium', exact: true })).toBeVisible();
+  await expect(nav.getByTestId('app-nav-home')).toBeVisible();
+  await expect(nav.getByTestId('app-nav-explore')).toBeVisible();
+  await expect(nav.getByTestId('app-nav-radar')).toBeVisible();
+  await expect(nav.getByTestId('app-nav-ai-travel')).toBeVisible();
+  await expect(nav.getByTestId('app-nav-premium')).toBeVisible();
 });
 
 test('email register flow works from auth modal', async ({ page }) => {
