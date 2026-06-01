@@ -97,6 +97,8 @@ export default function RadarMainSection({
           title={t('radarPageTitle')}
           description={t('radarPageAccessDescription')}
           ctaLabel={t('opportunityFeedSoftGateCta')}
+          eyebrowLabel={t('sectionAccessMembersOnly')}
+          noteLabel={t('sectionAccessCreateAccountNote')}
           onCta={() => requireSectionLogin('radar')}
         />
       )}

@@ -5,16 +5,21 @@ function PremiumPanelSection({
   isAnnualBilling,
   premiumPackages
 }) {
+  const label = (key, fallback) => {
+    const value = t(key);
+    return value && value !== key ? value : fallback;
+  };
+
   return (
     <div className="ph-shell">
       <section className="ph-panel" data-testid="premium-panel">
         <div className="ph-panel-glow" aria-hidden="true" />
         <div className="ph-head">
-          <p className="ph-eyebrow">Premium Access</p>
+          <p className="ph-eyebrow">{label('premiumAccessEyebrow', 'Premium access')}</p>
           <h2 className="ph-title">{t('premiumPageTitle')}</h2>
           <p className="ph-subtitle">{t('premiumPageSubtitle')}</p>
           <div className="ph-cycle-wrap" data-testid="premium-billing-controls">
-            <div className={`ph-cycle-pill ph-cycle-pill--${premiumBillingCycle}`} role="radiogroup" aria-label="Billing cycle">
+            <div className={`ph-cycle-pill ph-cycle-pill--${premiumBillingCycle}`} role="radiogroup" aria-label={label('premiumBillingCycleAria', 'Billing cycle')}>
               <button
                 type="button"
                 role="radio"
@@ -23,7 +28,7 @@ function PremiumPanelSection({
                 className={`ph-cycle-btn${premiumBillingCycle === 'monthly' ? ' ph-cycle-btn--on' : ''}`}
                 onClick={() => setPremiumBillingCycle('monthly')}
               >
-                <span>Monthly</span>
+                <span>{label('premiumBillingMonthly', 'Monthly')}</span>
               </button>
               <button
                 type="button"
@@ -33,13 +38,15 @@ function PremiumPanelSection({
                 className={`ph-cycle-btn${premiumBillingCycle === 'annual' ? ' ph-cycle-btn--on' : ''}`}
                 onClick={() => setPremiumBillingCycle('annual')}
               >
-                <span>Annual</span>
-                <span className="ph-cycle-save-chip">30% off</span>
+                <span>{label('premiumBillingAnnual', 'Annual')}</span>
+                <span className="ph-cycle-save-chip">{label('premiumBillingAnnualDiscount', '30% off')}</span>
               </button>
               <span className="ph-cycle-pill-active" aria-hidden="true" />
             </div>
             <span className={`ph-off-badge${isAnnualBilling ? ' ph-off-badge--active' : ''}`}>
-              {isAnnualBilling ? 'Annual pricing active - save up to 30%' : 'Switch to annual and save up to 30%'}
+              {isAnnualBilling
+                ? label('premiumBillingAnnualActive', 'Annual pricing active - save up to 30%')
+                : label('premiumBillingAnnualPrompt', 'Switch to annual and save up to 30%')}
             </span>
           </div>
         </div>
@@ -53,11 +60,11 @@ function PremiumPanelSection({
             >
               <div className="ph-card-top">
                 {plan.id === 'pro' ? (
-                  <p className="ph-top-label ph-top-label--featured">Recommended</p>
+                  <p className="ph-top-label ph-top-label--featured">{label('premiumTopLabelPro', 'Recommended')}</p>
                 ) : plan.id === 'elite' ? (
-                  <p className="ph-top-label ph-top-label--elite">Best value</p>
+                  <p className="ph-top-label ph-top-label--elite">{label('premiumTopLabelElite', 'Best value')}</p>
                 ) : (
-                  <p className="ph-top-label ph-top-label--free">Get started</p>
+                  <p className="ph-top-label ph-top-label--free">{label('premiumTopLabelFree', 'Get started')}</p>
                 )}
                 <p className="ph-top-caption">{plan.badgeDetail}</p>
               </div>

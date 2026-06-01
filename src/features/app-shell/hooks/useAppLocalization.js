@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { DEFAULT_LANGUAGE, DEFAULT_LANGUAGE_PACK, LANGS, loadLanguagePack } from '../../../i18n';
-import { localizeCountryByIso2, toCanonicalCountryName } from '../../../utils/localizePlace';
-import { isConsentGiven } from '../../../utils/cookieConsent';
-import { readLocalStorageItem, removeLocalStorageItem, writeLocalStorageItem } from '../../../utils/browserStorage';
-import { LANGUAGE_STORAGE_KEY } from '../../../utils/storageKeys';
+import { DEFAULT_LANGUAGE, DEFAULT_LANGUAGE_PACK, LANGS, loadLanguagePack } from '../../../i18n/index.js';
+import { localizeCountryByIso2, toCanonicalCountryName } from '../../../utils/localizePlace.js';
+import { isConsentGiven } from '../../../utils/cookieConsent.js';
+import { readLocalStorageItem, removeLocalStorageItem, writeLocalStorageItem } from '../../../utils/browserStorage.js';
+import { LANGUAGE_STORAGE_KEY } from '../../../utils/storageKeys.js';
 
 const REGION_LABELS_I18N = {
   en: { all: 'All Regions', eu: 'Europe', asia: 'Asia', america: 'America', oceania: 'Oceania' },
@@ -41,8 +41,15 @@ function isGarbledI18nText(value) {
   return qCount >= 2 && letterCount === 0;
 }
 
+export function readInitialLanguage() {
+  if (typeof window === 'undefined') return DEFAULT_LANGUAGE;
+  if (!isConsentGiven('functional')) return DEFAULT_LANGUAGE;
+  const storedLanguage = readLocalStorageItem(LANGUAGE_STORAGE_KEY);
+  return LANGS.includes(storedLanguage) ? storedLanguage : DEFAULT_LANGUAGE;
+}
+
 export function useAppLocalization() {
-  const [language, setLanguage] = useState(DEFAULT_LANGUAGE);
+  const [language, setLanguage] = useState(readInitialLanguage);
   const [i18nPack, setI18nPack] = useState(DEFAULT_LANGUAGE_PACK);
 
   useEffect(() => {

@@ -9,23 +9,24 @@ const UpgradePromptPropsSchema = z
     eliteSummary: z.string().default('Priority access, premium intelligence layer, and early feature entry.'),
     primaryLabel: z.string().default('Upgrade to PRO'),
     secondaryLabel: z.string().default('Discover ELITE'),
+    t: z.function().optional(),
     onUpgradePro: z.function(),
     onUpgradeElite: z.function()
   })
   .passthrough();
 
 const PRO_FEATURES = [
-  'Full opportunity feed - no limits',
-  'Price radar on all routes',
-  'Instant price-drop alerts',
-  'Advanced filters & sorting'
+  ['upgradePromptProFeature1', 'Full opportunity feed - no limits'],
+  ['upgradePromptProFeature2', 'Price radar on all routes'],
+  ['upgradePromptProFeature3', 'Instant price-drop alerts'],
+  ['upgradePromptProFeature4', 'Advanced filters & sorting']
 ];
 
 const ELITE_FEATURES = [
-  'Everything in PRO',
-  'AI trip planner (JustGo)',
-  'Priority intelligence layer',
-  'Early access to new features'
+  ['upgradePromptEliteFeature1', 'Everything in PRO'],
+  ['upgradePromptEliteFeature2', 'AI trip planner (JustGo)'],
+  ['upgradePromptEliteFeature3', 'Priority intelligence layer'],
+  ['upgradePromptEliteFeature4', 'Early access to new features']
 ];
 
 function CheckIcon() {
@@ -37,11 +38,12 @@ function CheckIcon() {
 }
 
 function UpgradePrompt(props) {
-  const { title, message, proSummary, eliteSummary, primaryLabel, secondaryLabel, onUpgradePro, onUpgradeElite } = validateProps(
+  const { title, message, proSummary, eliteSummary, primaryLabel, secondaryLabel, t, onUpgradePro, onUpgradeElite } = validateProps(
     UpgradePromptPropsSchema,
     props,
     'UpgradePrompt'
   );
+  const tt = (key, fallback) => (typeof t === 'function' ? t(key) : fallback) || fallback;
 
   return (
     <article className="upgrade-prompt" data-testid="upgrade-prompt">
@@ -54,14 +56,14 @@ function UpgradePrompt(props) {
         <article className="upgrade-prompt-plan upgrade-prompt-plan-pro" data-testid="upgrade-prompt-plan-pro">
           <div className="upgrade-prompt-plan-head">
             <p className="upgrade-prompt-plan-tag">PRO</p>
-            <span className="upgrade-prompt-plan-badge">Most popular</span>
+            <span className="upgrade-prompt-plan-badge">{tt('upgradePromptMostPopular', 'Most popular')}</span>
           </div>
-          <p className="upgrade-prompt-plan-copy">{proSummary}</p>
-          <ul className="upgrade-prompt-features" aria-label="PRO plan features">
-            {PRO_FEATURES.map((f) => (
-              <li key={f} className="upgrade-prompt-feature-item">
+          <p className="upgrade-prompt-plan-copy">{tt('upgradePromptProSummary', proSummary)}</p>
+          <ul className="upgrade-prompt-features" aria-label={tt('upgradePromptProFeaturesAria', 'PRO plan features')}>
+            {PRO_FEATURES.map(([key, fallback]) => (
+              <li key={key} className="upgrade-prompt-feature-item">
                 <CheckIcon />
-                <span>{f}</span>
+                <span>{tt(key, fallback)}</span>
               </li>
             ))}
           </ul>
@@ -79,12 +81,12 @@ function UpgradePrompt(props) {
           <div className="upgrade-prompt-plan-head">
             <p className="upgrade-prompt-plan-tag upgrade-prompt-plan-tag--elite">ELITE</p>
           </div>
-          <p className="upgrade-prompt-plan-copy">{eliteSummary}</p>
-          <ul className="upgrade-prompt-features" aria-label="ELITE plan features">
-            {ELITE_FEATURES.map((f) => (
-              <li key={f} className="upgrade-prompt-feature-item upgrade-prompt-feature-item--elite">
+          <p className="upgrade-prompt-plan-copy">{tt('upgradePromptEliteSummary', eliteSummary)}</p>
+          <ul className="upgrade-prompt-features" aria-label={tt('upgradePromptEliteFeaturesAria', 'ELITE plan features')}>
+            {ELITE_FEATURES.map(([key, fallback]) => (
+              <li key={key} className="upgrade-prompt-feature-item upgrade-prompt-feature-item--elite">
                 <CheckIcon />
-                <span>{f}</span>
+                <span>{tt(key, fallback)}</span>
               </li>
             ))}
           </ul>
@@ -103,7 +105,7 @@ function UpgradePrompt(props) {
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
           <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
         </svg>
-        No payment charged in this step - cancel anytime.
+        {tt('upgradePromptTrustLine', 'No payment charged in this step - cancel anytime.')}
       </p>
     </article>
   );

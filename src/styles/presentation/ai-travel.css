@@ -20,11 +20,93 @@
   margin-top: 2px;
 }
 
+.triangulation-panel {
+  margin-top: 16px;
+  border-radius: 8px;
+  background:
+    linear-gradient(145deg, rgba(246, 251, 255, 0.96), rgba(236, 246, 255, 0.92)),
+    radial-gradient(560px 220px at 100% 0%, rgba(33, 118, 245, 0.12), transparent 74%);
+  padding: 18px;
+  gap: 14px;
+}
+
+.triangulation-badge,
+.triangulation-pill {
+  border-radius: 999px;
+  border: 1px solid rgba(70, 120, 190, 0.28);
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #28518a;
+  background: rgba(235, 246, 255, 0.86);
+  white-space: nowrap;
+}
+
+.triangulation-badge.is-live {
+  color: #21613e;
+  background: rgba(230, 248, 238, 0.86);
+  border-color: rgba(62, 150, 96, 0.28);
+}
+
+.triangulation-result-list {
+  gap: 10px;
+}
+
+.triangulation-result-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.triangulation-result-main {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
 .ai-travel-plan-note {
   margin: 0;
   font-size: 13px;
   font-weight: 600;
   color: #38649c;
+}
+
+.triangulation-how-it-works {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.triangulation-how-it-works span,
+.triangulation-prompt-examples > button {
+  border: 1px solid rgba(88, 136, 210, 0.22);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #2f5e98;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.25;
+  padding: 7px 10px;
+}
+
+.triangulation-prompt-examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.triangulation-prompt-examples > button {
+  text-align: left;
+  white-space: normal;
+  cursor: pointer;
+}
+
+.triangulation-prompt-examples > button:hover,
+.triangulation-prompt-examples > button:focus-visible {
+  border-color: rgba(47, 123, 240, 0.42);
+  background: rgba(232, 243, 255, 0.92);
 }
 
 .ai-travel-summary-card {
@@ -195,6 +277,38 @@
   color: #b5cff2;
 }
 
+.app-shell.app-dark .triangulation-panel {
+  background:
+    linear-gradient(145deg, rgba(21, 32, 49, 0.95), rgba(16, 25, 40, 0.92)),
+    radial-gradient(560px 220px at 100% 0%, rgba(41, 119, 230, 0.18), transparent 74%);
+}
+
+.app-shell.app-dark .triangulation-how-it-works span,
+.app-shell.app-dark .triangulation-prompt-examples > button {
+  border-color: rgba(106, 144, 201, 0.36);
+  background: rgba(20, 34, 53, 0.72);
+  color: #c4dcfb;
+}
+
+.app-shell.app-dark .triangulation-prompt-examples > button:hover,
+.app-shell.app-dark .triangulation-prompt-examples > button:focus-visible {
+  border-color: rgba(137, 185, 247, 0.52);
+  background: rgba(33, 58, 91, 0.82);
+}
+
+.app-shell.app-dark .triangulation-badge,
+.app-shell.app-dark .triangulation-pill {
+  border-color: rgba(106, 144, 201, 0.4);
+  background: rgba(20, 34, 53, 0.82);
+  color: #b9d3f6;
+}
+
+.app-shell.app-dark .triangulation-badge.is-live {
+  border-color: rgba(91, 167, 124, 0.42);
+  background: rgba(18, 54, 37, 0.76);
+  color: #b9f0cf;
+}
+
 @media (max-width: 900px) {
   .ai-travel-candidate-card {
     grid-template-columns: 1fr;
@@ -203,6 +317,10 @@
 
   .ai-travel-candidate-card > button {
     width: 100%;
+  }
+
+  .triangulation-result-card {
+    flex-direction: column;
   }
 }
 

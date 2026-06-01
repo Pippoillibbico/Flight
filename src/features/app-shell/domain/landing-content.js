@@ -1,5 +1,6 @@
 export function createLandingNavItems(t) {
   return [
+    { id: 'landing-ai-hacker', label: t('navAiHacker') || 'AI Flight Hacker' },
     { id: 'landing-chiamo', label: t('navChiSiamo') },
     { id: 'landing-pricing', label: t('navPricing') },
     { id: 'landing-contacts', label: t('navContacts') }
@@ -9,16 +10,17 @@ export function createLandingNavItems(t) {
 export function createLandingFeatureCards(t) {
   return [
     { color: 'blue', icon: '\u{1F50D}', title: t('landingFeature1Title'), desc: t('landingFeature1Desc'), step: '01' },
-    { color: 'teal', icon: '\u{1F514}', title: t('landingFeature2Title'), desc: t('landingFeature2Desc'), step: '02' },
-    { color: 'purple', icon: '\u{1F9ED}', title: t('landingFeature3Title'), desc: t('landingFeature3Desc'), step: '03' }
+    { color: 'teal', icon: '\u{1F9E0}', title: t('landingFeatureAiTitle') || 'AI Flight Hacker', desc: t('landingFeatureAiDesc') || 'Scrivi una richiesta naturale: l AI la trasforma in una ricerca intelligente con rotte alternative e tradeoff chiari.', step: '02' },
+    { color: 'purple', icon: '\u{1F9ED}', title: t('landingFeature3Title'), desc: t('landingFeature3Desc'), step: '03' },
+    { color: 'teal', icon: '\u{1F514}', title: t('landingFeature2Title'), desc: t('landingFeature2Desc'), step: '04' }
   ];
 }
 
 export function createLandingValueCards(t) {
   return [
-    { icon: '\u{1F4B8}', title: t('landingChiSiamoValue1'), desc: t('landingChiSiamoValue1Desc') },
-    { icon: '\u{1F512}', title: t('landingChiSiamoValue2'), desc: t('landingChiSiamoValue2Desc') },
-    { icon: '\u{1F680}', title: t('landingChiSiamoValue3'), desc: t('landingChiSiamoValue3Desc') }
+    { icon: '01', title: t('landingChiSiamoValue1'), desc: t('landingChiSiamoValue1Desc') },
+    { icon: '02', title: t('landingChiSiamoValue2'), desc: t('landingChiSiamoValue2Desc') },
+    { icon: '03', title: t('landingChiSiamoValue3'), desc: t('landingChiSiamoValue3Desc') }
   ];
 }
 
@@ -39,10 +41,14 @@ export function createLandingPricingPlans({ t, formatEur, onChooseFreePlan, onCh
       id: 'free',
       name: t('landingPricingFreeName') || 'Free',
       amountText: t('landingPricingFreePrice') || 'Free',
-      desc: t('landingPricingFreeDesc') || 'Perfect for occasional travellers',
-      features: [t('landingPricingFeatureFree1'), t('landingPricingFeatureFree2'), t('landingPricingFeatureFree3')],
-      monthlyBillingNote: 'Always free',
-      annualBillingNote: 'Always free',
+      desc: t('landingPricingFreeDesc') || 'Cached previews and static recommendations. No live AI or live flight-provider search.',
+      features: [
+        t('landingPricingFeatureFree1') || 'Cached previews, snapshots, and precomputed results',
+        t('landingPricingFeatureFree2') || 'Static recommendations and local search',
+        t('landingPricingFeatureFree3') || 'No live AI, live provider search, live triangulation, or live monitoring'
+      ],
+      monthlyBillingNote: t('landingPricingFreeBillingNote') || 'Always free',
+      annualBillingNote: t('landingPricingFreeBillingNote') || 'Always free',
       ctaClassName: 'landing-plan-cta ghost',
       ctaLabel: t('landingPricingCtaFree'),
       onClick: onChooseFreePlan,
@@ -57,10 +63,16 @@ export function createLandingPricingPlans({ t, formatEur, onChooseFreePlan, onCh
       annualDiscountTag: `Save ${formatEur(Math.round((proMonthly - proAnnual) * 12))} EUR/year`,
       currency: 'EUR',
       period: t('landingPricingMonthly'),
-      desc: t('landingPricingProDesc') || 'For regular travellers',
-      features: [t('landingPricingFeaturePro1'), t('landingPricingFeaturePro2'), t('landingPricingFeaturePro3'), t('landingPricingFeaturePro4'), t('landingPricingFeaturePro5')],
-      monthlyBillingNote: 'Billed monthly',
-      annualBillingNote: `Billed yearly at EUR ${formatEur(Math.round(proAnnual * 12))}`,
+      desc: t('landingPricingProDesc') || 'Live AI and flight search capabilities within plan quota.',
+      features: [
+        t('landingPricingFeaturePro1') || 'Live AI and provider-backed search when configured',
+        t('landingPricingFeaturePro2') || 'Live intelligent triangulations',
+        t('landingPricingFeaturePro3') || 'Flexible period and month scans within quota',
+        t('landingPricingFeaturePro4') || 'AI explanations for routes and tradeoffs',
+        t('landingPricingFeaturePro5') || 'Advanced search tools'
+      ],
+      monthlyBillingNote: t('landingPricingMonthlyBillingNote') || 'Billed monthly',
+      annualBillingNote: `${t('landingPricingAnnualBillingPrefix') || 'Billed yearly at EUR'} ${formatEur(Math.round(proAnnual * 12))}`,
       ctaClassName: 'landing-plan-cta landing-plan-cta-primary',
       ctaLabel: t('landingPricingCtaPro'),
       onClick: onChoosePremiumPlan,
@@ -75,10 +87,16 @@ export function createLandingPricingPlans({ t, formatEur, onChooseFreePlan, onCh
       annualDiscountTag: `Save ${formatEur(Math.round((eliteMonthly - eliteAnnual) * 12))} EUR/year`,
       currency: 'EUR',
       period: t('landingPricingMonthly'),
-      desc: t('landingPricingEliteDesc') || t('landingPricingCreatorDesc') || 'For professionals and analysts',
-      features: [t('landingPricingFeatureCreator1'), t('landingPricingFeatureCreator2'), t('landingPricingFeatureCreator3'), t('landingPricingFeatureCreator4'), t('landingPricingFeatureCreator5')],
-      monthlyBillingNote: 'Billed monthly',
-      annualBillingNote: `Billed yearly at EUR ${formatEur(Math.round(eliteAnnual * 12))}`,
+      desc: t('landingPricingEliteDesc') || 'Advanced automation, alerts, and monitoring for power users.',
+      features: [
+        t('landingPricingFeatureCreator1') || 'Everything in PRO',
+        t('landingPricingFeatureCreator2') || 'Advanced automations',
+        t('landingPricingFeatureCreator3') || 'Advanced alerts',
+        t('landingPricingFeatureCreator4') || 'Triangulation monitoring',
+        t('landingPricingFeatureCreator5') || 'Creator, digital nomad, and power-user workflows'
+      ],
+      monthlyBillingNote: t('landingPricingMonthlyBillingNote') || 'Billed monthly',
+      annualBillingNote: `${t('landingPricingAnnualBillingPrefix') || 'Billed yearly at EUR'} ${formatEur(Math.round(eliteAnnual * 12))}`,
       ctaClassName: 'landing-plan-cta ghost',
       ctaLabel: t('landingPricingCtaElite') || t('landingPricingCtaCreator'),
       onClick: onChoosePremiumPlan,

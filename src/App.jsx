@@ -132,6 +132,68 @@ import {
 
 const prefetchAdvancedAnalyticsChunk = () => import('./components/AdvancedAnalyticsSection');
 
+function renderUpgradeTriggerTemplate(template, values = {}) {
+  return String(template || '')
+    .replace('{count}', String(values.used ?? values.count ?? 0))
+    .replace('{limit}', values.limit === null || values.limit === undefined ? '' : String(values.limit));
+}
+
+function createLocalizedUpgradeTriggerContent(plan, context, options, t) {
+  const fallback = getUpgradeTriggerContent(plan, context, options);
+  const translate = (key, fallbackText) => {
+    if (typeof t !== 'function') return fallbackText;
+    const value = t(key);
+    return value && value !== key ? value : fallbackText;
+  };
+  const useTemplate = (key, fallbackText) => renderUpgradeTriggerTemplate(translate(key, fallbackText), options);
+
+  if (context === 'tracked_routes_limit') {
+    const isFree = String(plan || 'free').toLowerCase() === 'free';
+    return {
+      title: translate('opportunityFeedTrackingLimitTitle', fallback.title),
+      message: useTemplate(
+        isFree ? 'opportunityFeedTrackingLimitFreeMessage' : 'opportunityFeedTrackingLimitPaidMessage',
+        fallback.message
+      ),
+      proLabel: translate('opportunityFeedTrackingLimitProCta', fallback.proLabel),
+      eliteLabel: translate('opportunityFeedTrackingLimitEliteCta', fallback.eliteLabel)
+    };
+  }
+
+  if (context === 'ai_travel_limit') {
+    return {
+      title: translate('aiTravelLimitedTitle', fallback.title),
+      message: translate('aiTravelFreeNoAiNote', fallback.message),
+      proLabel: translate('pricingProCta', fallback.proLabel),
+      eliteLabel: translate('pricingEliteCta', fallback.eliteLabel)
+    };
+  }
+
+  if (context === 'limited_results_soft') {
+    return {
+      title: translate('upgradeTriggerLimitedResultsTitle', fallback.title),
+      message: translate('upgradeTriggerLimitedResultsMessage', fallback.message),
+      proLabel: translate('limitedResultsBannerCta', fallback.proLabel),
+      eliteLabel: translate('pricingEliteCta', fallback.eliteLabel)
+    };
+  }
+
+  if (context === 'deal_urgency') {
+    return {
+      title: translate('upgradeTriggerDealUrgencyTitle', fallback.title),
+      message: translate('upgradeTriggerDealUrgencyMessage', fallback.message),
+      proLabel: translate('upgradeTriggerDealUrgencyCta', fallback.proLabel),
+      eliteLabel: translate('pricingEliteCta', fallback.eliteLabel)
+    };
+  }
+
+  return {
+    ...fallback,
+    proLabel: translate('pricingProCta', fallback.proLabel),
+    eliteLabel: translate('pricingEliteCta', fallback.eliteLabel)
+  };
+}
+
 function App() {
   const {
     language,
@@ -610,7 +672,11 @@ function App() {
     [backendUserPlanType, localUserPlan]
   );
   const planEntitlements = useMemo(() => getPlanEntitlements(userPlanType), [userPlanType]);
-  const planComparisonRows = useMemo(() => getPlanComparisonRows(), []);
+  const planComparisonRows = useMemo(() => getPlanComparisonRows(t), [t]);
+  const getLocalizedUpgradeTriggerContent = useCallback(
+    (plan, context, options) => createLocalizedUpgradeTriggerContent(plan, context, options, t),
+    [t]
+  );
   const canUseRadarPlan = userPlanType === 'pro' || userPlanType === 'creator' || userPlanType === 'elite';
   const canUseAiTravelPlan = userPlanType === 'pro' || userPlanType === 'creator' || userPlanType === 'elite';
   const isMfaChallengeActive = Boolean(authMfa.ticket);
@@ -913,7 +979,7 @@ function App() {
     onboardingDraft,
     language,
     t,
-    getUpgradeTriggerContent,
+    getUpgradeTriggerContent: getLocalizedUpgradeTriggerContent,
     trackResultInteraction,
     sendAdminTelemetryEvent,
     beginSetAlertAuthFlow,
@@ -1189,7 +1255,8 @@ function App() {
     setActiveMainSection,
     api,
     token,
-    systemCapabilities
+    systemCapabilities,
+    t
   });
   // Keep ref in sync so useAppDataOperations can invoke the upgrade modal on 402 errors.
   openPlanUpgradeFlowRef.current = openPlanUpgradeFlow;
@@ -1223,7 +1290,7 @@ function App() {
     searchMode,
     t,
     utmParams,
-    resolveUpgradeTriggerContent: (trigger, meta) => getUpgradeTriggerContent(userPlanType, trigger, meta),
+    resolveUpgradeTriggerContent: (trigger, meta) => getLocalizedUpgradeTriggerContent(userPlanType, trigger, meta),
     saveRecentItineraryWithPlanGate,
     setOpportunityDetailUpgradePrompt,
     trackResultInteraction
@@ -1235,7 +1302,7 @@ function App() {
     userPlanType,
     resolveApiError,
     saveRecentItineraryWithPlanGate,
-    resolveUpgradeTriggerContent: (trigger, meta) => getUpgradeTriggerContent(userPlanType, trigger, meta),
+    resolveUpgradeTriggerContent: (trigger, meta) => getLocalizedUpgradeTriggerContent(userPlanType, trigger, meta),
     trackResultInteraction,
     trackItineraryOpened,
     clearOpportunityBookingError,
@@ -1361,7 +1428,7 @@ function App() {
       meta,
       evaluateUsageLimit,
       planEntitlements,
-      getUpgradeTriggerContent,
+      getUpgradeTriggerContent: getLocalizedUpgradeTriggerContent,
       userPlanType,
       setSubMessage
     });
@@ -1496,6 +1563,7 @@ function App() {
         userPlanType={userPlanType}
         activeMainSection={activeMainSection}
         setActiveMainSection={setActiveMainSection}
+        setShowLandingPage={setShowLandingPage}
       />
 
       {isAuthenticated && quota ? (
@@ -1515,6 +1583,7 @@ function App() {
           }
           trialEndsAt={user.trialEndsAt ?? null}
           onUpgrade={openPlanUpgradeFlow}
+          t={t}
         />
       ) : null}
 
@@ -1582,6 +1651,7 @@ function App() {
         openPremiumSectionFromUpgradeFlow={openPremiumSectionFromUpgradeFlow}
         checkoutLoading={checkoutLoading}
         searchLimitValueNote={t('searchLimitUpgradeCta')}
+        t={t}
       />
 
       {activeMainSection === 'admin' ? (
@@ -1616,7 +1686,6 @@ function App() {
           activateRadarFromHubWithTelemetry={activateRadarFromHubWithTelemetry}
           upgradeToPremium={upgradeToPremium}
           chooseElitePlan={chooseElitePlan}
-          searchForm={searchForm}
           opportunityFeed={opportunityFeed}
           destinationClustersLoading={destinationClustersLoading}
           destinationClustersError={destinationClustersError}
@@ -1700,6 +1769,7 @@ function App() {
       {activeMainSection === 'ai-travel' ? (
         <AiTravelMainSection
           isAuthenticated={isAuthenticated}
+          token={token}
           t={t}
           language={language}
           aiTravelPrompt={aiTravelPrompt}

@@ -24,7 +24,7 @@ export function createAiTravelOperations({
     if (String(userPlanType || 'free').toLowerCase() === 'free') {
       const content = getUpgradeTriggerContent(userPlanType, 'ai_travel_limit');
       setAiTravelResult(null);
-      setAiTravelError('Free includes public cached deals and basic route insights. AI tools are available on paid plans.');
+      setAiTravelError(t('aiTravelFreeNoAiNote'));
       setSubMessage(content.message);
       return;
     }

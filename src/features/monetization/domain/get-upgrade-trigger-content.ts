@@ -70,18 +70,18 @@ export function getUpgradeTriggerContent(
 
   if (context === 'limited_results_soft') {
     return {
-      title: 'Stai vedendo una versione limitata dei risultati',
-      message: 'Con PRO puoi sbloccare risultati reali e continuare a cercare senza restrizioni.',
-      proLabel: 'Sblocca risultati reali',
+      title: 'You are seeing a limited result preview',
+      message: 'PRO unlocks live results and lets you keep searching within your plan limits.',
+      proLabel: 'Unlock live results',
       eliteLabel: 'Go ELITE'
     };
   }
 
   if (context === 'deal_urgency') {
     return {
-      title: 'Questo prezzo potrebbe non restare disponibile a lungo',
-      message: 'Con PRO puoi verificare più rapidamente i risultati reali e seguire le opportunità migliori.',
-      proLabel: 'Verifica disponibilità',
+      title: 'This fare may not stay available for long',
+      message: 'PRO helps you verify live availability faster and keep the best opportunities in view.',
+      proLabel: 'Check availability',
       eliteLabel: 'Go ELITE'
     };
   }

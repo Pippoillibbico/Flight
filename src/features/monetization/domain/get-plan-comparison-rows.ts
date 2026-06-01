@@ -1,32 +1,37 @@
 import type { PlanComparisonRow } from '../types/index.ts';
 
-const PLAN_COMPARISON_ROWS: PlanComparisonRow[] = [
-  {
-    feature: 'Tracked routes',
-    free: 'Up to 1',
-    pro: 'Up to 10',
-    elite: 'Unlimited'
-  },
-  {
-    feature: 'Saved itineraries',
-    free: 'Up to 3',
-    pro: 'Up to 10',
-    elite: 'Unlimited'
-  },
-  {
-    feature: 'Radar level',
-    free: 'Basic',
-    pro: 'Advanced',
-    elite: 'Priority'
-  },
-  {
-    feature: 'AI Travel suggestions',
-    free: 'Not included',
-    pro: 'Full generation',
-    elite: 'Full + priority intelligence'
-  }
-];
+type Translator = (key: string) => string;
 
-export function getPlanComparisonRows(): PlanComparisonRow[] {
-  return PLAN_COMPARISON_ROWS;
+function label(t: Translator | undefined, key: string, fallback: string): string {
+  const translated = typeof t === 'function' ? t(key) : '';
+  return translated && translated !== key ? translated : fallback;
+}
+
+export function getPlanComparisonRows(t?: Translator): PlanComparisonRow[] {
+  return [
+  {
+    feature: label(t, 'upgradeFlowTrackedRoutes', 'Tracked routes'),
+    free: label(t, 'upgradeFlowUpToOne', 'Up to 1'),
+    pro: label(t, 'upgradeFlowUpToTen', 'Up to 10'),
+    elite: label(t, 'upgradeFlowUnlimited', 'Unlimited')
+  },
+  {
+    feature: label(t, 'upgradeFlowSavedItineraries', 'Saved itineraries'),
+    free: label(t, 'upgradeFlowUpToThree', 'Up to 3'),
+    pro: label(t, 'upgradeFlowUpToTen', 'Up to 10'),
+    elite: label(t, 'upgradeFlowUnlimited', 'Unlimited')
+  },
+  {
+    feature: label(t, 'upgradeFlowRadarLevel', 'Radar level'),
+    free: label(t, 'upgradeFlowBasic', 'Basic'),
+    pro: label(t, 'upgradeFlowAdvanced', 'Advanced'),
+    elite: label(t, 'upgradeFlowPriority', 'Priority')
+  },
+  {
+    feature: label(t, 'upgradeFlowAiTravelSuggestions', 'AI Travel suggestions'),
+    free: label(t, 'upgradeFlowNotIncluded', 'Not included'),
+    pro: label(t, 'upgradeFlowFullGeneration', 'Full generation'),
+    elite: label(t, 'upgradeFlowFullPriorityIntelligence', 'Full + priority intelligence')
+  }
+  ];
 }

@@ -178,6 +178,7 @@ function RadarSection(props) {
           message={tt('radarUpgradeMessage', 'FREE plan has limited radar. Unlock unlimited notifications and follows.')}
           primaryLabel={tt('opportunityFeedUpgradePrimaryCta', 'Upgrade to PRO')}
           secondaryLabel={tt('opportunityFeedUpgradeSecondaryCta', 'Discover ELITE')}
+          t={t}
           onUpgradePro={onUpgradePro}
           onUpgradeElite={onUpgradeElite}
         />

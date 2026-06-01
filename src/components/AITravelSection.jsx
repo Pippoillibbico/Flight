@@ -47,8 +47,8 @@ function AITravelSection(props) {
   const readStopLabel = (item) => {
     const stops = readStops(item);
     if (stops === null) return '';
-    if (stops === 0) return 'Direct';
-    return `${stops} stop${stops === 1 ? '' : 's'}`;
+    if (stops === 0) return tt('opportunityFeedDirect', 'Direct');
+    return `${stops} ${tt(stops === 1 ? 'searchResultStopSingular' : 'searchResultStopPlural', stops === 1 ? 'stop' : 'stops')}`;
   };
   const readRankingScore = (item) => Number(item?.rankingScore);
   const readExplanation = (item) => String(item?.explanation || '').trim();
@@ -63,11 +63,11 @@ function AITravelSection(props) {
     <section className="panel ai-travel-panel" data-testid="ai-travel-panel">
       <div className="ai-travel-header">
         <div className="panel-head">
-          <h2>{isFreePlan ? 'Public cached trip ideas' : tt('aiTravelPageTitle', 'Find your next trip with AI')}</h2>
+          <h2>{isFreePlan ? tt('aiTravelFreeTitle', 'Public cached trip ideas') : tt('aiTravelPageTitle', 'Find your next trip with AI')}</h2>
         </div>
         <p className="muted">
           {isFreePlan
-            ? 'Free uses public cached opportunities, basic route insights, and price trend previews.'
+            ? tt('aiTravelFreeSubtitle', 'Free uses public cached opportunities, basic route insights, and price trend previews.')
             : tt('aiTravelPageSubtitle', 'Describe what you are looking for and let the system find real opportunities already in the feed.')}
         </p>
       </div>
@@ -85,17 +85,17 @@ function AITravelSection(props) {
         </label>
         <p className="muted">
           {isFreePlan
-            ? 'No AI runs on Free. Upgrade for live scans, AI tools, and route alerts when delivery is enabled.'
+            ? tt('aiTravelFreeNoAiNote', 'No AI runs on Free. Upgrade for live scans, AI tools, and route alerts when delivery is enabled.')
             : tt('aiTravelPageHelper', 'AI interprets your request and filters real opportunities only, without inventing flights or prices.')}
         </p>
         {isFreePlan ? (
           <p className="muted ai-travel-plan-note" data-testid="ai-travel-plan-note">
-            Free shows public cached opportunities. Upgrade for live scans, AI tools, and route alerts when delivery is enabled.
+            {tt('aiTravelFreePlanNote', 'Free shows public cached opportunities. Upgrade for live scans, AI tools, and route alerts when delivery is enabled.')}
           </p>
         ) : null}
         <div className="item-actions ai-travel-actions">
           <button type="button" data-testid="ai-travel-run" onClick={isFreePlan ? onUpgradePro : onRun} disabled={loading || (!canUseAiTravel && !isFreePlan)}>
-            {loading ? tt('aiTravelRunLoading', 'Analyzing...') : isFreePlan ? 'Upgrade for live scans and AI tools' : tt('aiTravelRunCta', 'Ask AI')}
+            {loading ? tt('aiTravelRunLoading', 'Analyzing...') : isFreePlan ? tt('aiTravelFreeUpgradeCta', 'Upgrade for live scans and AI tools') : tt('aiTravelRunCta', 'Ask AI')}
           </button>
         </div>
       </section>
@@ -106,7 +106,7 @@ function AITravelSection(props) {
       {error ? <p className="error">{error}</p> : null}
       {result?.summary ? (
         <article className="ai-travel-summary-card" data-testid="ai-travel-summary-card">
-          <p className="ai-travel-summary-label">Summary</p>
+          <p className="ai-travel-summary-label">{tt('aiTravelSummaryLabel', 'Summary')}</p>
           <p className="ai-travel-summary-copy muted" data-testid="ai-travel-summary">{result.summary}</p>
         </article>
       ) : null}
@@ -114,17 +114,18 @@ function AITravelSection(props) {
       <section className="ai-travel-results-section" data-testid="ai-travel-results-section">
         {shouldShowLimitedPrompt ? (
           <UpgradePrompt
-            title="See more AI-generated itineraries"
-            message={`Showing ${visibleItemsCount} of ${totalItems} suggestions. Upgrade to unlock full AI generation and priority deal visibility.`}
-            primaryLabel="Upgrade to PRO"
-            secondaryLabel="Go ELITE"
+            title={tt('aiTravelLimitedTitle', 'See more AI-generated itineraries')}
+            message={tt('aiTravelLimitedMessage', 'Showing {visible} of {total} suggestions. Upgrade to unlock full AI generation and priority deal visibility.').replace('{visible}', visibleItemsCount).replace('{total}', totalItems)}
+            primaryLabel={tt('opportunityFeedUpgradePrimaryCta', 'Upgrade to PRO')}
+            secondaryLabel={tt('opportunityFeedUpgradeSecondaryCta', 'Discover ELITE')}
+            t={t}
             onUpgradePro={onUpgradePro}
             onUpgradeElite={onUpgradeElite}
           />
         ) : null}
         {items.length > 0 ? (
           <div className="panel-head">
-            <h3>Suggested itineraries</h3>
+            <h3>{tt('aiTravelSuggestedItinerariesTitle', 'Suggested itineraries')}</h3>
           </div>
         ) : null}
         <div className="list-stack ai-travel-candidate-list">
@@ -137,7 +138,7 @@ function AITravelSection(props) {
               <div className="ai-travel-candidate-main">
                 <div className="ai-travel-candidate-head">
                   <strong className="ai-travel-candidate-route">
-                    {readOrigin(item)} {'→'} {readDestination(item)} ({readDestinationIata(item)})
+                    {readOrigin(item)} {'->'} {readDestination(item)} ({readDestinationIata(item)})
                   </strong>
                   <span className="ai-travel-candidate-price">
                     {Math.round(readPrice(item))} {readCurrency(item)}
@@ -152,7 +153,7 @@ function AITravelSection(props) {
                 </div>
                 {Number.isFinite(readRankingScore(item)) ? (
                   <p className="ai-travel-candidate-rank" data-testid={`generated-ranking-${readId(item)}`}>
-                    Rank {readRankingScore(item)}
+                    {tt('aiTravelRankLabel', 'Rank')} {readRankingScore(item)}
                   </p>
                 ) : null}
                 {readExplanation(item) ? (

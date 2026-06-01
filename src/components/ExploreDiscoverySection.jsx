@@ -9,7 +9,7 @@ const ExploreDiscoverySectionPropsSchema = z
   .object({
     t: z.function().optional(),
     language: z.string().optional().default('it'),
-    dataSource: z.enum(['live', 'synthetic', 'internal']).optional().default('synthetic'),
+    dataSource: z.enum(['live', 'synthetic', 'internal', 'cached']).optional().default('synthetic'),
     origins: z.array(z.any()),
     value: z
       .object({

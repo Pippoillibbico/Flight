@@ -10,10 +10,10 @@
   position: relative;
   isolation: isolate;
   width: 100%;
-  max-width: 1220px;
+  max-width: 1180px;
   margin: 22px auto 30px;
   padding: clamp(22px, 3vw, 46px) clamp(14px, 2.8vw, 36px) clamp(18px, 2.5vw, 36px);
-  border-radius: 32px;
+  border-radius: 26px;
   border: 1px solid rgba(107, 147, 214, 0.46);
   overflow: hidden;
   background:
@@ -226,7 +226,7 @@
   display: flex;
   flex-direction: column;
   min-height: 100%;
-  border-radius: 24px;
+  border-radius: 20px;
   border: 1px solid rgba(87, 130, 203, 0.36);
   background:
     linear-gradient(170deg, rgba(15, 29, 49, 0.97), rgba(11, 21, 37, 0.96)),
@@ -236,14 +236,14 @@
 }
 
 .app-shell .ph-card:hover {
-  transform: translateY(-6px);
+  transform: translateY(-3px);
   border-color: rgba(138, 184, 255, 0.52);
   box-shadow: 0 30px 58px rgba(2, 8, 19, 0.66);
 }
 
 .app-shell .ph-card--featured {
   border-color: rgba(86, 188, 255, 0.84);
-  transform: translateY(-12px) scale(1.02);
+  transform: none;
   background:
     radial-gradient(300px 150px at 88% -8%, rgba(74, 187, 255, 0.24), transparent 70%),
     linear-gradient(165deg, #0e2840 0%, #0b2036 52%, #0a1a2f 100%);
@@ -254,7 +254,7 @@
 }
 
 .app-shell .ph-card--featured:hover {
-  transform: translateY(-16px) scale(1.024);
+  transform: translateY(-3px);
   box-shadow:
     0 42px 84px rgba(2, 9, 20, 0.8),
     0 0 0 1px rgba(121, 206, 255, 0.74),
@@ -374,9 +374,7 @@
   border: 1px solid rgba(103, 150, 225, 0.34);
   border-radius: 15px;
   padding: 12px 14px;
-  background:
-    linear-gradient(160deg, rgba(15, 30, 50, 0.9), rgba(10, 20, 34, 0.96)),
-    radial-gradient(220px 120px at 96% -8%, rgba(78, 161, 255, 0.16), transparent 72%);
+  background: rgba(8, 18, 32, 0.72);
   display: grid;
   gap: 4px;
 }
@@ -426,10 +424,10 @@
 }
 
 .app-shell .ph-val-box {
-  border: 1px solid rgba(102, 146, 216, 0.26);
-  border-radius: 14px;
+  border: 1px solid rgba(102, 146, 216, 0.2);
+  border-radius: 12px;
   padding: 12px;
-  background: rgba(11, 22, 39, 0.68);
+  background: rgba(9, 18, 32, 0.46);
   display: grid;
   gap: 8px;
 }
@@ -471,24 +469,7 @@
 }
 
 .app-shell .ph-meter-stops {
-  list-style: none;
-  margin: 2px 0 0;
-  padding: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-  opacity: 0.55;
-}
-
-.app-shell .ph-meter-stops li {
-  color: #7ea0c1;
-  font-size: 10px;
-}
-
-.app-shell .ph-meter-stop--active {
-  opacity: 1;
-  color: #d8efff;
-  font-weight: 700;
+  display: none;
 }
 
 .app-shell .ph-feats {
@@ -671,11 +652,11 @@
   }
 
   .app-shell .ph-card--featured {
-    transform: translateY(-8px) scale(1.01);
+    transform: none;
   }
 
   .app-shell .ph-card--featured:hover {
-    transform: translateY(-11px) scale(1.015);
+    transform: translateY(-3px);
   }
 }
 

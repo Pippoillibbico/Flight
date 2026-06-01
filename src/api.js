@@ -557,6 +557,12 @@ export const api = {
   queryAiTravel(token, body) {
     return request('/opportunities/ai/query', { method: 'POST', token, body });
   },
+  triangulationIntake(token, body) {
+    return request('/triangulation/intake', { method: 'POST', token, body });
+  },
+  triangulationSearch(token, body) {
+    return request('/triangulation/search', { method: 'POST', token, body });
+  },
   opportunityPipelineStatus(token) {
     return request('/opportunities/pipeline/status', { token });
   },

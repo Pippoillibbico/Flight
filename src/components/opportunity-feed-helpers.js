@@ -21,12 +21,23 @@ export function formatPrice(value, currency = 'EUR') {
   return String(currency).toUpperCase() === 'EUR' ? `${Math.round(amount)} EUR` : `${Math.round(amount)} ${currency}`;
 }
 
+function parseDateOnly(value) {
+  const raw = String(value || '').trim();
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+  return new Date(year, month - 1, day);
+}
+
 export function formatPeriod(item, locale, labels) {
   const formatter = new Intl.DateTimeFormat(locale, { month: 'short' });
   if (item?.depart_date && item?.return_date) {
-    const depart = new Date(item.depart_date);
-    const ret = new Date(item.return_date);
-    if (!Number.isNaN(depart.getTime()) && !Number.isNaN(ret.getTime())) {
+    const depart = parseDateOnly(item.depart_date);
+    const ret = parseDateOnly(item.return_date);
+    if (depart && ret && !Number.isNaN(depart.getTime()) && !Number.isNaN(ret.getTime())) {
       const departMonth = formatter.format(depart).replace('.', '');
       const returnMonth = formatter.format(ret).replace('.', '');
       return `${departMonth} - ${returnMonth}`;
@@ -86,21 +97,25 @@ export function localizeOpportunityDescription(item, language, labels) {
     .trim();
   if (!raw) return '';
   const isEnglish = String(language || 'it').toLowerCase().startsWith('en');
-  if (!isEnglish) return raw;
 
   const lower = raw.toLowerCase();
-  const looksItalianDescription =
+  const hasServerDateString = /\b(?:mon|tue|wed|thu|fri|sat|sun)\s+[a-z]{3}\s+\d{1,2}\s+\d{4}|\bgmt[+-]\d{4}|coordinated universal time/i.test(raw);
+  const looksGeneratedDescription =
     lower.includes('questa opportunit') ||
     lower.includes('prezzo competitivo') ||
     lower.includes('rotta') ||
     lower.includes('finestra viaggio') ||
     lower.includes('diretta') ||
     lower.includes('scalo');
-  if (!looksItalianDescription) return raw;
+  if (!looksGeneratedDescription && !hasServerDateString) return raw;
 
   const stopCount = Number(item?.stops || 0);
+  const period = formatPeriod(item, isEnglish ? 'en-US' : 'it-IT', labels);
+  if (!isEnglish) {
+    const routePart = stopCount === 0 ? 'una rotta diretta' : `una rotta con ${stopCount} ${stopCount === 1 ? 'scalo' : 'scali'}`;
+    return `Questa opportunita combina un prezzo competitivo, ${routePart} e una finestra di viaggio ${period}.`;
+  }
   const routePart = stopCount === 0 ? 'a direct route' : `a route with ${stopCount} stop${stopCount === 1 ? '' : 's'}`;
-  const period = item?.depart_date && item?.return_date ? `${item.depart_date} - ${item.return_date}` : labels.flexibleDates;
   return `This opportunity combines a competitive price, ${routePart}, and travel window ${period}.`;
 }
 

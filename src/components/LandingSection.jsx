@@ -141,6 +141,11 @@ function LandingSection(props) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [landingBillingCycle, setLandingBillingCycle] = useState('monthly');
   const isAnnualBilling = landingBillingCycle === 'annual';
+  const aiHackerBullets = [
+    t('landingAiHackerBullet1'),
+    t('landingAiHackerBullet2'),
+    t('landingAiHackerBullet3')
+  ].filter(Boolean);
   const billingCopy = resolveBillingCopy(language);
   const landingPricingPlansResolved = landingPricingPlans.map((plan) => {
     const period = String(plan.period || t('landingPricingMonthly') || '/month');
@@ -177,7 +182,7 @@ function LandingSection(props) {
           <a
             href="/"
             className="landing-brand-logo landing-brand-home-link"
-            aria-label="Torna alla home"
+            aria-label={t('landingHomeAria')}
             onClick={(event) => {
               event.preventDefault();
               if (typeof window !== 'undefined') {
@@ -311,6 +316,13 @@ function LandingSection(props) {
 
       {/* -- HERO ----------------------------------------- */}
       <section className="landing-hero">
+        <img
+          className="landing-hero-photo"
+          src="/flight-hacker-hero.png"
+          alt=""
+          aria-hidden="true"
+          loading="eager"
+        />
         <div className="landing-hero-deco" aria-hidden="true">
           <svg viewBox="0 0 520 320" fill="none" xmlns="http://www.w3.org/2000/svg">
             <circle cx="400" cy="80" r="180" fill="rgba(15,111,255,0.06)" />
@@ -350,34 +362,18 @@ function LandingSection(props) {
           <div className="landing-trust-row" aria-label="Trust signals">
             <span className="landing-trust-badge">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-              Free to start
+              {t('landingTrustFree')}
             </span>
             <span className="landing-trust-badge">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>
-              No credit card required
+              {t('landingTrustNoCard')}
             </span>
             <span className="landing-trust-badge">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-              Cancel anytime
+              {t('landingTrustCancel')}
             </span>
           </div>
 
-          <div className="landing-stats-row" aria-label="Opportunity radar highlights">
-            <div className="landing-stat">
-              <span className="landing-stat-icon" aria-hidden="true">✈</span>
-              <span className="landing-stat-copy">{t('landingStatsDestinations')}</span>
-            </div>
-            <div className="landing-stat-divider" aria-hidden="true" />
-            <div className="landing-stat">
-              <span className="landing-stat-icon" aria-hidden="true">🔔</span>
-              <span className="landing-stat-copy">{t('landingStatsAlert')}</span>
-            </div>
-            <div className="landing-stat-divider" aria-hidden="true" />
-            <div className="landing-stat">
-              <span className="landing-stat-icon" aria-hidden="true">🧠</span>
-              <span className="landing-stat-copy">{t('landingStatsAI')}</span>
-            </div>
-          </div>
         </div>
 
         {/* RIGHT — flight card mockups (desktop only) */}
@@ -459,6 +455,85 @@ function LandingSection(props) {
               <p className="landing-feature-desc">{card.desc}</p>
             </div>
           ))}
+        </div>
+      </section>
+
+      <section id="landing-ai-hacker" className="landing-ai-hacker-section">
+        <div className="landing-ai-hacker-wrap">
+          <div className="landing-ai-hacker-copy">
+            <p className="eyebrow">{t('landingAiHackerEyebrow') || 'AI Flight Hacker'}</p>
+            <h2 className="landing-section-title">{t('landingAiHackerTitle') || 'Trova rotte alternative che una ricerca normale non ti mostra.'}</h2>
+            <p className="landing-section-sub">
+              {t('landingAiHackerSubtitle') ||
+                'Describe the trip in natural language. Jetly compares bridge cities, direct routes, risk, savings, and comfort.'}
+            </p>
+            <div className="landing-ai-hacker-bullets" aria-label="AI Flight Hacker highlights">
+              {aiHackerBullets.map((item) => (
+                <div key={item} className="landing-ai-hacker-bullet">
+                  <span aria-hidden="true">✓</span>
+                  <strong>{item}</strong>
+                </div>
+              ))}
+            </div>
+            <div className="landing-ai-hacker-prompt">
+              “{t('landingAiHackerExamplePrompt')}”
+            </div>
+            <div className="landing-ai-hacker-actions">
+              <button
+                type="button"
+                className="landing-cta-primary"
+                onClick={() => (onHeroPrimaryCta ? onHeroPrimaryCta() : setShowLandingPage(false))}
+              >
+                {t('landingAiHackerPrimaryCta') || 'Try AI Flight Hacker'}
+              </button>
+              <button
+                type="button"
+                className="landing-cta-ghost"
+                onClick={() => scrollToSection('landing-pricing')}
+              >
+                {t('landingAiHackerSecondaryCta') || 'Compare plans'}
+              </button>
+            </div>
+          </div>
+          <div className="landing-ai-hacker-visual" aria-label="AI Flight Hacker preview">
+            <img
+              className="landing-ai-hacker-photo"
+              src="/flight-hacker-route.png"
+              alt=""
+              aria-hidden="true"
+              loading="lazy"
+            />
+            <div className="landing-route-lab">
+              <div className="landing-route-lab-head">
+                <span>{t('landingAiRouteLabLabel')}</span>
+                <strong>{'ROM -> BKK'}</strong>
+              </div>
+              <div className="landing-route-path">
+                <span>{t('landingAiRouteOriginCity')}</span>
+                <i />
+                <span>Budapest</span>
+                <i />
+                <span>Bangkok</span>
+              </div>
+              <div className="landing-route-result">
+                <div>
+                  <span>{t('landingAiRouteSavingsLabel')}</span>
+                  <strong>~160 EUR</strong>
+                </div>
+                <div>
+                  <span>{t('landingAiRouteRiskLabel')}</span>
+                  <strong>{t('landingAiRouteRiskValue')}</strong>
+                </div>
+                <div>
+                  <span>Score</span>
+                  <strong>84/100</strong>
+                </div>
+              </div>
+              <p>
+                {t('landingAiRouteWarning')}
+              </p>
+            </div>
+          </div>
         </div>
       </section>
 

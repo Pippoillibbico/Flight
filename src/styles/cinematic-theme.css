@@ -193,31 +193,31 @@ body.app-dark-active {
 }
 
 .app-shell.app-dark .app-hero-preview-card {
-  border: 1px solid rgba(123, 157, 207, 0.45);
-  border-radius: 16px;
-  padding: 12px;
+  border: 1px solid rgba(119, 157, 214, 0.34);
+  border-radius: 18px;
+  padding: 16px 18px;
   background:
-    linear-gradient(155deg, rgba(25, 38, 58, 0.9), rgba(18, 28, 44, 0.9)),
-    radial-gradient(140px 64px at 100% 0%, rgba(66, 125, 236, 0.26), transparent 75%);
-  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.34);
+    linear-gradient(155deg, rgba(21, 34, 52, 0.94), rgba(14, 24, 39, 0.94)),
+    radial-gradient(180px 82px at 100% 0%, rgba(66, 125, 236, 0.18), transparent 75%);
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.28);
   display: grid;
-  gap: 6px;
+  gap: 8px;
 }
 
 .app-shell.app-dark .app-hero-preview-card-accent {
-  border-color: rgba(45, 227, 213, 0.44);
+  border-color: rgba(104, 145, 202, 0.46);
   background:
-    linear-gradient(155deg, rgba(16, 42, 54, 0.9), rgba(18, 31, 47, 0.92)),
-    radial-gradient(150px 72px at 100% 0%, rgba(45, 227, 213, 0.24), transparent 74%);
+    linear-gradient(155deg, rgba(21, 34, 52, 0.96), rgba(13, 24, 39, 0.96)),
+    radial-gradient(180px 84px at 100% 0%, rgba(58, 132, 245, 0.22), transparent 74%);
 }
 
 .app-shell.app-dark .app-hero-preview-label {
   margin: 0;
-  color: #9ab3d0;
+  color: #9fb9d8;
   font-size: 11px;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-weight: 700;
+  letter-spacing: 0.12em;
+  font-weight: 800;
 }
 
 .app-shell.app-dark .app-hero-preview-value {
@@ -230,9 +230,10 @@ body.app-dark-active {
 
 .app-shell.app-dark .app-hero-preview-copy {
   margin: 0;
-  color: #bfd0e8;
-  font-size: 12px;
-  line-height: 1.35;
+  color: #d0dced;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.4;
 }
 
 .app-shell.app-dark .app-main-nav {
@@ -348,6 +349,203 @@ body.app-dark-active {
   background: rgba(15, 24, 37, 0.78);
 }
 
+.app-shell.app-dark .search-head-tools {
+  min-width: 0;
+  gap: 12px;
+}
+
+.app-shell.app-dark .search-head-tools .mode-switch {
+  position: relative;
+  overflow: visible;
+  padding-right: 2px;
+}
+
+.app-shell.app-dark .search-head-tools .mode-switch .tab {
+  min-height: 44px;
+  border: 1px solid rgba(111, 148, 202, 0.42);
+  background: rgba(18, 29, 45, 0.86);
+  color: #d7e5f8;
+  box-shadow: none;
+}
+
+.app-shell.app-dark .search-head-tools .mode-switch .tab:hover {
+  border-color: rgba(139, 179, 236, 0.64);
+  background: rgba(25, 42, 65, 0.94);
+  color: #f2f7ff;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.2);
+  transform: none;
+}
+
+.app-shell.app-dark .search-head-tools .mode-switch .tab.active,
+.app-shell.app-dark .search-head-tools .mode-switch .tab.active:hover {
+  border-color: rgba(69, 139, 247, 0.86);
+  background: linear-gradient(180deg, #2f87ff, #1668dc);
+  color: #ffffff;
+  box-shadow: 0 14px 28px rgba(24, 111, 240, 0.28);
+}
+
+.app-shell.app-dark .search-head-tools .mode-switch .info-tip {
+  flex: 0 0 auto;
+  z-index: 8;
+}
+
+.app-shell.app-dark .search-head-tools .mode-switch .info-tip-box {
+  left: auto;
+  right: 0;
+  bottom: calc(100% + 10px);
+  transform: none;
+  width: min(320px, 68vw);
+  max-width: min(320px, 68vw);
+  padding: 10px 12px;
+  border: 1px solid rgba(122, 158, 212, 0.42);
+  border-radius: 12px;
+  background: rgba(8, 15, 27, 0.98);
+  color: #eaf2ff;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.36);
+  z-index: 1000;
+}
+
+.app-shell.app-dark .trip-mode-toggle {
+  grid-column: 1 / -1;
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  gap: 8px;
+  padding: 4px;
+  border: 1px solid rgba(111, 148, 202, 0.28);
+  border-radius: 18px;
+  background: rgba(8, 15, 27, 0.46);
+}
+
+.app-shell.app-dark .trip-mode-toggle > .search-mode-toggle-btn {
+  min-width: 170px;
+  min-height: 48px;
+  border: 1px solid transparent !important;
+  border-radius: 14px;
+  background: transparent !important;
+  color: #cbd9ec !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+.app-shell.app-dark .trip-mode-toggle > .search-mode-toggle-btn:hover {
+  border-color: rgba(130, 169, 226, 0.46) !important;
+  background: rgba(25, 42, 65, 0.82) !important;
+  color: #f4f8ff !important;
+}
+
+.app-shell.app-dark .trip-mode-toggle > .search-mode-toggle-btn.active,
+.app-shell.app-dark .trip-mode-toggle > .search-mode-toggle-btn.active:hover {
+  border-color: rgba(69, 139, 247, 0.86) !important;
+  background: linear-gradient(180deg, #2f87ff, #1668dc) !important;
+  color: #ffffff !important;
+  box-shadow: 0 12px 28px rgba(24, 111, 240, 0.28) !important;
+}
+
+.app-shell.app-dark .multi-city-block {
+  grid-column: 1 / -1;
+  border: 1px solid rgba(111, 148, 202, 0.34);
+  border-radius: 18px;
+  padding: clamp(14px, 2vw, 18px);
+  background:
+    linear-gradient(145deg, rgba(16, 27, 43, 0.96), rgba(10, 18, 31, 0.96)),
+    radial-gradient(580px 220px at 100% 0%, rgba(47, 135, 255, 0.14), transparent 74%);
+  box-shadow: inset 0 1px 0 rgba(221, 235, 255, 0.06), 0 18px 38px rgba(0, 0, 0, 0.2);
+}
+
+.app-shell.app-dark .multi-city-head strong {
+  color: #f2f7ff;
+}
+
+.app-shell.app-dark .multi-city-head .muted {
+  color: #aebfd8;
+}
+
+.app-shell.app-dark .multi-city-row {
+  border: 1px solid rgba(111, 148, 202, 0.3);
+  border-radius: 16px;
+  padding: 14px;
+  background: rgba(14, 24, 39, 0.92);
+  box-shadow: none;
+}
+
+.app-shell.app-dark .multi-city-row-head strong,
+.app-shell.app-dark .multi-city-row label {
+  color: #e8f1ff;
+}
+
+.app-shell.app-dark .multi-city-row label {
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.app-shell.app-dark .multi-city-row input {
+  min-height: 50px;
+  border: 1px solid rgba(122, 158, 212, 0.42);
+  border-radius: 12px;
+  background: rgba(7, 13, 23, 0.9);
+  color: #f3f7ff;
+  box-shadow: none;
+}
+
+.app-shell.app-dark .multi-city-row input::placeholder {
+  color: #6f8199;
+}
+
+.app-shell.app-dark .multi-city-row input:focus {
+  border-color: rgba(117, 184, 255, 0.9);
+  box-shadow: 0 0 0 3px rgba(65, 145, 255, 0.22);
+}
+
+.app-shell.app-dark .multi-city-row-head .ghost {
+  min-height: 40px;
+  border-color: rgba(122, 158, 212, 0.34);
+  background: rgba(28, 41, 61, 0.84);
+  color: #e3edfb;
+}
+
+.app-shell.app-dark .multi-city-row-head .ghost:hover {
+  border-color: rgba(143, 180, 231, 0.64);
+  background: rgba(38, 56, 82, 0.94);
+  color: #ffffff;
+}
+
+.app-shell.app-dark .multi-city-actions .ghost {
+  border-color: rgba(122, 158, 212, 0.34);
+  background: rgba(18, 31, 49, 0.82);
+  color: #e3edfb;
+}
+
+.app-shell.app-dark .multi-city-form-errors {
+  border: 1px solid rgba(255, 99, 132, 0.24);
+  background: rgba(83, 18, 36, 0.28);
+}
+
+@media (max-width: 760px) {
+  .app-shell.app-dark .search-head-tools {
+    width: 100%;
+    align-items: stretch;
+  }
+
+  .app-shell.app-dark .search-head-tools .mode-switch {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .app-shell.app-dark .search-head-tools .mode-switch .tab {
+    flex: 1 1 140px;
+  }
+
+  .app-shell.app-dark .trip-mode-toggle {
+    width: 100%;
+  }
+
+  .app-shell.app-dark .trip-mode-toggle > .search-mode-toggle-btn {
+    min-width: 0;
+    flex: 1 1 0;
+  }
+}
+
 .app-shell.app-dark .search-quick-actions-panel,
 .app-shell.app-dark .search-top-picks-panel,
 .app-shell.app-dark .search-results-panel {
@@ -409,17 +607,19 @@ body.app-dark-active {
 }
 
 .app-shell.app-dark .opportunity-top-deal-card {
-  border-color: rgba(137, 170, 219, 0.5);
+  border-color: rgba(119, 157, 214, 0.42);
   background:
-    linear-gradient(145deg, rgba(19, 30, 45, 0.95), rgba(13, 22, 35, 0.95)),
-    radial-gradient(580px 220px at 96% 0%, rgba(255, 79, 179, 0.12), transparent 76%);
-  border-radius: 20px;
+    linear-gradient(145deg, rgba(18, 29, 45, 0.97), rgba(12, 21, 34, 0.96)),
+    radial-gradient(680px 260px at 100% 0%, rgba(38, 122, 245, 0.2), transparent 76%);
+  border-radius: 18px;
+  box-shadow: 0 22px 52px rgba(0, 0, 0, 0.24);
 }
 
 .app-shell.app-dark .opportunity-live-rail-item {
-  border: 1px solid rgba(120, 153, 204, 0.38);
-  border-radius: 14px;
-  background: rgba(16, 25, 39, 0.84);
+  border: 1px solid rgba(117, 150, 201, 0.36);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(19, 31, 47, 0.98), rgba(13, 22, 35, 0.98));
 }
 
 .app-shell.app-dark .opportunity-cluster-card,

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { validateProps } from '../utils/validateProps';
 import { formatRouteDisplayName } from '../utils/localizePlace';
+import { formatPeriod, localizeOpportunityDescription } from './opportunity-feed-helpers';
 import UpgradePrompt from './UpgradePrompt';
 
 const OpportunityDetailSectionPropsSchema = z
@@ -44,21 +45,6 @@ function OpportunityDetailSection(props) {
     if (!Number.isFinite(amount)) return '-';
     return String(currency).toUpperCase() === 'EUR' ? `${Math.round(amount)} EUR` : `${Math.round(amount)} ${currency}`;
   };
-  const normalizeWhyItMatters = (value) => {
-    const raw = String(value || '').trim();
-    if (!raw || !isEnglish) return raw;
-    const lower = raw.toLowerCase();
-    const looksItalian =
-      lower.includes('opportunit') ||
-      lower.includes('prezzo competitivo') ||
-      lower.includes('rotta') ||
-      lower.includes('finestra viaggio');
-    if (!looksItalian) return raw;
-    const period = detail?.item?.depart_date && detail?.item?.return_date ? `${detail.item.depart_date} - ${detail.item.return_date}` : tt('opportunityFeedFlexibleDates', 'Flexible dates');
-    const stops = Number(detail?.item?.stops || 0);
-    const route = stops === 0 ? 'a direct route' : `a route with ${stops} stop${stops === 1 ? '' : 's'}`;
-    return `This opportunity combines a competitive price, ${route}, and travel window ${period}.`;
-  };
   const item = detail?.item || null;
   const stops = Number(item?.stops);
   const normalizedStops = Number.isFinite(stops) ? stops : null;
@@ -73,7 +59,10 @@ function OpportunityDetailSection(props) {
   const tripLengthLabel = hasTripLength ? `${tripLengthDays} ${tt('days', 'days')}` : '-';
   const travelWindow =
     item?.depart_date && item?.return_date
-      ? `${item.depart_date} - ${item.return_date}`
+      ? formatPeriod(item, isEnglish ? 'en-US' : 'it-IT', {
+          departurePrefix: tt('opportunityFeedDeparturePrefix', 'Departure'),
+          flexibleDates: tt('opportunityFeedFlexibleDates', 'Flexible dates')
+        })
       : item?.depart_date || tt('opportunityFeedFlexibleDates', 'Flexible dates');
   const detailFacts = [
     { key: 'dates', label: tt('opportunityDetailDatesLabel', 'Dates'), value: travelWindow },
@@ -119,7 +108,12 @@ function OpportunityDetailSection(props) {
           {item.why_it_matters ? (
             <div className="opportunity-why-box">
               <strong className="opportunity-why-title">{tt('opportunityDetailWhyMattersTitle', 'Why this matters')}</strong>
-              <p className="opportunity-why-copy">{normalizeWhyItMatters(item.why_it_matters)}</p>
+              <p className="opportunity-why-copy">
+                {localizeOpportunityDescription({ ...item, ai_description: item.why_it_matters }, language, {
+                  departurePrefix: tt('opportunityFeedDeparturePrefix', 'Departure'),
+                  flexibleDates: tt('opportunityFeedFlexibleDates', 'Flexible dates')
+                })}
+              </p>
             </div>
           ) : null}
           <div className="item-actions opportunity-detail-actions">
@@ -147,6 +141,7 @@ function OpportunityDetailSection(props) {
               message={upgradePrompt.message}
               primaryLabel={upgradePrompt.primaryLabel}
               secondaryLabel={upgradePrompt.secondaryLabel}
+              t={t}
               onUpgradePro={() => onUpgradePro?.()}
               onUpgradeElite={() => onUpgradeElite?.()}
             />

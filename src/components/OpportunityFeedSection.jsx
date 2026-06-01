@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react';
 import { z } from 'zod';
 import { validateProps } from '../utils/validateProps';
-import { formatRouteDisplayName, localizeClusterDisplayName } from '../utils/localizePlace';
+import {
+  formatRouteDisplayName,
+  hasReadableOfferRouteDisplayName,
+  localizeClusterDisplayName
+} from '../utils/localizePlace';
 import {
   readTrackedRouteSlugs,
   subscribeToPersonalHubStorage,
@@ -59,7 +63,7 @@ const OpportunityFeedSectionPropsSchema = z
     onUpgradeElite: z.function(),
     // 'live' = prices from real providers; 'synthetic' = internal historical dataset.
     // Drives copy transparency for cached vs provider-backed inventory.
-    dataSource: z.enum(['live', 'synthetic', 'internal']).optional().default('synthetic')
+    dataSource: z.enum(['live', 'synthetic', 'internal', 'cached']).optional().default('synthetic')
   })
   .passthrough();
 
@@ -80,9 +84,7 @@ function OpportunityFeedSection(props) {
     onFollow,
     onAlert,
     onDiscover,
-    onActivateRadar,
     isAuthenticated,
-    radarSessionActivated,
     onCreateAccount,
     t,
     language,
@@ -135,7 +137,7 @@ function OpportunityFeedSection(props) {
       : (count) => tt('opportunityFeedSignalCount', `${count} opportunities in current analysis`).replace('{count}', count),
     updatedRecently: tt('opportunityFeedUpdatedRecently', 'Updated recently'),
     discoverCta: isFreePlan
-      ? tt('opportunityFeedDiscoverCtaFree', 'Explore public cached deals')
+      ? tt('opportunityFeedDiscoverCtaFree', isEnglish ? 'Explore free previews' : 'Esplora anteprime gratuite')
       : isLiveData
       ? tt('opportunityFeedDiscoverCta', 'Explore live deals')
       : tt('opportunityFeedDiscoverCtaSynthetic', 'Explore opportunities'),
@@ -147,17 +149,19 @@ function OpportunityFeedSection(props) {
     topDealSubtitle: isLiveData
       ? tt('opportunityFeedTopDealSubtitle', 'Real fare identified in the latest radar sweep. Prices may move quickly.')
       : tt('opportunityFeedTopDealSubtitleSynthetic', 'Strong pricing signal. Verify current availability before booking.'),
-    topDealCta: tt('opportunityFeedTopDealCta', 'View deal'),
+    topDealCta: tt('opportunityFeedTopDealCta', isEnglish ? 'View details' : 'Vedi dettagli'),
     topDealHot: 'Hot',
     topDealEmpty: tt('opportunityFeedTopDealEmpty', 'No high-priority signal right now; the radar is still scanning.'),
     topDealSavingLabel: tt('opportunityFeedTopDealSavingLabel', 'Saving vs average'),
     topDealSignalLabel: isLiveData
-      ? tt('opportunityFeedTopDealSignalLabel', 'Live fare verified')
-      : tt('opportunityFeedTopDealSignalLabelSynthetic', 'Historical signal'),
+      ? tt('opportunityFeedTopDealSignalLabel', isEnglish ? 'Live fare verified' : 'Tariffa live verificata')
+      : tt('opportunityFeedTopDealSignalLabelSynthetic', isEnglish ? 'Historical pricing signal' : 'Dato storico'),
+    hotStateLive: tt('opportunityFeedHotStateLive', isEnglish ? 'Live opportunities detected' : 'Opportunità live rilevate'),
+    hotStateSynthetic: tt('opportunityFeedHotStateSynthetic', isEnglish ? 'High-signal opportunities detected' : 'Opportunità ad alto segnale rilevate'),
     urgencyLabel: tt('opportunityFeedUrgencyLabel', 'Likely to disappear soon'),
     urgencyNoteSynthetic: tt(
       'opportunityFeedUrgencyNoteSynthetic',
-      isEnglish ? 'Historical signal: verify current fare before booking.' : 'Segnale storico: verifica la tariffa live prima di prenotare.'
+      isEnglish ? 'Cached signal: check the current fare before booking.' : 'Dato non live: verifica la tariffa aggiornata prima di prenotare.'
     ),
     topRailTitle: isFreePlan ? tt('opportunityFeedMoreCachedDeals', 'More public cached deals') : tt('opportunityFeedTopRailTitle', 'Also moving now'),
     topRailCta: tt('opportunityFeedTopRailCta', 'Open deal'),
@@ -227,20 +231,40 @@ function OpportunityFeedSection(props) {
       'Crea un account gratuito per sbloccare il feed completo e attivare il tuo radar.'
     ),
     softGateCta: tt('opportunityFeedSoftGateCta', 'Crea account gratis'),
+    softGateEyebrow: tt('softLoginGateEyebrow', isEnglish ? 'Unlock full feed' : 'Sblocca il feed completo'),
+    softGateNote: tt('softLoginGateNote', isEnglish ? 'Fast signup, no payment required for the Free plan.' : 'Registrazione rapida, nessun pagamento richiesto per il piano Free.'),
+    trackingLimitTitle: tt('opportunityFeedTrackingLimitTitle', isEnglish ? 'Tracking limit reached' : 'Limite elementi seguiti raggiunto'),
+    trackingLimitFreeMessage: tt('opportunityFeedTrackingLimitFreeMessage', isEnglish ? 'You are tracking {count}/{limit} routes. Upgrade to track more routes and avoid missing drops.' : 'Stai seguendo {count}/{limit} rotte. Passa a PRO per seguire piu rotte e non perdere i cali prezzo.'),
+    trackingLimitPaidMessage: tt('opportunityFeedTrackingLimitPaidMessage', isEnglish ? 'You are tracking {count}/{limit} routes. Go ELITE to unlock unlimited route tracking and priority deals.' : 'Stai seguendo {count}/{limit} rotte. Passa a ELITE per tracking illimitato e deal prioritari.'),
+    trackingLimitProCta: tt('opportunityFeedTrackingLimitProCta', isEnglish ? 'Upgrade to PRO' : 'Passa a PRO'),
+    trackingLimitCompareCta: tt('opportunityFeedTrackingLimitCompareCta', isEnglish ? 'Compare PRO value' : 'Confronta PRO'),
+    trackingLimitEliteCta: tt('opportunityFeedTrackingLimitEliteCta', isEnglish ? 'Go ELITE' : 'Passa a ELITE'),
+    trackingLimitNote: tt('opportunityFeedTrackingLimitNote', isEnglish ? 'This route is still visible. Upgrade to track it instantly.' : 'Questa rotta resta visibile. Fai upgrade per seguirla subito.'),
     upgradeTitle: tt('opportunityFeedUpgradeTitle', 'Vuoi vedere tutte le opportunit\u00e0?'),
     upgradeMessage: upgradeMessage || tt('upgradePromptUnlockAll', 'Sblocca tutte le opportunit\u00e0 con PRO'),
     upgradePrimary: tt('opportunityFeedUpgradePrimaryCta', 'Upgrade a PRO'),
     upgradeSecondary: tt('opportunityFeedUpgradeSecondaryCta', 'Scopri ELITE')
   };
   const errorMessages = Array.from(new Set([clustersError, error].map((value) => String(value || '').trim()).filter(Boolean)));
-  const visibleItems = isAuthenticated ? items : items.slice(0, 5);
+  const visibleItems = (isAuthenticated ? items : items.slice(0, 5)).filter((item) => {
+    const airline = String(item?.airline || '').trim().toLowerCase();
+    if (airline.includes('unit_test')) return false;
+    return hasReadableOfferRouteDisplayName(item, language);
+  });
+  const visibleClusters = clusters.filter((cluster) => {
+    const displayName = localizeClusterDisplayName(cluster, language);
+    if (!displayName) return false;
+    const opportunitiesCount = Number(cluster?.opportunities_count || 0);
+    const minPrice = Number(cluster?.min_price);
+    return opportunitiesCount >= 2 || (Number.isFinite(minPrice) && minPrice < 180);
+  });
+  const shouldShowClusters = Boolean(selectedCluster || clustersLoading || clustersError) || visibleClusters.length >= 2;
   const [trackedClusterSlugs, setTrackedClusterSlugs] = useState(() => new Set(readTrackedRouteSlugs()));
   const [showTrackedLimitPrompt, setShowTrackedLimitPrompt] = useState(false);
   const topDeal = pickTopDeal(visibleItems);
   const topDealSaving = toFiniteNumber(extractSavingValue(topDeal));
-  const liveSignalText = visibleItems.length > 0 ? labels.liveSignalCount(visibleItems.length) : labels.liveSignalActive;
   const hasHotDeals = visibleItems.some((item) => getRadarState(item) === 'radar_hot');
-  const topRailItems = visibleItems.filter((item) => item?.id !== topDeal?.id).slice(0, 3);
+  const topRailItems = isLiveData ? visibleItems.filter((item) => item?.id !== topDeal?.id).slice(0, 3) : [];
   const trackedRoutesCount = trackedClusterSlugs.size;
   const hasTrackedRoutesLimit = Number.isFinite(Number(trackedRoutesLimit)) && Number(trackedRoutesLimit) > 0;
   const normalizedTrackedRoutesLimit = hasTrackedRoutesLimit ? Math.round(Number(trackedRoutesLimit)) : null;
@@ -249,8 +273,8 @@ function OpportunityFeedSection(props) {
     normalizedTrackedRoutesLimit === null
       ? ''
       : planType === 'free'
-        ? `You\u2019re tracking ${trackedRoutesCount}/${normalizedTrackedRoutesLimit} routes. Track more routes and never miss a drop.`
-        : `You\u2019re tracking ${trackedRoutesCount}/${normalizedTrackedRoutesLimit} routes. Go ELITE to unlock unlimited route tracking and priority deals.`;
+        ? labels.trackingLimitFreeMessage.replace('{count}', trackedRoutesCount).replace('{limit}', normalizedTrackedRoutesLimit)
+        : labels.trackingLimitPaidMessage.replace('{count}', trackedRoutesCount).replace('{limit}', normalizedTrackedRoutesLimit);
 
   useEffect(() => {
     return subscribeToPersonalHubStorage(() => {
@@ -298,57 +322,12 @@ function OpportunityFeedSection(props) {
 
   return (
     <section className="panel opportunity-feed-panel" data-testid="opportunity-feed-panel">
-      <div className="opportunity-hero">
-        <p className="eyebrow">{labels.eyebrow}</p>
-        <h2>{labels.heroTitle}</h2>
-        <p className="hero-sub">{labels.heroSub}</p>
-        <p className="opportunity-live-signal" data-testid="opportunity-live-signal">
-          <span className="opportunity-live-dot" aria-hidden="true" />
-          <span>{liveSignalText}</span>
-        </p>
-        <div className="item-actions opportunity-hero-actions">
-          <button
-            type="button"
-            className="opportunity-discover-cta"
-            onClick={onDiscover}
-            data-testid="opportunity-hero-primary-cta"
-          >
-            {labels.discoverCta}
-          </button>
-          <button
-            type="button"
-            className="ghost opportunity-activate-radar-cta"
-            onClick={onActivateRadar}
-            data-testid="opportunity-hero-activate-radar-cta"
-          >
-            {labels.activateRadarCta}
-          </button>
-          {onRefresh ? (
-            <button
-              type="button"
-              className="ghost opportunity-refresh-feed-cta"
-              onClick={onRefresh}
-              disabled={loading}
-              data-testid="opportunity-hero-refresh-feed-cta"
-            >
-              {labels.refreshCta}
-            </button>
-          ) : null}
-        </div>
-        {radarSessionActivated ? (
-          <p className="opportunity-radar-session-message" data-testid="opportunity-radar-session-message">
-            Radar activated for this session
-          </p>
-        ) : null}
-        <p className="opportunity-live-note">{labels.updatedRecently}</p>
-      </div>
-
       <section className="opportunity-section opportunity-top-deal-section" data-testid="opportunity-top-deal-section">
         <div className="panel-head">
           <h3>{labels.topDealTitle}</h3>
         </div>
         {hasHotDeals ? (
-          <p className="opportunity-hot-state" data-testid="opportunity-hot-state">{isLiveData ? 'Live opportunities detected' : 'High-signal opportunities detected'}</p>
+          <p className="opportunity-hot-state" data-testid="opportunity-hot-state">{isLiveData ? labels.hotStateLive : labels.hotStateSynthetic}</p>
         ) : (
           <p className="opportunity-hot-empty" data-testid="opportunity-hot-empty">
             {labels.topDealEmpty}
@@ -361,14 +340,6 @@ function OpportunityFeedSection(props) {
               <div className="opportunity-top-deal-main">
                 <div className="opportunity-top-deal-head">
                   <strong className="opportunity-top-deal-route">{formatRouteDisplayName(topDeal, language)}</strong>
-                  <div className="opportunity-top-deal-badges">
-                    {getRadarState(topDeal) === 'radar_hot' ? (
-                      <span className="opportunity-urgency-pill" data-testid="opportunity-urgency-pill-top-deal">
-                        {labels.urgencyLabel}
-                      </span>
-                    ) : null}
-                    <span className="opportunity-top-deal-badge">{topDealBadge(topDeal, labels)}</span>
-                  </div>
                 </div>
                 <p className="opportunity-top-deal-price">{formatPrice(topDeal?.price, topDeal?.currency)}</p>
                 {topDealSaving !== null && topDealSaving > 0 ? (
@@ -388,6 +359,14 @@ function OpportunityFeedSection(props) {
                 </p>
               </div>
               <div className="item-actions opportunity-top-deal-actions">
+                <div className="opportunity-top-deal-badges">
+                  {getRadarState(topDeal) === 'radar_hot' ? (
+                    <span className="opportunity-urgency-pill" data-testid="opportunity-urgency-pill-top-deal">
+                      {labels.urgencyLabel}
+                    </span>
+                  ) : null}
+                  <span className="opportunity-top-deal-badge">{topDealBadge(topDeal, labels)}</span>
+                </div>
                 <button
                   type="button"
                   className="opportunity-view-itinerary-cta"
@@ -403,19 +382,28 @@ function OpportunityFeedSection(props) {
                 <p className="opportunity-live-rail-title">{labels.topRailTitle}</p>
                 {topRailItems.map((item) => (
                   <article key={item.id} className="opportunity-live-rail-item" data-testid={`opportunity-live-rail-item-${item.id}`}>
-                    <strong className="opportunity-live-rail-route">{formatRouteDisplayName(item, language)}</strong>
-                    <p className="opportunity-live-rail-price">{formatPrice(item?.price, item?.currency)}</p>
-                    <p className="opportunity-live-rail-meta">
-                      {formatTripType(item, labels)} | {item?.stops === 0 ? labels.direct : `${item?.stops} ${labels.stopsSuffix}`}
-                    </p>
-                    <p className="opportunity-activity-signal">{buildActivitySignal(item?.id || item?.destination_airport, labels)}</p>
-                    <button
-                      type="button"
-                      className="opportunity-view-itinerary-cta opportunity-live-rail-cta"
-                      onClick={() => onView(item.id)}
-                    >
-                      {labels.topRailCta}
-                    </button>
+                    <div className="opportunity-live-rail-head">
+                      <div className="opportunity-live-rail-route-block">
+                        <strong className="opportunity-live-rail-route">{formatRouteDisplayName(item, language)}</strong>
+                      </div>
+                      <span className="opportunity-live-rail-mini-badge">{topDealBadge(item, labels)}</span>
+                    </div>
+                    <div className="opportunity-live-rail-value">
+                      <p className="opportunity-live-rail-price">{formatPrice(item?.price, item?.currency)}</p>
+                      <p className="opportunity-live-rail-meta">
+                        {formatTripType(item, labels)} | {item?.stops === 0 ? labels.direct : `${item?.stops} ${labels.stopsSuffix}`}
+                      </p>
+                    </div>
+                    <div className="opportunity-live-rail-footer">
+                      <p className="opportunity-activity-signal">{buildActivitySignal(item?.id || item?.destination_airport, labels)}</p>
+                      <button
+                        type="button"
+                        className="opportunity-view-itinerary-cta opportunity-live-rail-cta"
+                        onClick={() => onView(item.id)}
+                      >
+                        {labels.topRailCta}
+                      </button>
+                    </div>
                   </article>
                 ))}
               </div>
@@ -426,6 +414,7 @@ function OpportunityFeedSection(props) {
         )}
       </section>
 
+      {shouldShowClusters ? (
       <section className="opportunity-section opportunity-clusters-section">
         <div className="panel-head">
           <h3>{labels.clusterTitle}</h3>
@@ -447,18 +436,18 @@ function OpportunityFeedSection(props) {
         )}
         {trackedRoutesLimitReached ? (
           <article className="opportunity-inline-upgrade" data-testid="opportunity-track-limit-prompt">
-            <p className="opportunity-inline-upgrade-title">Tracking limit reached</p>
+            <p className="opportunity-inline-upgrade-title">{labels.trackingLimitTitle}</p>
             <p className="muted">{trackedRoutesLimitMessage}</p>
             <div className="item-actions">
               <button type="button" onClick={onUpgradePro} data-testid="opportunity-track-limit-upgrade-pro">
-                {planType === 'free' ? 'Upgrade to PRO' : 'Compare PRO value'}
+                {planType === 'free' ? labels.trackingLimitProCta : labels.trackingLimitCompareCta}
               </button>
               <button type="button" className="ghost" onClick={onUpgradeElite} data-testid="opportunity-track-limit-upgrade-elite">
-                Go ELITE
+                {labels.trackingLimitEliteCta}
               </button>
             </div>
             {showTrackedLimitPrompt ? (
-              <p className="opportunity-inline-upgrade-note">This route is still visible. Upgrade to track it instantly.</p>
+              <p className="opportunity-inline-upgrade-note">{labels.trackingLimitNote}</p>
             ) : null}
           </article>
         ) : null}
@@ -466,11 +455,11 @@ function OpportunityFeedSection(props) {
         {errorMessages.map((message) => (
           <p key={message} className="error">{message}</p>
         ))}
-        {!clustersLoading && !clustersError && clusters.length === 0 ? (
+        {!clustersLoading && !clustersError && visibleClusters.length === 0 ? (
           <p className="muted">{labels.noClusters}</p>
         ) : null}
         <div className="opportunity-cluster-list">
-          {clusters.map((cluster) => {
+          {visibleClusters.map((cluster) => {
             const isActive = selectedCluster === cluster.slug;
             const slug = String(cluster?.slug || '').trim().toLowerCase();
             const isTracked = trackedClusterSlugs.has(slug);
@@ -524,6 +513,7 @@ function OpportunityFeedSection(props) {
           })}
         </div>
       </section>
+      ) : null}
 
       <section className="opportunity-section opportunity-feed-results-section">
         <div className="panel-head">
@@ -531,7 +521,7 @@ function OpportunityFeedSection(props) {
         </div>
         <p className="muted">{labels.todaySub}</p>
         {loading ? <p className="muted">{labels.opportunitiesLoading}</p> : null}
-        {!loading && items.length === 0 && isAuthenticated ? (
+        {!loading && visibleItems.length === 0 ? (
           <article className="opportunity-empty-state" data-testid="opportunity-empty-state">
             <p className="muted">{labels.noItems}</p>
             <div className="item-actions">
@@ -604,6 +594,7 @@ function OpportunityFeedSection(props) {
               message={labels.upgradeMessage}
               primaryLabel={labels.upgradePrimary}
               secondaryLabel={labels.upgradeSecondary}
+              t={t}
               onUpgradePro={onUpgradePro}
               onUpgradeElite={onUpgradeElite}
             />
@@ -613,6 +604,8 @@ function OpportunityFeedSection(props) {
               title={labels.softGateTitle}
               description={labels.softGateDesc}
               ctaLabel={labels.softGateCta}
+              eyebrowLabel={labels.softGateEyebrow}
+              noteLabel={labels.softGateNote}
               onCreateAccount={onCreateAccount}
             />
           ) : null}

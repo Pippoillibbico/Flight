@@ -1,9 +1,11 @@
 import AITravelSection from '../../../components/AITravelSection';
 import OpportunityDetailSection from '../../../components/OpportunityDetailSection';
 import SectionAccessGate from '../../../components/SectionAccessGate';
+import TriangulationSection from '../../../components/TriangulationSection';
 
 export default function AiTravelMainSection({
   isAuthenticated,
+  token,
   t,
   language,
   aiTravelPrompt,
@@ -35,6 +37,8 @@ export default function AiTravelMainSection({
         title={t('aiTravelPageTitle')}
         description={t('aiTravelPageSubtitle')}
         ctaLabel={t('signInToUseAiTravel')}
+        eyebrowLabel={t('sectionAccessMembersOnly')}
+        noteLabel={t('sectionAccessCreateAccountNote')}
         onCta={() => requireSectionLogin('ai-travel')}
       />
     );
@@ -56,6 +60,14 @@ export default function AiTravelMainSection({
         canUseAiTravel={canUseAiTravelPlan}
         onUpgradePro={() => upgradeToPremium('ai_travel_prompt')}
         onUpgradeElite={() => chooseElitePlan('ai_travel_prompt')}
+      />
+      <TriangulationSection
+        token={token}
+        planType={userPlanType}
+        t={t}
+        language={language}
+        onUpgradePro={() => upgradeToPremium('triangulation_prompt')}
+        onUpgradeElite={() => chooseElitePlan('triangulation_prompt')}
       />
       {opportunityDetailLoading || opportunityDetailError || opportunityDetail ? (
         <OpportunityDetailSection
@@ -82,4 +94,3 @@ export default function AiTravelMainSection({
     </>
   );
 }
-

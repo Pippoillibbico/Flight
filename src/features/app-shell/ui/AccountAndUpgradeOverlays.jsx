@@ -7,7 +7,7 @@ function formatCheckoutAmount(value) {
   return `EUR ${safeAmount.toFixed(2)}`;
 }
 
-function createCheckoutCart(planType, billingPricing) {
+function createCheckoutCart(planType, billingPricing, t) {
   const normalizedPlanType = planType === 'elite' ? 'elite' : 'pro';
   const pricing =
     normalizedPlanType === 'elite'
@@ -17,7 +17,7 @@ function createCheckoutCart(planType, billingPricing) {
   const amountLabel = formatCheckoutAmount(amount);
   return {
     planName: normalizedPlanType === 'elite' ? 'Flight Suite Elite' : 'Flight Suite Pro',
-    intervalLabel: 'Monthly subscription',
+    intervalLabel: t('upgradeFlowMonthlySubscription'),
     quantity: 1,
     unitAmountLabel: amountLabel,
     totalLabel: amountLabel
@@ -74,10 +74,11 @@ export default function AccountAndUpgradeOverlays({
   submitPlanUpgradeInterest,
   openPremiumSectionFromUpgradeFlow,
   checkoutLoading,
-  searchLimitValueNote
+  searchLimitValueNote,
+  t
 }) {
   const checkoutCart = upgradePlanContent
-    ? createCheckoutCart(upgradePlanContent.planType, billingPricing)
+    ? createCheckoutCart(upgradePlanContent.planType, billingPricing, t)
     : null;
 
   return (
@@ -131,7 +132,20 @@ export default function AccountAndUpgradeOverlays({
         checkoutLoading={checkoutLoading}
         checkoutCart={checkoutCart}
         comparisonRows={planComparisonRows}
-        valueNoteLabel={upgradeFlowState.source === 'search_limit' ? searchLimitValueNote : undefined}
+        valueNoteLabel={upgradeFlowState.source === 'search_limit' ? searchLimitValueNote : t('upgradeFlowValueNote')}
+        closeLabel={t('close')}
+        comparePlansLabel={t('upgradeFlowComparePlans')}
+        goToPremiumLabel={t('upgradeFlowGoToPremium')}
+        trustLineLabel={t('upgradeFlowTrustLine')}
+        planSpotlightLabel={t('upgradeFlowPlanSpotlight')}
+        planComparisonLabel={t('upgradeFlowPlanComparison')}
+        planComparisonAriaLabel={t('upgradeFlowPlanComparisonAria')}
+        featureLabel={t('upgradeFlowFeatureLabel')}
+        currentPlanLabel={t('upgradeFlowCurrentPlan')}
+        checkoutCartLabel={t('upgradeFlowCheckoutCart')}
+        checkoutProviderLabel={t('upgradeFlowCheckoutProvider')}
+        totalTodayLabel={t('upgradeFlowTotalToday')}
+        checkoutLoadingLabel={t('upgradeFlowOpeningCheckout')}
         onClose={closePlanUpgradeFlow}
         onPrimaryAction={submitPlanUpgradeInterest}
         onOpenPremiumSection={openPremiumSectionFromUpgradeFlow}

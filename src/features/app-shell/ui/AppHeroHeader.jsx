@@ -22,7 +22,8 @@ export default function AppHeroHeader({
   radarSessionActivated,
   userPlanType,
   activeMainSection,
-  setActiveMainSection
+  setActiveMainSection,
+  setShowLandingPage
 }) {
   const heroLabels = {
     radarSnapshots: t('heroRadarSnapshots'),
@@ -36,8 +37,11 @@ export default function AppHeroHeader({
   const shouldShowRadarPreview = isAuthenticated || radarMatchCount > 0 || radarSessionActivated;
   const goHome = () => {
     setActiveMainSection('home');
+    if (typeof setShowLandingPage === 'function') {
+      setShowLandingPage(true);
+    }
     if (typeof window !== 'undefined') {
-      window.history.replaceState(null, '', window.location.pathname);
+      window.history.replaceState(null, '', '/');
       window.requestAnimationFrame(() => {
         window.scrollTo({ top: 0, behavior: 'smooth' });
       });

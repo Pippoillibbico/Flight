@@ -18,7 +18,8 @@ export function useUpgradeFlowController({
   // Optional: pass to sync server-side plan when mock billing is enabled.
   api = null,
   token = null,
-  systemCapabilities = null
+  systemCapabilities = null,
+  t = null
 }) {
   const [upgradeFlowState, setUpgradeFlowState] = useState(() => createUpgradeFlowState());
   const [checkoutLoading, setCheckoutLoading] = useState(false);
@@ -30,8 +31,8 @@ export function useUpgradeFlowController({
   });
 
   const upgradePlanContent = useMemo(
-    () => (upgradeFlowState.planType ? getUpgradePlanContent(upgradeFlowState.planType, upgradeFlowState.source) : null),
-    [upgradeFlowState.planType, upgradeFlowState.source]
+    () => (upgradeFlowState.planType ? getUpgradePlanContent(upgradeFlowState.planType, upgradeFlowState.source, t) : null),
+    [upgradeFlowState.planType, upgradeFlowState.source, t]
   );
 
   const openPlanUpgradeFlow = useCallback(
@@ -66,6 +67,7 @@ export function useUpgradeFlowController({
     persistUpgradeInterest(planType, source, user?.id ? String(user.id) : null);
 
     // ── Real Stripe checkout (production path) ─────────────────────────────
+    // Real Stripe checkout (production path).
     // When Stripe is configured (billing_mock_mode !== true) redirect the user
     // to a real Stripe Checkout session instead of applying a local plan change.
     if (!mockBillingEnabled && api && token) {
@@ -82,9 +84,9 @@ export function useUpgradeFlowController({
           return; // Navigation started — do not continue
         }
         // No URL returned — fall through to mock path
-        setSubMessage('Checkout unavailable right now. Please try again.');
+        setSubMessage(typeof t === 'function' ? t('upgradeFlowCheckoutUnavailable') : 'Checkout unavailable right now. Please try again.');
       } catch {
-        setSubMessage('Unable to start checkout. Please try again.');
+        setSubMessage(typeof t === 'function' ? t('upgradeFlowCheckoutStartFailed') : 'Unable to start checkout. Please try again.');
       } finally {
         setCheckoutLoading(false);
       }
@@ -92,6 +94,7 @@ export function useUpgradeFlowController({
     }
 
     // ── Mock / demo path (dev/test only) ────────────────────────────────────
+    // Mock/demo path (dev/test only).
     if (mockBillingEnabled) {
       applyLocalPlanChange(planType);
       setUpgradeFlowState((current) => submitUpgradeFlow(current));
@@ -101,13 +104,14 @@ export function useUpgradeFlowController({
       }
       return;
     }
-    setSubMessage('Checkout unavailable right now. Please try again.');
+    setSubMessage(typeof t === 'function' ? t('upgradeFlowCheckoutUnavailable') : 'Checkout unavailable right now. Please try again.');
   }, [
     api,
     applyLocalPlanChange,
     mockBillingEnabled,
     setSubMessage,
     token,
+    t,
     upgradeFlowState.isOpen,
     upgradeFlowState.planType,
     upgradeFlowState.source,
