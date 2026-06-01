@@ -128,4 +128,4 @@ Use Stripe test mode only:
 
 - Provider-backed labels can be longer than mocked labels.
 - A signed Stripe callback has not yet been observed on a deployed staging endpoint.
-- The backend triangulation preview payload still contains Italian prose; the frontend currently replaces that prose with localized copy.
+- The backend triangulation cached-preview payload is locale-neutral and exposes stable message codes; user-facing localization remains in the frontend.
