@@ -27,6 +27,11 @@ const BLOCKED_TERMS = [
   'serpapi'
 ];
 
+function includesBlockedTerm(line, term) {
+  if (term !== 'sabre') return line.includes(term);
+  return /(^|[^a-z0-9])sabre([^a-z0-9]|$)/.test(line);
+}
+
 function normalizePath(path) {
   return String(path || '').replace(/\\/g, '/').toLowerCase();
 }
@@ -71,7 +76,7 @@ async function run() {
     lines.forEach((line, idx) => {
       const normalized = line.toLowerCase();
       for (const term of BLOCKED_TERMS) {
-        if (!normalized.includes(term)) continue;
+        if (!includesBlockedTerm(normalized, term)) continue;
         if (hasAllowedContext(normalizedFile, line)) continue;
         violations.push(`${file}:${idx + 1}: ${line.trim()}`);
       }
