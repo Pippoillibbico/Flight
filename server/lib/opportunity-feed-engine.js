@@ -16,6 +16,7 @@
 import { ROUTES } from '../data/local-flight-data.js';
 import { buildSeasonalContext } from './seasonal-context-engine.js';
 import { buildAffiliateLink } from './affiliate-links.js';
+import { loadOurAirportsCatalog } from './ourairports-catalog.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -66,6 +67,15 @@ function resolveFallbackOrigin(preferredOrigin) {
   if (safePreferred && ROUTES.some((route) => route.origin === safePreferred)) return safePreferred;
   if (ROUTES.some((route) => route.origin === 'FCO')) return 'FCO';
   return String(ROUTES[0]?.origin || safePreferred || 'FCO').trim().toUpperCase();
+}
+
+function resolveAirportCity(iata, fallback = '') {
+  const code = String(iata || '').trim().toUpperCase();
+  const catalog = loadOurAirportsCatalog();
+  const city = String(catalog?.airportsByIata?.[code]?.municipality || '').trim();
+  if (city) return city;
+  const safeFallback = String(fallback || '').trim();
+  return /^[A-Z]{3}$/.test(safeFallback) ? '' : safeFallback;
 }
 
 function buildEmergencyScoredItem(origin, month) {
@@ -291,7 +301,11 @@ function toFeedItem(item, category, departureDate, returnDate) {
   return {
     id: `${route.origin}-${route.destinationIata}-${String(departureDate).slice(0, 7)}`,
     origin_iata: route.origin,
+    origin_city: resolveAirportCity(route.origin),
+    origin_airport: route.origin,
     destination_iata: route.destinationIata,
+    destination_city: resolveAirportCity(route.destinationIata, route.destinationName),
+    destination_airport: route.destinationIata,
     destination_name: route.destinationName,
     country: route.country,
     region: route.region,

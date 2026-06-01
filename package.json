@@ -34,6 +34,7 @@
     "worker:detected-deals": "node scripts/run-worker.mjs detected-deals",
     "worker:price-alerts": "node scripts/run-worker.mjs price-alerts",
     "worker:ourairports-refresh": "node scripts/run-worker.mjs ourairports-refresh",
+    "generate:ourairports-frontend-maps": "node scripts/generate-ourairports-frontend-maps.mjs",
     "billing:stripe:sync-plans": "node scripts/stripe-sync-plans.mjs",
     "seed:price-observations": "node scripts/seed-price-observations.mjs",
     "test": "node scripts/run-node-tests-isolated.mjs -- node --test --test-concurrency=1 --test-isolation=none test/**/*.test.mjs",

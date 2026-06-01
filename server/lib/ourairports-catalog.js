@@ -1,5 +1,6 @@
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 import { OURAIRPORTS_IATA_SET } from '../../src/data/ourairports-iata.js';
 
@@ -112,6 +113,17 @@ function normalizeNumber(value) {
   return Number.isFinite(number) ? number : null;
 }
 
+function hashDatasets(rawDatasets) {
+  const hash = createHash('sha256');
+  for (const [name, body] of Object.entries(rawDatasets).sort(([a], [b]) => a.localeCompare(b))) {
+    hash.update(name);
+    hash.update('\0');
+    hash.update(String(body || ''));
+    hash.update('\0');
+  }
+  return hash.digest('hex');
+}
+
 async function fetchDataset(name, definition, { fetchImpl = fetch } = {}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), DOWNLOAD_TIMEOUT_MS);
@@ -138,7 +150,7 @@ async function fetchDataset(name, definition, { fetchImpl = fetch } = {}) {
   }
 }
 
-function buildUsefulCatalog(rawDatasets) {
+function buildUsefulCatalog(rawDatasets, { sourceChecksum } = {}) {
   const countries = {};
   for (const country of rowsToObjects(rawDatasets.countries || '')) {
     const code = normalizeText(country.code, 8).toUpperCase();
@@ -185,6 +197,7 @@ function buildUsefulCatalog(rawDatasets) {
   return {
     generatedAt: new Date().toISOString(),
     source: 'https://ourairports.com/data/',
+    sourceChecksum,
     datasets: Object.fromEntries(
       Object.entries(rawDatasets).map(([name, csvText]) => [
         name,
@@ -212,7 +225,7 @@ export function getOurAirportsDatasetDefinitions() {
   return DATASETS;
 }
 
-export async function refreshOurAirportsCatalog({ catalogPath = DEFAULT_CATALOG_PATH, fetchImpl = fetch } = {}) {
+export async function refreshOurAirportsCatalog({ catalogPath = DEFAULT_CATALOG_PATH, fetchImpl = fetch, force = false } = {}) {
   const rawDatasets = {};
   const startedAt = Date.now();
   const tempDir = resolve(process.cwd(), 'data', 'ourairports', '.tmp');
@@ -222,7 +235,22 @@ export async function refreshOurAirportsCatalog({ catalogPath = DEFAULT_CATALOG_
     for (const [name, definition] of Object.entries(DATASETS)) {
       rawDatasets[name] = await fetchDataset(name, definition, { fetchImpl });
     }
-    const catalog = buildUsefulCatalog(rawDatasets);
+    const sourceChecksum = hashDatasets(rawDatasets);
+    const existingCatalog = await readOurAirportsCatalog({ catalogPath }).catch(() => null);
+    if (!force && existingCatalog?.sourceChecksum === sourceChecksum) {
+      runtimeCatalog = existingCatalog;
+      runtimeCatalogLoadedAt = Date.now();
+      return {
+        status: 'unchanged',
+        source: existingCatalog.source || 'https://ourairports.com/data/',
+        catalogPath,
+        durationMs: Date.now() - startedAt,
+        iataCodes: Array.isArray(existingCatalog.iataCodes) ? existingCatalog.iataCodes.length : 0,
+        sourceChecksum,
+        datasets: existingCatalog.datasets || {}
+      };
+    }
+    const catalog = buildUsefulCatalog(rawDatasets, { sourceChecksum });
     await writeJsonAtomic(catalogPath, catalog);
     runtimeCatalog = catalog;
     runtimeCatalogLoadedAt = Date.now();
@@ -232,6 +260,7 @@ export async function refreshOurAirportsCatalog({ catalogPath = DEFAULT_CATALOG_
       catalogPath,
       durationMs: Date.now() - startedAt,
       iataCodes: catalog.iataCodes.length,
+      sourceChecksum,
       datasets: catalog.datasets
     };
   } finally {

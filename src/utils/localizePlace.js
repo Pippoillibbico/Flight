@@ -1,4 +1,6 @@
 import { OURAIRPORTS_IATA_SET } from '../data/ourairports-iata.js';
+import { OURAIRPORTS_CITY_BY_IATA } from '../data/ourairports-city-map.js';
+import { OURAIRPORTS_AIRPORT_LABEL_BY_IATA } from '../data/ourairports-place-map.js';
 
 const SUPPORTED_LANGS = new Set(['en', 'it', 'de', 'fr', 'es', 'pt']);
 
@@ -213,6 +215,7 @@ const CITY_FALLBACK_TRANSLATIONS = {
     nantes: 'Nantes',
     paris: 'Parigi',
     porto: 'Porto',
+    rome: 'Roma',
     munich: 'Monaco di Baviera',
     cologne: 'Colonia',
     vienna: 'Vienna',
@@ -247,9 +250,20 @@ const AIRPORT_CITY_FALLBACKS = {
   LIS: 'Lisbon',
   MXP: 'Milan',
   ORY: 'Paris',
+  ROM: 'Rome',
   CDG: 'Paris',
   STN: 'London',
   JFK: 'New York'
+};
+
+const AIRPORT_LABEL_FALLBACKS = {
+  ATH: 'Athens Eleftherios Venizelos',
+  BCN: 'Barcelona El Prat',
+  FCO: 'Rome Fiumicino',
+  LIS: 'Lisbon Humberto Delgado',
+  MXP: 'Milan Malpensa',
+  PMO: 'Palermo Falcone-Borsellino',
+  STN: 'London Stansted'
 };
 
 function normalizeLanguage(language) {
@@ -389,6 +403,34 @@ function normalizeAirportCode(value) {
   return /^[A-Z]{3}$/.test(code) ? code : '';
 }
 
+function normalizeCatalogCity(value) {
+  return String(value || '').trim().split(',')[0].trim();
+}
+
+function preferKnownCityAirportLabel(label, city) {
+  const raw = String(label || '').trim();
+  const cityLabel = String(city || '').trim();
+  if (!raw || !cityLabel) return raw;
+  const lowerRaw = raw.toLowerCase();
+  const lowerCity = cityLabel.toLowerCase();
+  const cityIndex = lowerRaw.indexOf(lowerCity);
+  if (cityIndex > 0) return raw.slice(cityIndex).trim();
+  return raw;
+}
+
+function routeFallbackLabel(kind, language) {
+  const lang = normalizeLanguage(language);
+  const fallbackByLang = {
+    it: { origin: 'Partenza flessibile', destination: 'Destinazione flessibile', area: 'Area destinazione' },
+    en: { origin: 'Flexible origin', destination: 'Flexible destination', area: 'Destination area' },
+    de: { origin: 'Flexibler Start', destination: 'Flexibles Ziel', area: 'Zielgebiet' },
+    fr: { origin: 'Depart flexible', destination: 'Destination flexible', area: 'Zone de destination' },
+    es: { origin: 'Origen flexible', destination: 'Destino flexible', area: 'Zona de destino' },
+    pt: { origin: 'Origem flexivel', destination: 'Destino flexivel', area: 'Area de destino' }
+  };
+  return fallbackByLang[lang]?.[kind] || fallbackByLang.en[kind] || fallbackByLang.en.area;
+}
+
 export function getAirportCatalogEntry(value) {
   const airport = normalizeAirportCode(value);
   return airport && OURAIRPORTS_IATA_SET.has(airport) ? { code: airport } : null;
@@ -401,8 +443,61 @@ export function isKnownIataAirportCode(value) {
 export function resolveAirportCityName(value, language) {
   const airport = normalizeAirportCode(value);
   if (!airport) return localizeCityName(value, language);
-  const cityName = AIRPORT_CITY_FALLBACKS[airport] || '';
+  const cityName = AIRPORT_CITY_FALLBACKS[airport] || normalizeCatalogCity(OURAIRPORTS_CITY_BY_IATA[airport]) || '';
   return cityName ? localizeCityName(cityName, language) : airport;
+}
+
+export function resolveAirportCityNameForOffer(value, language, fallback = '') {
+  const airport = normalizeAirportCode(value);
+  if (!airport) return localizeCityName(value || fallback, language);
+  const cityName = AIRPORT_CITY_FALLBACKS[airport] || normalizeCatalogCity(OURAIRPORTS_CITY_BY_IATA[airport]) || '';
+  if (cityName) return localizeCityName(cityName, language);
+  const fallbackLabel = String(fallback || '').trim();
+  if (fallbackLabel && !normalizeAirportCode(fallbackLabel)) return localizeCityName(fallbackLabel, language);
+  return '';
+}
+
+export function formatAirportDisplayName(value, language, fallback = '') {
+  const airport = normalizeAirportCode(value);
+  if (!airport) {
+    const label = String(fallback || value || '').trim();
+    return label ? localizeCityName(label, language) : '';
+  }
+  const city = AIRPORT_CITY_FALLBACKS[airport] || normalizeCatalogCity(OURAIRPORTS_CITY_BY_IATA[airport]) || '';
+  const airportName = AIRPORT_LABEL_FALLBACKS[airport] || preferKnownCityAirportLabel(OURAIRPORTS_AIRPORT_LABEL_BY_IATA[airport], city);
+  const fallbackLabel = String(fallback || '').trim();
+  const readableName = airportName || (fallbackLabel && !normalizeAirportCode(fallbackLabel) ? fallbackLabel : city);
+  if (!readableName) return '';
+  return `${localizeCityName(readableName, language)} (${airport})`;
+}
+
+export function formatAirportDisplayNameCompact(value, language, fallback = '') {
+  const airport = normalizeAirportCode(value);
+  if (!airport) {
+    const label = String(fallback || value || '').trim();
+    return label && !normalizeAirportCode(label) ? localizeCityName(label, language) : '';
+  }
+  const city = AIRPORT_CITY_FALLBACKS[airport] || normalizeCatalogCity(OURAIRPORTS_CITY_BY_IATA[airport]) || '';
+  const airportName = AIRPORT_LABEL_FALLBACKS[airport] || preferKnownCityAirportLabel(OURAIRPORTS_AIRPORT_LABEL_BY_IATA[airport], city);
+  const fallbackLabel = String(fallback || '').trim();
+  const readableName = airportName || (fallbackLabel && !normalizeAirportCode(fallbackLabel) ? fallbackLabel : city);
+  return readableName ? localizeCityName(readableName, language) : '';
+}
+
+export function formatRouteAirportDisplayName(item, language) {
+  const originCode = item?.origin_airport || item?.origin_iata || item?.origin;
+  const destinationCode = item?.destination_airport || item?.destination_iata || item?.destination;
+  const origin = formatAirportDisplayName(originCode, language, item?.origin_airport_name || item?.origin_name);
+  const destination = formatAirportDisplayName(destinationCode, language, item?.destination_airport_name || item?.destination_name);
+  return [origin, destination].filter(Boolean).join(' -> ');
+}
+
+export function formatRouteAirportDisplayNameCompact(item, language) {
+  const originCode = item?.origin_airport || item?.origin_iata || item?.origin;
+  const destinationCode = item?.destination_airport || item?.destination_iata || item?.destination;
+  const origin = formatAirportDisplayNameCompact(originCode, language, item?.origin_airport_name || item?.origin_name);
+  const destination = formatAirportDisplayNameCompact(destinationCode, language, item?.destination_airport_name || item?.destination_name);
+  return [origin, destination].filter(Boolean).join(' -> ');
 }
 
 export function resolvePlaceDisplayName(place, language) {
@@ -412,24 +507,33 @@ export function resolvePlaceDisplayName(place, language) {
   return resolveAirportCityName(place.airport || place.airport_code || place.fallback, language);
 }
 
+function safeOfferCityLabel(city, language) {
+  const raw = String(city || '').trim();
+  if (!raw || normalizeAirportCode(raw)) return '';
+  return localizeCityName(raw, language);
+}
+
+function resolveOfferRouteCities(item, language) {
+  const origin = safeOfferCityLabel(item?.origin_city, language)
+    ? safeOfferCityLabel(item?.origin_city, language)
+    : resolveAirportCityNameForOffer(item?.origin_airport || item?.origin, language, item?.origin);
+  const destination = safeOfferCityLabel(item?.destination_city, language)
+    ? safeOfferCityLabel(item?.destination_city, language)
+    : resolveAirportCityNameForOffer(item?.destination_airport || item?.destination, language, item?.destination);
+  return { origin, destination };
+}
+
+export function hasReadableOfferRouteDisplayName(item, language) {
+  const { origin, destination } = resolveOfferRouteCities(item, language);
+  return Boolean(origin && destination);
+}
+
 export function formatRouteDisplayName(item, language) {
-  const origin = resolvePlaceDisplayName(
-    {
-      city: item?.origin_city,
-      airport: item?.origin_airport,
-      fallback: item?.origin
-    },
-    language
-  );
-  const destination = resolvePlaceDisplayName(
-    {
-      city: item?.destination_city,
-      airport: item?.destination_airport,
-      fallback: item?.destination
-    },
-    language
-  );
-  return `${origin || 'Origin'} -> ${destination || 'Destination'}`;
+  const { origin, destination } = resolveOfferRouteCities(item, language);
+  if (origin && destination) return `${origin} -> ${destination}`;
+  if (destination) return destination;
+  if (origin) return origin;
+  return routeFallbackLabel('area', language);
 }
 
 function getClusterRepresentativeAirport(cluster) {
@@ -458,9 +562,8 @@ export function localizeClusterDisplayName(clusterOrName, language) {
   }
 
   const normalizedName = String(localizedName).trim();
-  if (normalizedName.toUpperCase() === airport) return normalizedName;
-  if (normalizedName.includes(`(${airport})`)) return normalizedName;
-  return `${normalizedName} (${airport})`;
+  if (normalizedName.toUpperCase() === airport) return '';
+  return normalizedName.replace(new RegExp(`\\s*\\(${airport}\\)\\s*$`, 'i'), '').trim();
 }
 
 export function localizeFollowEntityDisplayName(entity, language) {
