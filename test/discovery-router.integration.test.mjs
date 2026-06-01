@@ -85,7 +85,7 @@ test('discovery router supports price drop alerts CRUD', async () => {
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
-    req.user = { sub: 'u_discovery_alerts_test' };
+    req.user = { sub: 'u_discovery_alerts_test', planType: 'pro' };
     next();
   });
   app.use(

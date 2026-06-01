@@ -22,6 +22,16 @@ test('opportunity feed falls back when origin is not present in local seed data'
   assert.equal(feed.meta.origin_fallback_used, true);
 });
 
+test('opportunity feed exposes city fields so cards do not show raw airport codes first', () => {
+  const feed = buildOpportunityFeed({ origin: 'PMO', month: 6, limitTotal: 3 });
+  const item = feed.top[0];
+
+  assert.equal(typeof item.origin_city, 'string');
+  assert.notEqual(item.origin_city, item.origin_airport);
+  assert.equal(typeof item.destination_city, 'string');
+  assert.notEqual(item.destination_city, item.destination_airport);
+});
+
 test('opportunity feed always contains top + core categories for all configured origins/months', () => {
   const origins = ORIGINS.map((item) => item.code);
 

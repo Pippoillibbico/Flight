@@ -72,6 +72,11 @@ test('free cost metrics track AI/provider blocks and cache hits by plan', () => 
 
 test('free AI block payload is explicit and non-upgrade-bypassable', () => {
   assert.deepEqual(buildFreeAiBlockedPayload(), {
+    mode: 'cached_preview',
+    paidCostUsed: false,
+    upgradeRequired: true,
+    reason: 'ai_live_requires_paid_plan',
+    allowedCapabilities: ['cached_preview', 'static_recommendations', 'local_search'],
     code: 'AI_NOT_AVAILABLE_ON_FREE',
     error: 'AI_NOT_AVAILABLE_ON_FREE',
     message: 'Free includes public cached deals and basic route insights. AI tools are available on paid plans.',
@@ -236,4 +241,113 @@ test('anonymous AI decision request returns 403 and does not call AI provider', 
 
   assert.equal(aiCalls, 0);
   assert.equal(getFreeCostMetrics().free_ai_blocked, 1);
+});
+
+test('free decision intake with live AI provider is blocked before AI call', async () => {
+  resetFreeCostMetrics();
+  let aiCalls = 0;
+  const app = express();
+  app.use(express.json());
+  app.use(
+    '/api/search',
+    buildSearchRouter({
+      ORIGINS: [],
+      REGION_ENUM: ['all'],
+      CABIN_ENUM: ['economy'],
+      CONNECTION_ENUM: ['all'],
+      TRAVEL_TIME_ENUM: ['all'],
+      DESTINATIONS: [],
+      COUNTRIES: [],
+      getDestinationSuggestions: () => [],
+      searchFlights: () => ({ flights: [], meta: {} }),
+      decideTrips: () => ({ recommendations: [], meta: {} }),
+      ensureAiPremiumAccess: async () => ({ allowed: true }),
+      enrichDecisionWithAi: async () => ({ provider: 'none' }),
+      parseIntentWithAi: async () => {
+        aiCalls += 1;
+        return { ok: true };
+      },
+      searchSchema: { safeParse: () => ({ success: true, data: {} }) },
+      justGoSchema: { safeParse: () => ({ success: true, data: {} }) },
+      decisionIntakeSchema: { safeParse: () => ({ success: true, data: { prompt: 'Bangkok in June', aiProvider: 'chatgpt' } }) },
+      authGuard: (req, _res, next) => {
+        req.user = { sub: 'u-free-intake', planType: 'free' };
+        next();
+      },
+      csrfGuard: (_req, _res, next) => next(),
+      requireApiScope: () => (_req, _res, next) => next(),
+      quotaGuard: () => (_req, _res, next) => next(),
+      withDb: async (fn) => fn({ searches: [] }),
+      insertSearchEvent: async () => {},
+      nanoid: () => 'id123',
+      sendMachineError: (_req, res, status, error, extra = {}) => res.status(status).json({ error, ...extra })
+    })
+  );
+
+  await withServer(app, async (baseUrl) => {
+    const res = await fetch(`${baseUrl}/api/search/decision/intake`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: 'Bangkok in June', aiProvider: 'chatgpt' })
+    });
+    assert.equal(res.status, 403);
+    const body = await res.json();
+    assert.equal(body.reason, 'ai_live_requires_paid_plan');
+    assert.equal(body.paidCostUsed, false);
+  });
+
+  assert.equal(aiCalls, 0);
+  assert.equal(getFreeCostMetrics().free_ai_blocked, 1);
+});
+
+test('free future triangulation endpoint returns cached preview and never calls live engines', async () => {
+  const app = express();
+  app.use(express.json());
+  app.use(
+    '/api/search',
+    buildSearchRouter({
+      ORIGINS: [],
+      REGION_ENUM: ['all'],
+      CABIN_ENUM: ['economy'],
+      CONNECTION_ENUM: ['all'],
+      TRAVEL_TIME_ENUM: ['all'],
+      DESTINATIONS: [],
+      COUNTRIES: [],
+      getDestinationSuggestions: () => [],
+      searchFlights: () => ({ flights: [], meta: {} }),
+      decideTrips: () => ({ recommendations: [], meta: {} }),
+      ensureAiPremiumAccess: async () => ({ allowed: true }),
+      enrichDecisionWithAi: async () => ({ provider: 'none' }),
+      parseIntentWithAi: async () => ({ ok: true }),
+      searchSchema: { safeParse: () => ({ success: true, data: {} }) },
+      justGoSchema: { safeParse: () => ({ success: true, data: {} }) },
+      decisionIntakeSchema: { safeParse: () => ({ success: true, data: {} }) },
+      authGuard: (req, _res, next) => {
+        req.user = { sub: 'u-free-triangulation', planType: 'free' };
+        next();
+      },
+      csrfGuard: (_req, _res, next) => next(),
+      requireApiScope: () => (_req, _res, next) => next(),
+      quotaGuard: () => (_req, _res, next) => next(),
+      withDb: async (fn) => fn({ searches: [] }),
+      insertSearchEvent: async () => {},
+      nanoid: () => 'id123',
+      sendMachineError: (_req, res, status, error, extra = {}) => res.status(status).json({ error, ...extra })
+    })
+  );
+
+  await withServer(app, async (baseUrl) => {
+    const res = await fetch(`${baseUrl}/api/search/triangulation`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: 'Roma to Bangkok in June' })
+    });
+    assert.equal(res.status, 403);
+    const body = await res.json();
+    assert.equal(body.mode, 'cached_preview');
+    assert.equal(body.paidCostUsed, false);
+    assert.equal(body.upgradeRequired, true);
+    assert.equal(body.reason, 'triangulation_live_requires_paid_plan');
+    assert.deepEqual(body.preview, ['ROM-BUD-BKK', 'ROM-ATH-BKK', 'ROM-AUH-BKK']);
+  });
 });

@@ -74,3 +74,15 @@ test('plan comparison rows remain explicit and complete', () => {
   assert.equal(rows[0]?.pro, 'Up to 10');
   assert.equal(rows[0]?.elite, 'Unlimited');
 });
+
+test('plan comparison rows use localized labels when a translator is provided', () => {
+  const translations: Record<string, string> = {
+    upgradeFlowTrackedRoutes: 'Rotte monitorate',
+    upgradeFlowUpToOne: 'Fino a 1'
+  };
+  const rows = getPlanComparisonRows((key) => translations[key] || key);
+
+  assert.equal(rows[0]?.feature, 'Rotte monitorate');
+  assert.equal(rows[0]?.free, 'Fino a 1');
+  assert.equal(rows[0]?.pro, 'Up to 10');
+});

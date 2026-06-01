@@ -47,17 +47,38 @@ test('ourairports refresh stores useful flight catalog and audits ignored datase
     const result = await refreshOurAirportsCatalog({ catalogPath, fetchImpl: createFixtureFetch() });
     assert.equal(result.status, 'updated');
     assert.equal(result.iataCodes, 2);
+    assert.equal(typeof result.sourceChecksum, 'string');
     assert.equal(result.datasets.airports.useful, true);
     assert.equal(result.datasets.comments.useful, false);
 
     const catalog = await readOurAirportsCatalog({ catalogPath });
     assert.equal(catalog.airportsByIata.FCO.municipality, 'Rome');
+    assert.equal(catalog.sourceChecksum, result.sourceChecksum);
     assert.equal(catalog.airportsByIata.RTY.countryCode, 'AU');
     assert.equal(catalog.airportsByIata.QWE, undefined);
     assert.equal(catalog.countries.IT.name, 'Italy');
     assert.equal(catalog.regions['IT-62'].name, 'Lazio');
     assert.equal(catalog.datasets.runways.rows, 1);
     assert.equal(catalog.datasets.navaids.useful, false);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('ourairports refresh skips catalog rewrite when source datasets are unchanged', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'flight-ourairports-'));
+  const catalogPath = join(dir, 'catalog.json');
+  try {
+    const first = await refreshOurAirportsCatalog({ catalogPath, fetchImpl: createFixtureFetch() });
+    const catalogBefore = await readOurAirportsCatalog({ catalogPath });
+
+    const second = await refreshOurAirportsCatalog({ catalogPath, fetchImpl: createFixtureFetch() });
+    const catalogAfter = await readOurAirportsCatalog({ catalogPath });
+
+    assert.equal(first.status, 'updated');
+    assert.equal(second.status, 'unchanged');
+    assert.equal(second.sourceChecksum, first.sourceChecksum);
+    assert.equal(catalogAfter.generatedAt, catalogBefore.generatedAt);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
