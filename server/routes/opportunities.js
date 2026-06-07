@@ -103,7 +103,8 @@ const budgetExploreSchema = z.object({
 }).strict();
 
 const OPPORTUNITY_FEED_SOURCE = 'travel_opportunities';
-const EXPLORE_CACHE_SCHEMA_VERSION = 'region-fallback-v5';
+const EXPLORE_CACHE_SCHEMA_VERSION = 'region-fallback-v6';
+const EXPLORE_MAP_MAX_POINTS = 6;
 
 const EXPLORE_REGION_ALIASES = new Map([
   ['europe', 'eu'],
@@ -408,7 +409,7 @@ function toFallbackExploreDestinations({ origin, region, budgetMax, limit, allow
     ? routePool.filter((route) => String(route.region || '').trim().toLowerCase() === safeRegion)
     : routePool;
   const exactOriginRoutes = scopedRoutes.filter((route) => String(route.origin || '').trim().toUpperCase() === safeOrigin);
-  const selectedRoutes = exactOriginRoutes.length > 0
+  const selectedRoutes = exactOriginRoutes.length > 0 || !allowMapAnchorFallback
     ? exactOriginRoutes
     : scopedRoutes.filter((route) => Boolean(route.isExploreRegionFallback));
   if (selectedRoutes.length === 0) return [];
@@ -498,6 +499,30 @@ export function buildOpportunitiesRouter({
     return [...byDestination.values()]
       .sort((a, b) => a.min_price - b.min_price || b.opportunity_count - a.opportunity_count)
       .slice(0, Math.max(1, Number(limit) || 20));
+  }
+
+  function toExploreMapDestinations(destinations) {
+    const byCountryOrDestination = new Map();
+    for (const item of destinations || []) {
+      const country = String(item?.destination_country || '').trim().toLowerCase();
+      const fallbackKey = String(item?.destination_airport || '').trim().toUpperCase();
+      const key = country || fallbackKey;
+      if (!key) continue;
+      const existing = byCountryOrDestination.get(key);
+      if (!existing) {
+        byCountryOrDestination.set(key, { ...item });
+        continue;
+      }
+      existing.opportunity_count = Number(existing.opportunity_count || 1) + Number(item?.opportunity_count || 1);
+      const existingPrice = Number(existing.min_price || 0);
+      const nextPrice = Number(item?.min_price || 0);
+      if (Number.isFinite(nextPrice) && nextPrice > 0 && (!Number.isFinite(existingPrice) || existingPrice <= 0 || nextPrice < existingPrice)) {
+        Object.assign(existing, item, { opportunity_count: existing.opportunity_count });
+      }
+    }
+    return [...byCountryOrDestination.values()]
+      .sort((a, b) => Number(a.min_price || 0) - Number(b.min_price || 0) || Number(b.opportunity_count || 1) - Number(a.opportunity_count || 1))
+      .slice(0, EXPLORE_MAP_MAX_POINTS);
   }
 
   const handleFeed = async (req, res, next) => {
@@ -659,7 +684,8 @@ export function buildOpportunitiesRouter({
             limit: parsed.data.limit,
             allowMapAnchorFallback: true
           });
-      const points = resolvedDestinations.map((item) => ({
+      const mapDestinations = toExploreMapDestinations(resolvedDestinations);
+      const points = mapDestinations.map((item) => ({
         ...item,
         destination_coords: findCountryCoords(item.destination_country),
         origin_coords: originCoords

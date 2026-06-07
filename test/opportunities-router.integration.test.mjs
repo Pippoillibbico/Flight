@@ -291,23 +291,28 @@ test('opportunities explore map endpoint returns points', async () => {
 
 test('opportunities explore map keeps continent drag regions populated', async () => {
   const { app } = createRouterApp({ optionalAuthEnabled: false });
+  const origins = ['FCO', 'MXP', 'BLQ', 'VCE', 'NAP'];
   const regions = ['eu', 'america', 'south_america', 'africa', 'asia', 'oceania'];
 
   await withServer(app, async (baseUrl) => {
-    for (const region of regions) {
-      const params = new URLSearchParams({
-        origin: 'FCO',
-        budget_max: '450',
-        limit: '10',
-        region
-      });
-      const res = await fetch(`${baseUrl}/api/opportunities/explore/map?${params.toString()}`);
-      assert.equal(res.status, 200);
-      const body = await res.json();
-      assert.equal(body.region, region);
-      assert.equal(Array.isArray(body.points), true);
-      assert.equal(body.points.length > 0, true, `${region} should keep map anchors available`);
-      assert.equal(body.points.every((point) => point.destination_coords && typeof point.destination_coords.lat === 'number'), true);
+    for (const origin of origins) {
+      for (const region of regions) {
+        const params = new URLSearchParams({
+          origin,
+          budget_max: '450',
+          limit: '10',
+          region
+        });
+        const res = await fetch(`${baseUrl}/api/opportunities/explore/map?${params.toString()}`);
+        assert.equal(res.status, 200);
+        const body = await res.json();
+        assert.equal(body.origin, origin);
+        assert.equal(body.region, region);
+        assert.equal(Array.isArray(body.points), true);
+        assert.equal(body.points.length > 0, true, `${origin}/${region} should keep map anchors available`);
+        assert.equal(body.points.length <= 6, true, `${origin}/${region} should keep map points readable`);
+        assert.equal(body.points.every((point) => point.destination_coords && typeof point.destination_coords.lat === 'number'), true);
+      }
     }
   });
 });

@@ -7,6 +7,7 @@ import { formatAirlineLabel } from './opportunity-feed-helpers';
 
 const WORLD_MAP_WIDTH = 840;
 const WORLD_MAP_HEIGHT = 380;
+const EXPLORE_MAP_VISIBLE_POINT_LIMIT = 6;
 
 const WORLD_MAP_LANDMASSES = [
   {
@@ -215,6 +216,23 @@ function normalizeMapPoint(item) {
   };
 }
 
+function selectMapDisplayPoints(points) {
+  const byCountryOrDestination = new Map();
+  for (const point of points || []) {
+    const country = String(point?.country || '').trim().toLowerCase();
+    const fallbackKey = String(point?.id || '').trim().toUpperCase();
+    const key = country || fallbackKey;
+    if (!key) continue;
+    const existing = byCountryOrDestination.get(key);
+    if (!existing || Number(point?.price || 0) < Number(existing?.price || 0)) {
+      byCountryOrDestination.set(key, point);
+    }
+  }
+  return [...byCountryOrDestination.values()]
+    .sort((left, right) => Number(left.price || 0) - Number(right.price || 0) || Number(right.opportunityCount || 1) - Number(left.opportunityCount || 1))
+    .slice(0, EXPLORE_MAP_VISIBLE_POINT_LIMIT);
+}
+
 function formatPrice(value, locale) {
   const amount = Number(value);
   if (!Number.isFinite(amount)) return '-';
@@ -295,6 +313,7 @@ function ExploreDiscoverySection(props) {
   const budgetMapPoints = budgetItems.map(normalizeMapPoint).filter(Boolean);
   const normalizedPoints = mapPoints.map(normalizeMapPoint).filter(Boolean);
   const interactivePoints = normalizedPoints.length > 0 ? normalizedPoints : budgetMapPoints;
+  const displayedMapPoints = selectMapDisplayPoints(interactivePoints);
   const projectedOriginMarker = interactivePoints.find((point) => point.origin)?.origin || null;
   const originMarker = EUROPE_ORIGIN_CODES.has(String(value?.origin || '').trim().toUpperCase())
     ? continentAnchorPoint('europe') || projectedOriginMarker
@@ -334,7 +353,7 @@ function ExploreDiscoverySection(props) {
     const nextPoint = svgPointFromPointer(event);
     if (!nextPoint) return;
     setMapPreviewPoint(nextPoint);
-    const nearestPoint = nearestMapPoint(interactivePoints, nextPoint);
+    const nearestPoint = nearestMapPoint(displayedMapPoints, nextPoint);
     const nearestDestination = String(nearestPoint?.id || '').toUpperCase();
     if (nearestDestination && nearestDestination !== String(selectedDestination || '').toUpperCase()) {
       onSelectDestination(nearestDestination);
@@ -547,19 +566,18 @@ function ExploreDiscoverySection(props) {
                   </g>
                 ))}
 
-                {!mapPreviewPoint && originMarker && interactivePoints.map((point) => {
-                  const routeLine = lineBetweenCircleEdges(originMarker, point.destination, 10, 10);
+                {!mapPreviewPoint && originMarker && selectedPoint ? (() => {
+                  const routeLine = lineBetweenCircleEdges(originMarker, selectedPoint.destination, 10, 10);
                   return routeLine ? (
                     <line
-                      key={`route-${point.id}`}
                       x1={routeLine.x1}
                       y1={routeLine.y1}
                       x2={routeLine.x2}
                       y2={routeLine.y2}
-                      className="explore-map-route-line"
+                      className="explore-map-route-line active"
                     />
                   ) : null;
-                })}
+                })() : null}
 
                 {originMarker ? (
                   <circle
@@ -592,7 +610,7 @@ function ExploreDiscoverySection(props) {
                   />
                 ) : null}
 
-                {!mapPreviewPoint && interactivePoints.map((point) => {
+                {!mapPreviewPoint && displayedMapPoints.map((point) => {
                   const isActive = !mapPreviewPoint && selectedPoint?.id === point.id;
                   return (
                     <g
