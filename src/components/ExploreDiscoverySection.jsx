@@ -567,14 +567,6 @@ function ExploreDiscoverySection(props) {
                 {/* Continent labels for geographic context */}
                 {WORLD_MAP_CONTINENTS.map(({ id, label, labelX, labelY, labelWidth }) => (
                   <g key={id} className="explore-map-continent-marker" aria-hidden="true">
-                    <rect
-                      x={labelX - (labelWidth || 78) / 2}
-                      y={labelY - 15}
-                      width={labelWidth || 78}
-                      height="24"
-                      rx="8"
-                      className="explore-map-continent-label-bg"
-                    />
                     <text x={labelX} y={labelY} className="explore-map-continent-label">{label}</text>
                   </g>
                 ))}
