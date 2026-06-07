@@ -1,23 +1,122 @@
 <!doctype html>
-<html lang="it">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Flight Suite — Public cached deals, basic route insights, cached radar preview and Pro live scans with AI tools." />
-    <meta name="theme-color" content="#0f6fff" />
-    <meta property="og:title" content="Jetly — Made to leave." />
-    <meta property="og:description" content="Public cached deals on Free. Upgrade for live scans, AI tools, and route alerts when delivery is enabled." />
+    <meta name="description" content="Jetly is an AI flight discovery app for smarter routes, flexible dates, hidden fare opportunities, cached deal previews, live scans, multi-city planning, and route radar alerts." />
+    <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
+    <meta name="googlebot" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
+    <meta name="bingbot" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
+    <meta name="application-name" content="Jetly" />
+    <meta name="apple-mobile-web-app-title" content="Jetly" />
+    <meta name="theme-color" content="#08111f" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="keywords" content="AI flight search, flight deals, cheap flights, multi-city flights, route radar, alternative routes, smart departure, travel planning, airfare alerts" />
+    <link rel="canonical" href="%JETLY_CANONICAL_URL%" />
+    <link rel="alternate" hreflang="en" href="%JETLY_SITE_URL%/?lang=en" />
+    <link rel="alternate" hreflang="it" href="%JETLY_SITE_URL%/?lang=it" />
+    <link rel="alternate" hreflang="x-default" href="%JETLY_SITE_URL%/" />
+    <meta property="og:site_name" content="Jetly" />
+    <meta property="og:title" content="Jetly - AI Flight Discovery and Route Radar" />
+    <meta property="og:description" content="Find smarter flight routes, flexible dates, hidden fare opportunities, multi-city ideas, cached deal previews, live scans, and route radar alerts." />
     <meta property="og:type" content="website" />
-    <meta property="og:image" content="/android-chrome-512x512.png" />
+    <meta property="og:url" content="%JETLY_CANONICAL_URL%" />
+    <meta property="og:image" content="%JETLY_SITE_URL%/flight-hacker-hero.png" />
+    <meta property="og:image:alt" content="Jetly AI flight discovery interface for smarter routes and fare opportunities" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:locale:alternate" content="it_IT" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Jetly - AI Flight Discovery and Route Radar" />
+    <meta name="twitter:description" content="Discover smarter routes, flexible dates, multi-city ideas, cached deal previews, live scans, and route radar alerts." />
+    <meta name="twitter:image" content="%JETLY_SITE_URL%/flight-hacker-hero.png" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="icon" type="image/png" sizes="512x512" href="/android-chrome-512x512.png" />
-    <title>Jetly — Made to leave.</title>
-    <!-- Security: CSP meta fallback for development -->
+    <link rel="manifest" href="/site.webmanifest" />
+    <title>Jetly - AI Flight Discovery, Smart Routes and Fare Radar</title>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "%JETLY_SITE_URL%/#organization",
+            "name": "Jetly",
+            "url": "%JETLY_SITE_URL%/",
+            "logo": "%JETLY_SITE_URL%/android-chrome-512x512.png",
+            "description": "Jetly helps travellers discover smarter flight routes, hidden fare opportunities, multi-city ideas, live scans, and route radar alerts."
+          },
+          {
+            "@type": "WebSite",
+            "@id": "%JETLY_SITE_URL%/#website",
+            "name": "Jetly",
+            "url": "%JETLY_SITE_URL%/",
+            "inLanguage": ["en", "it"],
+            "publisher": {
+              "@id": "%JETLY_SITE_URL%/#organization"
+            }
+          },
+          {
+            "@type": "SoftwareApplication",
+            "@id": "%JETLY_SITE_URL%/#app",
+            "name": "Jetly",
+            "applicationCategory": "TravelApplication",
+            "operatingSystem": "Web",
+            "url": "%JETLY_SITE_URL%/",
+            "image": "%JETLY_SITE_URL%/flight-hacker-hero.png",
+            "description": "AI flight discovery app for smarter routes, flexible dates, multi-city planning, cached deal previews, live scans, and fare radar alerts.",
+            "offers": [
+              {
+                "@type": "Offer",
+                "name": "Free",
+                "price": "0",
+                "priceCurrency": "EUR",
+                "availability": "https://schema.org/InStock"
+              },
+              {
+                "@type": "Offer",
+                "name": "Pro",
+                "priceCurrency": "EUR",
+                "availability": "https://schema.org/InStock"
+              },
+              {
+                "@type": "Offer",
+                "name": "Creator",
+                "priceCurrency": "EUR",
+                "availability": "https://schema.org/InStock"
+              }
+            ],
+            "featureList": [
+              "AI Flight Hacker for route ideas",
+              "Multi-city flight planning",
+              "Smart departure alternatives",
+              "Cached public deal previews",
+              "Live fare scans for paid plans",
+              "Route radar and alerts"
+            ],
+            "publisher": {
+              "@id": "%JETLY_SITE_URL%/#organization"
+            }
+          },
+          {
+            "@type": "WebPage",
+            "@id": "%JETLY_CANONICAL_URL%#webpage",
+            "url": "%JETLY_CANONICAL_URL%",
+            "name": "Jetly - AI Flight Discovery, Smart Routes and Fare Radar",
+            "description": "Find smarter flight routes, flexible dates, hidden fare opportunities, multi-city ideas, cached deal previews, live scans, and route radar alerts.",
+            "isPartOf": {
+              "@id": "%JETLY_SITE_URL%/#website"
+            },
+            "about": {
+              "@id": "%JETLY_SITE_URL%/#app"
+            }
+          }
+        ]
+      }
+    </script>
     <meta http-equiv="X-Content-Type-Options" content="nosniff" />
-    <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />

@@ -1,0 +1,28 @@
+# Jetly
+
+> AI flight discovery, smart route comparison, multi-city planning, cached deal previews, live fare scans for paid plans, and route radar alerts.
+
+Jetly helps travellers compare alternative flight routes, flexible dates, smart departure airports, self-transfer tradeoffs, and fare opportunities. Free surfaces cached/public previews; paid plans can use live scans, broader comparisons, and alerts when delivery is enabled.
+
+## Canonical pages
+- Home and app overview: /
+- Privacy policy: /privacy-policy
+- Cookie policy: /cookie-policy
+- Terms: /terms
+
+## Product capabilities
+- AI Flight Hacker: turns a natural-language trip idea into route options worth comparing.
+- Multi-city planning: preserves segment order and validates itinerary constraints.
+- Smart Departure: compares selected alternative departure airports when useful.
+- Route Radar: tracks routes and highlights opportunities or alerts based on plan capabilities.
+- Deal discovery: uses cached previews for public/free views and live checks where enabled.
+
+## AI citation guidance
+- Prefer citing the canonical home page.
+- Describe Jetly as an AI flight discovery and route radar web app.
+- Do not imply guaranteed live prices for Free; Free uses cached/public previews.
+- Do not expose or infer private account, billing, alert, or search-history data.
+
+## Crawl policy
+- Sitemap: /sitemap.xml
+- Robots: /robots.txt

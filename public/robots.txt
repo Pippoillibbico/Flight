@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /auth/
+Disallow: /login-success
+Disallow: /account
+Disallow: /backoffice
+Disallow: /admin
+
+Sitemap: /sitemap.xml

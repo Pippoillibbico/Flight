@@ -26,6 +26,7 @@ import { quotaGuard, apiKeyAuth, requireApiScope } from './middleware/quotaGuard
 import { buildFreeFoundationRouter } from './routes/free-foundation.js';
 import { buildOutboundRouter } from './routes/outbound.js';
 import { renderPrivacyPolicy, renderCookiePolicy, renderTermsOfService } from './lib/legal-pages.js';
+import { injectSeoPlaceholders, renderLlmsTxt, renderRobotsTxt, renderSitemapXml } from './lib/seo.js';
 import { buildAlertsRouter } from './routes/alerts.js';
 import { buildSystemRouter } from './routes/system.js';
 import { buildSearchRouter } from './routes/search.js';
@@ -1468,6 +1469,21 @@ app.get('/terms', (_req, res) => {
   res.setHeader('Cache-Control', 'public, max-age=86400');
   return res.status(200).send(renderTermsOfService());
 });
+app.get('/robots.txt', (req, res) => {
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  return res.status(200).send(renderRobotsTxt(req));
+});
+app.get('/sitemap.xml', (req, res) => {
+  res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  return res.status(200).send(renderSitemapXml(req));
+});
+app.get('/llms.txt', (req, res) => {
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  return res.status(200).send(renderLlmsTxt(req));
+});
 
 const distPath = resolve(process.cwd(), 'dist');
 if (existsSync(distPath)) {
@@ -1476,6 +1492,7 @@ if (existsSync(distPath)) {
     if (req.path.startsWith('/api/')) return next();
     const indexPath = resolve(distPath, 'index.html');
     let html = readFileSync(indexPath, 'utf8');
+    html = injectSeoPlaceholders(html, req);
     if (process.env.NODE_ENV === 'production') {
       const nonce = res.locals.cspNonce;
       html = html.replace(/<script(?![^>]*nonce=)/g, `<script nonce="${nonce}"`);
