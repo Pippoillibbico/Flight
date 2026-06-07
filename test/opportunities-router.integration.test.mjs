@@ -273,6 +273,33 @@ test('opportunities explore budget endpoint returns sorted destinations', async 
   });
 });
 
+test('opportunities explore budget returns regional routes for long-haul continents', async () => {
+  const { app } = createRouterApp({ optionalAuthEnabled: false });
+  const origins = ['FCO', 'MXP', 'BLQ', 'VCE', 'NAP'];
+  const regions = ['south_america', 'africa', 'oceania'];
+
+  await withServer(app, async (baseUrl) => {
+    for (const origin of origins) {
+      for (const region of regions) {
+        const params = new URLSearchParams({
+          origin,
+          budget_max: '450',
+          limit: '10',
+          region
+        });
+        const res = await fetch(`${baseUrl}/api/opportunities/explore/budget?${params.toString()}`);
+        assert.equal(res.status, 200);
+        const body = await res.json();
+        assert.equal(body.origin, origin);
+        assert.equal(body.region, region);
+        assert.equal(Array.isArray(body.items), true);
+        assert.equal(body.items.length > 0, true, `${origin}/${region} should expose fallback routes`);
+        assert.equal(body.items.every((item) => String(item.destination_region || '') === region), true);
+      }
+    }
+  });
+});
+
 test('opportunities explore map endpoint returns points', async () => {
   const { app } = createRouterApp({ optionalAuthEnabled: false });
   await withServer(app, async (baseUrl) => {

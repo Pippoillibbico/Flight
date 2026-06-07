@@ -5,7 +5,7 @@ import {
   resolveTelemetryEventType
 } from '../../src/shared/telemetry/events.js';
 
-export const REGION_ENUM = ['all', 'eu', 'asia', 'america', 'oceania'];
+export const REGION_ENUM = ['all', 'eu', 'asia', 'america', 'south_america', 'africa', 'oceania'];
 export const CABIN_ENUM = ['economy', 'premium', 'business'];
 export const CONNECTION_ENUM = ['all', 'direct', 'with_stops'];
 export const TRAVEL_TIME_ENUM = ['all', 'day', 'night'];

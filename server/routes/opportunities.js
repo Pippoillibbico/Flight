@@ -34,7 +34,7 @@ import {
 } from '../lib/free-cost-metrics.js';
 import { getCacheClient } from '../lib/free-cache.js';
 import { followMetadataSchema } from '../lib/follow-metadata.js';
-import { ROUTES } from '../data/local-flight-data.js';
+import { ORIGINS as LOCAL_ORIGINS, ROUTES } from '../data/local-flight-data.js';
 import { loadOurAirportsCatalog } from '../lib/ourairports-catalog.js';
 
 const ORIGIN_COORDS = {
@@ -103,8 +103,9 @@ const budgetExploreSchema = z.object({
 }).strict();
 
 const OPPORTUNITY_FEED_SOURCE = 'travel_opportunities';
-const EXPLORE_CACHE_SCHEMA_VERSION = 'region-fallback-v6';
+const EXPLORE_CACHE_SCHEMA_VERSION = 'region-fallback-v7';
 const EXPLORE_MAP_MAX_POINTS = 6;
+const EXPLORE_SUPPORTED_ORIGINS = LOCAL_ORIGINS.map((origin) => String(origin?.code || '').trim().toUpperCase()).filter(Boolean);
 
 const EXPLORE_REGION_ALIASES = new Map([
   ['europe', 'eu'],
@@ -241,6 +242,17 @@ function normalizeExploreRegion(region) {
   const raw = String(region || '').trim().toLowerCase();
   if (!raw || raw === 'all') return '';
   return EXPLORE_REGION_ALIASES.get(raw) || raw;
+}
+
+function buildExploreFallbackRoutePool() {
+  const origins = EXPLORE_SUPPORTED_ORIGINS.length > 0 ? EXPLORE_SUPPORTED_ORIGINS : ['FCO'];
+  return EXPLORE_REGION_FALLBACK_ROUTES.flatMap((route) =>
+    origins.map((origin) => ({
+      ...route,
+      origin,
+      isExploreRegionFallback: true
+    }))
+  );
 }
 
 function readNumberFromItem(item, keys) {
@@ -394,7 +406,7 @@ function readRouteFallbackPrice(route, month = new Date().getUTCMonth() + 1) {
   return Number.isFinite(price) && price > 0 ? Math.round(price) : null;
 }
 
-function toFallbackExploreDestinations({ origin, region, budgetMax, limit, allowMapAnchorFallback = false }) {
+function toFallbackExploreDestinations({ origin, region, budgetMax, limit, allowOutOfBudgetRegionFallback = false, allowMapAnchorFallback = false }) {
   const safeOrigin = String(origin || '').trim().toUpperCase();
   const safeRegion = normalizeExploreRegion(region);
 
@@ -402,7 +414,7 @@ function toFallbackExploreDestinations({ origin, region, budgetMax, limit, allow
   const maxPrice = Number.isFinite(budget) && budget > 0 ? budget : Number.POSITIVE_INFINITY;
   const routePool = [
     ...ROUTES.map((route) => ({ ...route, isLocalRoute: true })),
-    ...EXPLORE_REGION_FALLBACK_ROUTES.map((route) => ({ ...route, isExploreRegionFallback: true }))
+    ...buildExploreFallbackRoutePool()
   ];
   const isRegionFiltered = Boolean(safeRegion && safeRegion !== 'all');
   const scopedRoutes = isRegionFiltered
@@ -440,6 +452,9 @@ function toFallbackExploreDestinations({ origin, region, budgetMax, limit, allow
     .sort((a, b) => a.min_price - b.min_price);
 
   const withinBudget = candidates.filter((item) => item.min_price <= maxPrice);
+  if (allowOutOfBudgetRegionFallback && isRegionFiltered && withinBudget.length === 0) {
+    return candidates.slice(0, Math.max(1, Number(limit) || 20));
+  }
   if (allowMapAnchorFallback && isRegionFiltered && withinBudget.length === 0) {
     return candidates.slice(0, Math.max(1, Number(limit) || 20));
   }
@@ -642,7 +657,8 @@ export function buildOpportunitiesRouter({
             origin: parsed.data.origin,
             region: regionFilter,
             budgetMax: parsed.data.budget_max,
-            limit: parsed.data.limit
+            limit: parsed.data.limit,
+            allowOutOfBudgetRegionFallback: true
           });
       const payload = { origin: parsed.data.origin, budget_max: parsed.data.budget_max, region: regionFilter || 'all', items: resolvedDestinations };
       await writeCachedJson(cache, cacheKey, exploreCacheTtlSec, payload);

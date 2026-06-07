@@ -5,7 +5,7 @@ import { createDefaultMultiCitySegments, validateMultiCityForm } from '../../mul
 
 const DEFAULT_APP_CONFIG = {
   origins: [],
-  regions: ['all', 'eu', 'asia', 'america', 'oceania'],
+  regions: ['all', 'eu', 'asia', 'america', 'south_america', 'africa', 'oceania'],
   cabins: ['economy', 'premium', 'business'],
   connectionTypes: ['all', 'direct', 'with_stops'],
   travelTimes: ['all', 'day', 'night'],

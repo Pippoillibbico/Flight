@@ -91,7 +91,17 @@ export function useAppLocalization() {
   };
 
   const tt = (key) => i18nPack.tooltips?.[key] || DEFAULT_LANGUAGE_PACK.tooltips?.[key] || key;
-  const regionLabel = (code) => REGION_LABELS_I18N[language]?.[code] || REGION_LABELS_I18N.en[code] || code;
+  const regionLabel = (code) => {
+    const extraRegionLabels = {
+      en: { america: 'North America', south_america: 'South America', africa: 'Africa' },
+      it: { america: 'Nord America', south_america: 'Sud America', africa: 'Africa' },
+      de: { america: 'Nordamerika', south_america: 'Suedamerika', africa: 'Afrika' },
+      fr: { america: 'Amerique du Nord', south_america: 'Amerique du Sud', africa: 'Afrique' },
+      es: { america: 'Norteamerica', south_america: 'Sudamerica', africa: 'Africa' },
+      pt: { america: 'America do Norte', south_america: 'America do Sul', africa: 'Africa' }
+    };
+    return extraRegionLabels[language]?.[code] || extraRegionLabels.en[code] || REGION_LABELS_I18N[language]?.[code] || REGION_LABELS_I18N.en[code] || code;
+  };
   const connectionLabel = (code) => CONNECTION_LABELS_I18N[language]?.[code] || CONNECTION_LABELS_I18N.en[code] || code;
   const travelTimeLabel = (code) => TRAVEL_TIME_LABELS_I18N[language]?.[code] || TRAVEL_TIME_LABELS_I18N.en[code] || code;
   const canonicalCountryFilter = (value) => toCanonicalCountryName(String(value || '').trim(), language).trim();

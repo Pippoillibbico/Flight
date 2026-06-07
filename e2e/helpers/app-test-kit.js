@@ -318,7 +318,7 @@ export async function setupApiMocks(page, state) {
           { code: 'FCO', city: 'Roma', label: 'Roma Fiumicino (FCO)' },
           { code: 'MXP', city: 'Milano', label: 'Milano Malpensa (MXP)' }
         ],
-        regions: ['all', 'eu', 'asia', 'america', 'oceania'],
+        regions: ['all', 'eu', 'asia', 'america', 'south_america', 'africa', 'oceania'],
         cabins: ['economy', 'premium', 'business'],
         connectionTypes: ['all', 'direct', 'with_stops'],
         travelTimes: ['all', 'day', 'night'],

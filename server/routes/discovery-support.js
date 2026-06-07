@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { getRouteBaselinePercentiles } from '../lib/deal-engine-store.js';
 
 const MOODS = ['relax', 'adventure', 'culture', 'nature', 'nightlife'];
-const REGIONS = ['all', 'eu', 'asia', 'america', 'oceania'];
+const REGIONS = ['all', 'eu', 'asia', 'america', 'south_america', 'africa', 'oceania'];
 const CABIN_CLASSES = ['economy', 'premium', 'business'];
 const CLIMATE_PREFS = ['warm', 'cold', 'mild', 'indifferent'];
 const DEFAULT_ORIGIN_IATA = String(process.env.DEFAULT_DISCOVERY_ORIGIN || 'FCO')
