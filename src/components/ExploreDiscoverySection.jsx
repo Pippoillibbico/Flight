@@ -28,7 +28,7 @@ const WORLD_MAP_LANDMASSES = [
   {
     id: 'africa',
     region: 'africa',
-    d: 'M417 144 C452 129 492 148 507 185 C522 220 494 253 482 288 C470 321 445 335 426 309 C406 282 411 251 396 224 C379 193 387 157 417 144 Z'
+    d: 'M417 162 C452 147 492 166 507 203 C522 238 494 271 482 306 C470 339 445 353 426 327 C406 300 411 269 396 242 C379 211 387 175 417 162 Z'
   },
   {
     id: 'asia',
@@ -48,42 +48,48 @@ const WORLD_MAP_CONTINENTS = [
     label: 'N. America',
     region: 'america',
     labelX: 148,
-    labelY: 108
+    labelY: 108,
+    labelWidth: 90
   },
   {
     id: 'south-america',
     label: 'S. America',
     region: 'south_america',
-    labelX: 228,
-    labelY: 228
+    labelX: 232,
+    labelY: 242,
+    labelWidth: 88
   },
   {
     id: 'europe',
     label: 'Europe',
     region: 'eu',
     labelX: 422,
-    labelY: 80
+    labelY: 100,
+    labelWidth: 70
   },
   {
     id: 'africa',
     label: 'Africa',
     region: 'africa',
-    labelX: 442,
-    labelY: 196
+    labelX: 452,
+    labelY: 218,
+    labelWidth: 70
   },
   {
     id: 'asia',
     label: 'Asia',
     region: 'asia',
     labelX: 618,
-    labelY: 86
+    labelY: 112,
+    labelWidth: 58
   },
   {
     id: 'oceania',
     label: 'Oceania',
     region: 'oceania',
-    labelX: 666,
-    labelY: 286
+    labelX: 704,
+    labelY: 286,
+    labelWidth: 80
   }
 ];
 
@@ -559,9 +565,16 @@ function ExploreDiscoverySection(props) {
                 <line x1="0" x2={WORLD_MAP_WIDTH} y1="240" y2="240" className="explore-map-tropic-line" />
 
                 {/* Continent labels for geographic context */}
-                {WORLD_MAP_CONTINENTS.map(({ id, label, labelX, labelY }) => (
+                {WORLD_MAP_CONTINENTS.map(({ id, label, labelX, labelY, labelWidth }) => (
                   <g key={id} className="explore-map-continent-marker" aria-hidden="true">
-                    <line x1={labelX - 10} x2={labelX + 52} y1={labelY + 7} y2={labelY + 7} />
+                    <rect
+                      x={labelX - (labelWidth || 78) / 2}
+                      y={labelY - 15}
+                      width={labelWidth || 78}
+                      height="24"
+                      rx="8"
+                      className="explore-map-continent-label-bg"
+                    />
                     <text x={labelX} y={labelY} className="explore-map-continent-label">{label}</text>
                   </g>
                 ))}
