@@ -82,8 +82,8 @@ const WORLD_MAP_CONTINENTS = [
     id: 'oceania',
     label: 'Oceania',
     region: 'oceania',
-    labelX: 700,
-    labelY: 252
+    labelX: 666,
+    labelY: 286
   }
 ];
 
