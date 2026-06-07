@@ -464,7 +464,11 @@ function SearchSection(props) {
                               className="suggest-item"
                               onMouseDown={(e) => e.preventDefault()}
                               onClick={() => {
-                                setSearchForm((p) => ({ ...p, destinationQuery: s.type === 'country' ? s.label : s.value }));
+                                setSearchForm((p) => ({
+                                  ...p,
+                                  destinationQuery: s.type === 'country' ? s.label : s.value,
+                                  country: s.type === 'country' ? s.value : p.country
+                                }));
                                 setShowDestinationSuggestions(false);
                               }}
                             >

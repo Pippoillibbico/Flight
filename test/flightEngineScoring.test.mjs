@@ -7,6 +7,7 @@ import {
   computeHighSeasonAvg,
   computeSavingVs2024,
   decideTrips,
+  getDestinationSuggestions,
   searchFlights
 } from '../server/lib/flight-engine.js';
 
@@ -70,6 +71,33 @@ test('searchFlights sorting is deterministic: price asc then saving desc', () =>
     const curr = result.flights[i];
     assert.equal(prev.price <= curr.price || (prev.price === curr.price && prev.savingVs2024 >= curr.savingVs2024), true);
   }
+});
+
+test('destination suggestions include country matches such as Brazil', () => {
+  const suggestions = getDestinationSuggestions({ query: 'brasil', region: 'all', limit: 8 });
+  assert.equal(suggestions.some((item) => item.type === 'country' && item.value === 'Brazil'), true);
+});
+
+test('searchFlights accepts a country as destination query', () => {
+  const result = searchFlights({
+    origin: 'FCO',
+    region: 'all',
+    country: undefined,
+    destinationQuery: 'Brasil',
+    dateFrom: '2026-07-11',
+    dateTo: '2026-07-18',
+    cheapOnly: false,
+    maxBudget: undefined,
+    connectionType: 'all',
+    maxStops: 2,
+    travelTime: 'all',
+    minComfortScore: undefined,
+    travellers: 1,
+    cabinClass: 'economy'
+  });
+
+  assert.equal(result.flights.length > 0, true);
+  assert.equal(result.flights.every((flight) => flight.country === 'Brazil'), true);
 });
 
 test('decideTrips returns top 4 when requested and uses budget field', () => {

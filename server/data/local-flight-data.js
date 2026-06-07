@@ -125,6 +125,38 @@ export const ROUTES = [
     decisionMetadata: { climateProfile: 'mixed', paceProfile: 'fast', overtourismIndex: 63, area: 'japan' }
   },
   {
+    origin: 'FCO',
+    destinationIata: 'GIG',
+    destinationName: 'Rio de Janeiro',
+    country: 'Brazil',
+    region: 'south_america',
+    keywords: ['rio de janeiro', 'rio', 'brazil', 'brasil'],
+    seasonalPriceBands: bands(690, 0.23),
+    seasonality: { highSeasonMonths: [1, 2, 7, 8, 12], shoulderMonths: [3, 4, 5, 9, 10] },
+    comfortMetadata: {
+      stopCountDistribution: { 0: 0.05, 1: 0.58, 2: 0.37 },
+      nightFlightProbability: 0.44,
+      typicalDepartureWindow: { startHour: 8, endHour: 23 }
+    },
+    decisionMetadata: { climateProfile: 'warm', paceProfile: 'normal', overtourismIndex: 61, area: 'south_america' }
+  },
+  {
+    origin: 'MXP',
+    destinationIata: 'GRU',
+    destinationName: 'Sao Paulo',
+    country: 'Brazil',
+    region: 'south_america',
+    keywords: ['sao paulo', 'san paolo', 'brazil', 'brasil'],
+    seasonalPriceBands: bands(660, 0.22),
+    seasonality: { highSeasonMonths: [1, 2, 7, 8, 12], shoulderMonths: [3, 4, 5, 9, 10] },
+    comfortMetadata: {
+      stopCountDistribution: { 0: 0.07, 1: 0.57, 2: 0.36 },
+      nightFlightProbability: 0.42,
+      typicalDepartureWindow: { startHour: 8, endHour: 23 }
+    },
+    decisionMetadata: { climateProfile: 'warm', paceProfile: 'fast', overtourismIndex: 55, area: 'south_america' }
+  },
+  {
     origin: 'BLQ',
     destinationIata: 'MAD',
     destinationName: 'Madrid',

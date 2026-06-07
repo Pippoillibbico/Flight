@@ -50,8 +50,7 @@ export function useAppSuggestionEffects({
                   const value = String(item?.value || '').trim();
                   const baseLabel = String(item?.label || value).trim();
                   const type = String(item?.type || 'destination').trim().toLowerCase();
-                  if (type === 'country') return null;
-                  const label = localizeDestinationSuggestionLabel(baseLabel);
+                  const label = type === 'country' ? localizeCountryByIso2('', baseLabel, language) : localizeDestinationSuggestionLabel(baseLabel);
                   if (!value || !label) return null;
 
                   const normalizedLabel = normalizeSuggestionToken(label);
