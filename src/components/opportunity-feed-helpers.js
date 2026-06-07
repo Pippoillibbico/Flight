@@ -42,9 +42,14 @@ export function formatPeriod(item, locale, labels) {
       const returnMonth = formatter.format(ret).replace('.', '');
       return `${departMonth} - ${returnMonth}`;
     }
-    return `${item.depart_date} - ${item.return_date}`;
+    return labels.flexibleDates;
   }
-  if (item?.depart_date) return `${labels.departurePrefix} ${item.depart_date}`;
+  if (item?.depart_date) {
+    const depart = parseDateOnly(item.depart_date);
+    if (depart && !Number.isNaN(depart.getTime())) {
+      return `${labels.departurePrefix} ${formatter.format(depart).replace('.', '')}`;
+    }
+  }
   return labels.flexibleDates;
 }
 
@@ -60,11 +65,11 @@ export function formatBaggage(item, labels) {
   return labels.baggageUnknown;
 }
 
-export function formatAirlineLabel(value) {
+export function formatAirlineLabel(value, fallback = 'unknown') {
   const raw = String(value || '').trim();
-  if (!raw) return 'unknown';
+  if (!raw) return fallback;
   if (raw === 'seed_demo_partner') return 'Partner demo';
-  if (raw === 'unknown') return 'unknown';
+  if (raw === 'unknown') return fallback;
   if (!raw.includes('_')) return raw;
   return raw
     .split('_')
@@ -113,7 +118,7 @@ export function localizeOpportunityDescription(item, language, labels) {
   const period = formatPeriod(item, isEnglish ? 'en-US' : 'it-IT', labels);
   if (!isEnglish) {
     const routePart = stopCount === 0 ? 'una rotta diretta' : `una rotta con ${stopCount} ${stopCount === 1 ? 'scalo' : 'scali'}`;
-    return `Questa opportunita combina un prezzo competitivo, ${routePart} e una finestra di viaggio ${period}.`;
+    return `Questa opportunità combina un prezzo competitivo, ${routePart} e una finestra di viaggio ${period}.`;
   }
   const routePart = stopCount === 0 ? 'a direct route' : `a route with ${stopCount} stop${stopCount === 1 ? '' : 's'}`;
   return `This opportunity combines a competitive price, ${routePart}, and travel window ${period}.`;
@@ -150,8 +155,8 @@ export function levelPriority(item) {
   const level = String(item?.opportunity_level || item?.short_badge_text || '')
     .trim()
     .toLowerCase();
-  if (level.includes('exceptional')) return 3;
-  if (level.includes('rare')) return 2;
+  if (level.includes('rare')) return 3;
+  if (level.includes('exceptional')) return 2;
   if (level.includes('great') || level.includes('good deal') || level.includes('hot')) return 1;
   return 0;
 }
@@ -162,12 +167,14 @@ export function pickTopDeal(items) {
     .map((item, index) => ({
       item,
       index,
+      relevanceScore: toFiniteNumber(item?.discovery_relevance_score) ?? 0,
       radarPriority: getRadarState(item) === 'radar_hot' ? 1 : 0,
       levelScore: levelPriority(item),
       savingValue: toFiniteNumber(extractSavingValue(item)) ?? Number.NEGATIVE_INFINITY,
       price: toFiniteNumber(item?.price) ?? Number.POSITIVE_INFINITY
     }))
     .sort((left, right) => {
+      if (right.relevanceScore !== left.relevanceScore) return right.relevanceScore - left.relevanceScore;
       if (right.radarPriority !== left.radarPriority) return right.radarPriority - left.radarPriority;
       if (right.levelScore !== left.levelScore) return right.levelScore - left.levelScore;
       if (right.savingValue !== left.savingValue) return right.savingValue - left.savingValue;

@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 import { OURAIRPORTS_IATA_SET } from '../../src/data/ourairports-iata.js';
+import { OURAIRPORTS_COMMERCIAL_IATA_SET } from '../../src/data/ourairports-commercial-iata.js';
 
 const DATASETS = Object.freeze({
   airports: {
@@ -185,6 +186,7 @@ function buildUsefulCatalog(rawDatasets, { sourceChecksum } = {}) {
       type: normalizeText(airport.type, 32),
       name: normalizeText(airport.name),
       municipality: normalizeText(airport.municipality),
+      scheduledService: normalizeText(airport.scheduled_service, 8).toLowerCase(),
       countryCode: normalizeText(airport.iso_country, 8).toUpperCase(),
       regionCode: normalizeText(airport.iso_region, 24).toUpperCase(),
       latitude: normalizeNumber(airport.latitude_deg),
@@ -294,4 +296,29 @@ export function isKnownOurAirportsIata(value) {
   const catalog = loadOurAirportsCatalog();
   if (catalog?.airportsByIata?.[code]) return true;
   return OURAIRPORTS_IATA_SET.has(code);
+}
+
+export function isCommercialOurAirportsEntry(entry) {
+  return Boolean(
+    normalizeText(entry?.municipality) &&
+      normalizeText(entry?.scheduledService ?? entry?.scheduled_service, 8).toLowerCase() === 'yes'
+  );
+}
+
+export function listCommercialOurAirportsIataFromCsv(csvText) {
+  return rowsToObjects(csvText)
+    .filter((airport) => normalizeText(airport.type, 32) !== 'closed' && isCommercialOurAirportsEntry(airport))
+    .map((airport) => normalizeIata(airport.iata_code))
+    .filter(Boolean)
+    .sort();
+}
+
+export function isCommercialOurAirportsIata(value) {
+  const code = normalizeIata(value);
+  if (!code) return false;
+  const entry = loadOurAirportsCatalog()?.airportsByIata?.[code];
+  if (entry && ('scheduledService' in entry || 'scheduled_service' in entry)) {
+    return isCommercialOurAirportsEntry(entry);
+  }
+  return OURAIRPORTS_COMMERCIAL_IATA_SET.has(code);
 }

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { useEffect, useRef } from 'react';
 import { validateProps } from '../utils/validateProps';
 import { formatRouteDisplayName } from '../utils/localizePlace';
 import { formatPeriod, localizeOpportunityDescription } from './opportunity-feed-helpers';
@@ -38,6 +39,11 @@ function OpportunityDetailSection(props) {
     props,
     'OpportunityDetailSection'
   );
+  const panelRef = useRef(null);
+  useEffect(() => {
+    panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    panelRef.current?.focus({ preventScroll: true });
+  }, []);
   const tt = (key, fallback) => (typeof t === 'function' ? t(key) : fallback) || fallback;
   const isEnglish = String(language || 'it').toLowerCase().startsWith('en');
   const formatPrice = (value, currency = 'EUR') => {
@@ -73,7 +79,7 @@ function OpportunityDetailSection(props) {
   const routeLabel = formatRouteDisplayName(item, language);
 
   return (
-    <section className="panel opportunity-detail-panel">
+    <section ref={panelRef} className="panel opportunity-detail-panel" tabIndex={-1}>
       <div className="panel-head">
         <h2>{tt('opportunityDetailTitle', 'Opportunity detail')}</h2>
         <button type="button" className="ghost" onClick={onClose} data-testid="opportunity-detail-close">
@@ -81,7 +87,16 @@ function OpportunityDetailSection(props) {
         </button>
       </div>
       {loading ? <p className="muted">{tt('opportunityDetailLoading', 'Loading detail...')}</p> : null}
-      {error ? <p className="error">{error}</p> : null}
+      {error ? (
+        <div className="item-actions">
+          <p className="error">{error}</p>
+          {detail?.requestedId ? (
+            <button type="button" className="ghost" data-testid="retry-opportunity-detail" onClick={() => onViewRelated(detail.requestedId)}>
+              {tt('retryActionLabel', 'Retry')}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       {!loading && !detail ? <p className="muted">{tt('opportunityDetailEmpty', 'No detail available.')}</p> : null}
       {item ? (
         <>

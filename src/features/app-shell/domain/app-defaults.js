@@ -5,7 +5,7 @@ export const DEFAULT_SEARCH_DATE_TO = format(addDays(new Date(), 18), 'yyyy-MM-d
 
 export function createDefaultSearchForm() {
   return {
-    origin: 'MXP',
+    origin: '',
     tripType: 'round_trip',
     periodPreset: 'custom',
     region: 'all',

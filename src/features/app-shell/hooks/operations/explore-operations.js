@@ -19,6 +19,7 @@ export function createExploreOperations({
 }) {
   async function loadExploreDiscovery(overrides = {}) {
     const origin = String(overrides.origin ?? exploreDiscoveryInput.origin ?? '').trim().toUpperCase();
+    const region = String(overrides.region ?? exploreDiscoveryInput.region ?? 'all').trim().toLowerCase() || 'all';
     const budgetCandidate = overrides.budgetMax ?? exploreDiscoveryInput.budgetMax;
     const budgetMax = Number(budgetCandidate);
     const limitCandidate = Number(overrides.limit ?? exploreDiscoveryInput.limit ?? 24);
@@ -46,13 +47,14 @@ export function createExploreOperations({
     setExploreDiscoveryInput((prev) => ({
       ...prev,
       origin,
+      region,
       budgetMax: String(Math.round(budgetMax)),
       limit
     }));
 
     const [budgetResult, mapResult] = await Promise.allSettled([
-      api.opportunityExploreBudget(token, { origin, budgetMax, limit }),
-      api.opportunityExploreMap(token, { origin, budgetMax, limit })
+      api.opportunityExploreBudget(token, { origin, budgetMax, region, limit }),
+      api.opportunityExploreMap(token, { origin, budgetMax, region, limit })
     ]);
 
     if (budgetResult.status === 'fulfilled') {

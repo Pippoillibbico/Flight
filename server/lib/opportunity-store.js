@@ -2,6 +2,7 @@ import { mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
+import { OURAIRPORTS_CITY_BY_IATA } from '../../src/data/ourairports-city-map.js';
 import { buildBookingLink } from './flight-engine.js';
 import { listPriceObservationsSince, scoreDeal } from './deal-engine-store.js';
 import { parseFlag } from './env-flags.js';
@@ -19,6 +20,7 @@ import {
 import { applyOpportunityFilters, mapUserFollowRow, parsePromptFilters } from './opportunity-store-query-helpers.js';
 import { createOpportunityAiEnricher } from './opportunity-ai-enricher.js';
 import { deriveClusterInfo, resolveOrigin, resolveRoute, resolveRouteMeta } from './opportunity-geo.js';
+import { isCommercialOurAirportsIata } from './ourairports-catalog.js';
 import { scoreOpportunityCandidate } from './opportunity-scoring.js';
 import {
   budgetBucketFromPrice,
@@ -31,6 +33,7 @@ import {
   normalizeTripType,
   parseBaggageIncluded,
   parseJsonSafe,
+  resolveObservationAirline,
   shortHash,
   slugify,
   stringifyJsonSafe,
@@ -160,7 +163,7 @@ function normalizeOpportunityRow({
     trip_length_days: tripLengthDays,
     trip_type: tripType,
     stops,
-    airline: String(observation.provider || 'unknown'),
+    airline: resolveObservationAirline(observation, observationMeta),
     baggage_included: baggageIncluded,
     travel_duration_minutes: travelDurationMinutes,
     distance_km: distanceKm,
@@ -219,86 +222,98 @@ export async function refreshOpportunityFeed({ lookbackDays = 75, limit = 2000 }
     let skippedWeak = 0;
     let skippedInvalid = 0;
     for (const observation of observations) {
-      const originAirport = String(observation.origin_iata || '').toUpperCase();
-      const destinationAirport = String(observation.destination_iata || '').toUpperCase();
-      const departureDate = toYmd(observation.departure_date) || toYmd(observation.travel_month);
-      if (!departureDate) {
+      try {
+        const originAirport = String(observation.origin_iata || '').toUpperCase();
+        const destinationAirport = String(observation.destination_iata || '').toUpperCase();
+        const departureDate = toYmd(observation.departure_date) || toYmd(observation.travel_month);
+        if (!departureDate) {
+          skippedInvalid += 1;
+          continue;
+        }
+        const observationMeta = parseJsonSafe(observation.metadata, {});
+        const returnDate = toYmd(observation.return_date) || null;
+        const route = resolveRoute(originAirport, destinationAirport);
+        const origin = resolveOrigin(originAirport);
+        const stopHint = toNullableInt(observationMeta.totalStops ?? observationMeta.stops ?? observationMeta.stopCount);
+        const stops = Number.isFinite(stopHint) ? Math.max(0, stopHint) : estimateStops(route);
+        if (stops > 3) {
+          skippedInvalid += 1;
+          continue;
+        }
+        const travelDurationMinutes = toNullableInt(
+          observationMeta.totalDurationMinutes ?? observationMeta.durationMinutes ?? observationMeta.travelDurationMinutes
+        );
+        if (Number.isFinite(travelDurationMinutes) && travelDurationMinutes > 45 * 60) {
+          skippedInvalid += 1;
+          continue;
+        }
+        const tripLengthDays = computeTripLength(departureDate, returnDate);
+
+        const scoredDeal = await scoreDeal({
+          origin: originAirport,
+          destination: destinationAirport,
+          departureDate,
+          price: toNumber(observation.total_price, 0)
+        });
+        const baselineMedian = toNumber(scoredDeal?.baselineMedian, 0);
+        const savingPct =
+          baselineMedian > 0
+            ? Math.round(((baselineMedian - toNumber(observation.total_price, 0)) / baselineMedian) * 10000) / 100
+            : null;
+        scoredDeal.baselineMedian = baselineMedian || null;
+        scoredDeal.savingPct = Number.isFinite(savingPct) ? savingPct : null;
+
+        const scoreData = scoreOpportunityCandidate({
+          priceAttractiveness: toNumber(scoredDeal?.dealScore, 50),
+          routeMeta: route || {},
+          stopCount: stops,
+          tripLengthDays,
+          travelDurationMinutes,
+          distanceKm: toNullableInt(observationMeta.distanceKm ?? observationMeta.distance_km ?? route?.distanceKm),
+          airlineQualityScore: toNullableScore(observationMeta.airlineQualityScore ?? observationMeta.airline_quality_score),
+          departDate: departureDate,
+          returnDate: returnDate || '',
+          observationCount: toNumber(scoredDeal?.confidence?.observationCount, 0)
+        });
+
+        const bookingUrl = buildBookingLink({
+          origin: originAirport,
+          destinationIata: destinationAirport,
+          dateFrom: departureDate,
+          dateTo: returnDate || departureDate,
+          travellers: 1,
+          cabinClass: 'economy'
+        });
+
+        const row = normalizeOpportunityRow({
+          observation: {
+            ...observation,
+            departure_date: departureDate,
+            return_date: returnDate
+          },
+          route,
+          originCity: origin.city,
+          scoreData,
+          scoredDeal,
+          bookingUrl,
+          stops,
+          tripLengthDays
+        });
+
+        await upsertOpportunity(row);
+        if (row.is_published) published += 1;
+        else skippedWeak += 1;
+      } catch (error) {
         skippedInvalid += 1;
-        continue;
+        logger.warn(
+          {
+            err: error,
+            observationId: observation?.id || null,
+            fingerprint: observation?.fingerprint || null
+          },
+          'opportunity_observation_skipped'
+        );
       }
-      const observationMeta = parseJsonSafe(observation.metadata, {});
-      const returnDate = toYmd(observation.return_date) || null;
-      const route = resolveRoute(originAirport, destinationAirport);
-      const origin = resolveOrigin(originAirport);
-      const stopHint = toNullableInt(observationMeta.totalStops ?? observationMeta.stops ?? observationMeta.stopCount);
-      const stops = Number.isFinite(stopHint) ? Math.max(0, stopHint) : estimateStops(route);
-      if (stops > 3) {
-        skippedInvalid += 1;
-        continue;
-      }
-      const travelDurationMinutes = toNullableInt(
-        observationMeta.totalDurationMinutes ?? observationMeta.durationMinutes ?? observationMeta.travelDurationMinutes
-      );
-      if (Number.isFinite(travelDurationMinutes) && travelDurationMinutes > 45 * 60) {
-        skippedInvalid += 1;
-        continue;
-      }
-      const tripLengthDays = computeTripLength(departureDate, returnDate);
-
-      const scoredDeal = await scoreDeal({
-        origin: originAirport,
-        destination: destinationAirport,
-        departureDate,
-        price: toNumber(observation.total_price, 0)
-      });
-      const baselineMedian = toNumber(scoredDeal?.baselineMedian, 0);
-      const savingPct =
-        baselineMedian > 0
-          ? Math.round(((baselineMedian - toNumber(observation.total_price, 0)) / baselineMedian) * 10000) / 100
-          : null;
-      scoredDeal.baselineMedian = baselineMedian || null;
-      scoredDeal.savingPct = Number.isFinite(savingPct) ? savingPct : null;
-
-      const scoreData = scoreOpportunityCandidate({
-        priceAttractiveness: toNumber(scoredDeal?.dealScore, 50),
-        routeMeta: route || {},
-        stopCount: stops,
-        tripLengthDays,
-        travelDurationMinutes,
-        distanceKm: toNullableInt(observationMeta.distanceKm ?? observationMeta.distance_km ?? route?.distanceKm),
-        airlineQualityScore: toNullableScore(observationMeta.airlineQualityScore ?? observationMeta.airline_quality_score),
-        departDate: departureDate,
-        returnDate: returnDate || '',
-        observationCount: toNumber(scoredDeal?.confidence?.observationCount, 0)
-      });
-
-      const bookingUrl = buildBookingLink({
-        origin: originAirport,
-        destinationIata: destinationAirport,
-        dateFrom: departureDate,
-        dateTo: returnDate || departureDate,
-        travellers: 1,
-        cabinClass: 'economy'
-      });
-
-      const row = normalizeOpportunityRow({
-        observation: {
-          ...observation,
-          departure_date: departureDate,
-          return_date: returnDate
-        },
-        route,
-        originCity: origin.city,
-        scoreData,
-        scoredDeal,
-        bookingUrl,
-        stops,
-        tripLengthDays
-      });
-
-      await upsertOpportunity(row);
-      if (row.is_published) published += 1;
-      else skippedWeak += 1;
     }
 
     // Keep publication dedupe in the pipeline write-path, not in read endpoints.
@@ -387,6 +402,7 @@ function normalizeOpportunityRowForApi(row) {
   const cluster = deriveClusterInfo(normalized);
   return {
     ...normalized,
+    discovery_relevance_score: publicDiscoveryRelevanceScore(normalized),
     destination_cluster_slug: cluster.slug,
     destination_cluster_name: cluster.cluster_name,
     budget_bucket: budgetBucketFromPrice(normalized.price)
@@ -436,13 +452,16 @@ export async function listPublishedOpportunities({
   cluster = '',
   budgetBucket = '',
   entity = '',
-  limit = 20
+  limit = 20,
+  publicDiscoveryOnly = false
 } = {}) {
   await ensureInitialized();
 
   const safeOrigin = String(originAirport || '').trim().toUpperCase();
   const safeLimit = Math.max(1, Math.min(5000, Number(limit) || 20));
-  const preFilterLimit = Math.max(safeLimit * 4, 120);
+  const preFilterLimit = publicDiscoveryOnly
+    ? Math.max(safeLimit * 40, 2000)
+    : Math.max(safeLimit * 4, 120);
   const hasMonth = /^\d{4}-\d{2}$/.test(String(travelMonth || '').trim());
   const safeMonth = hasMonth ? String(travelMonth).trim() : '';
   const safePrice = Number.isFinite(Number(maxPrice)) ? Number(maxPrice) : null;
@@ -497,7 +516,21 @@ export async function listPublishedOpportunities({
     };
   }
   const filtered = applyOpportunityFilters(sanitized, { country, region, cluster, budgetBucket, entity });
-  return filtered.slice(0, safeLimit);
+  const hasExplicitDiscoveryScope = Boolean(safeOrigin || country || region || cluster || entity);
+  const eligible = publicDiscoveryOnly
+    ? filtered
+        .filter(isPublicDiscoveryOpportunity)
+        .filter((item) => hasExplicitDiscoveryScope || publicDiscoveryRelevanceScore(item) >= 35)
+    : filtered;
+  const ranked = publicDiscoveryOnly
+    ? [...eligible].sort(
+        (left, right) =>
+          publicDiscoveryRelevanceScore(right) - publicDiscoveryRelevanceScore(left) ||
+          toNumber(right.final_score, 0) - toNumber(left.final_score, 0) ||
+          toNumber(left.price, Number.POSITIVE_INFINITY) - toNumber(right.price, Number.POSITIVE_INFINITY)
+      )
+    : eligible;
+  return ranked.slice(0, safeLimit);
 }
 
 export async function createOrUpdateUserFollow({ userId, entityType, slug, displayName, followType = 'radar', metadata = {} }) {
@@ -667,10 +700,14 @@ export async function listDestinationClusters({ region = '', limit = 12 } = {}) 
   });
   const grouped = new Map();
   for (const item of items) {
-    const cluster = deriveClusterInfo(item);
-    const key = cluster.slug;
+    if (!isPublicDiscoveryOpportunity(item)) continue;
     const destinationAirport = isIataCode(item?.destination_airport) ? String(item.destination_airport).toUpperCase() : '';
-    const destinationCity = String(item?.destination_city || '').trim();
+    // Public discovery must only surface destinations verified by the official airport catalog.
+    if (!isCommercialOurAirportsIata(destinationAirport)) continue;
+    const destinationCity = String(OURAIRPORTS_CITY_BY_IATA[destinationAirport] || '').trim();
+    if (!destinationCity) continue;
+    const cluster = deriveClusterInfo({ ...item, destination_city: destinationCity });
+    const key = cluster.slug;
     const price = toNumber(item.price, 0);
     if (!grouped.has(key)) {
       grouped.set(key, {
@@ -721,16 +758,40 @@ export async function listDestinationClusters({ region = '', limit = 12 } = {}) 
     .slice(0, safeLimit);
 }
 
+export function isPublicDiscoveryOpportunity(item) {
+  const airline = String(item?.airline || '').trim().toLowerCase();
+  if (airline.includes('unit_test')) return false;
+  return (
+    isCommercialOurAirportsIata(item?.origin_airport) &&
+    isCommercialOurAirportsIata(item?.destination_airport)
+  );
+}
+
+export function publicDiscoveryRelevanceScore(item) {
+  const originAirport = String(item?.origin_airport || '').trim().toUpperCase();
+  const destinationAirport = String(item?.destination_airport || '').trim().toUpperCase();
+  const route = resolveRoute(originAirport, destinationAirport);
+  const origin = resolveOrigin(originAirport);
+  const destinationCity = String(OURAIRPORTS_CITY_BY_IATA[destinationAirport] || '').trim();
+
+  let score = 0;
+  if (route) score += 100;
+  if (origin.city && origin.city !== originAirport) score += 35;
+  if (destinationCity && destinationCity !== destinationAirport) score += 15;
+  if (String(route?.country || '').trim()) score += 20;
+  return score;
+}
+
 export async function getOpportunityById(opportunityId) {
   await ensureInitialized();
   const id = String(opportunityId || '').trim();
   if (!id) return null;
 
   if (getMode() === 'postgres') {
-    const result = await pgPool.query(`SELECT * FROM travel_opportunities WHERE id = $1 LIMIT 1`, [id]);
+    const result = await pgPool.query(`SELECT * FROM travel_opportunities WHERE id = $1 AND is_published = true LIMIT 1`, [id]);
     return normalizeOpportunityRowForApi(result.rows[0] || null);
   }
-  const row = sqliteDb.prepare(`SELECT * FROM travel_opportunities WHERE id = ? LIMIT 1`).get(id);
+  const row = sqliteDb.prepare(`SELECT * FROM travel_opportunities WHERE id = ? AND is_published = 1 LIMIT 1`).get(id);
   return normalizeOpportunityRowForApi(row ? { ...row, is_published: Boolean(row.is_published) } : null);
 }
 
@@ -1163,4 +1224,3 @@ export async function getOpportunityIntelligenceDebugStats() {
     refreshedAt: new Date().toISOString()
   };
 }
-

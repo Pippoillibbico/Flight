@@ -47,6 +47,24 @@ test('route display includes readable cities for real airport codes', () => {
     formatRouteDisplayName({ origin: 'MXP', destination: 'FCO' }, 'en'),
     'Milan -> Rome'
   );
+  assert.equal(
+    formatRouteDisplayName(
+      { origin_airport: 'FCO', destination_airport: 'LIS', origin_city: 'Roma Fiumicino', destination_city: 'Lisboa' },
+      'en'
+    ),
+    'Rome -> Lisbon'
+  );
+  assert.equal(
+    formatRouteDisplayName(
+      { origin_airport: 'FCO', destination_airport: 'LIS', origin_city: 'Roma Fiumicino', destination_city: 'Lisboa' },
+      'it'
+    ),
+    'Roma -> Lisbona'
+  );
+  assert.equal(formatRouteDisplayName({ origin_airport: 'FCO', destination_airport: 'LIS' }, 'de'), 'Rom -> Lissabon');
+  assert.equal(formatRouteDisplayName({ origin_airport: 'FCO', destination_airport: 'LIS' }, 'fr'), 'Rome -> Lisbonne');
+  assert.equal(formatRouteDisplayName({ origin_airport: 'FCO', destination_airport: 'LIS' }, 'es'), 'Roma -> Lisboa');
+  assert.equal(formatRouteDisplayName({ origin_airport: 'FCO', destination_airport: 'LIS' }, 'pt'), 'Roma -> Lisboa');
 });
 
 test('offer route display hides raw airport codes in first-level deal cards', () => {

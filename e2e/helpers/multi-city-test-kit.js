@@ -50,12 +50,12 @@ export async function fillSegment(page, index, { origin, destination, date }) {
 }
 
 export async function openExplore(page) {
-  await page.getByRole('button', { name: /^Explore$/, exact: true }).click();
-  await expect(page.getByRole('button', { name: /^Multi-city$/, exact: true })).toBeVisible();
+  await page.getByTestId('app-nav-explore').click();
+  await expect(page.getByTestId('multi-city-toggle')).toBeVisible();
 }
 
 export async function switchToMultiCity(page) {
-  await page.getByRole('button', { name: /^Multi-city$/, exact: true }).click();
+  await page.getByTestId('multi-city-toggle').click();
   await expect(page.getByTestId('multi-city-panel')).toBeVisible();
 }
 

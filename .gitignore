@@ -52,6 +52,9 @@ docs/audit/*.log
 .codex-vite*.log
 app-dev*.log
 app-devweb*.log
+.tmp-feed.json
+.vite-dev.log
+.vite-verify.log
 cookie-*.png
 playwright-*.png
 verify-*.png

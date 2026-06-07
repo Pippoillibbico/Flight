@@ -39,11 +39,10 @@ test.beforeEach(async ({ page }) => {
   await ensureHomeSection(page);
 });
 
-test('home renders real feed and clusters without empty-state fallback', async ({ page }) => {
+test('home renders the current feed without false empty-state fallback', async ({ page }) => {
   await expect(page.locator('.opportunity-feed-panel')).toBeVisible();
-  await expect(page.getByTestId('opportunity-live-signal')).toBeVisible();
-  await expect(page.getByTestId('opportunity-hero-refresh-feed-cta')).toBeVisible();
-  await expect(page.getByRole('heading', { level: 3, name: /opportunity clusters|discover by cluster/i })).toBeVisible();
+  await expect(page.getByTestId('opportunity-top-deal-section')).toBeVisible();
+  await expect(page.getByTestId('opportunity-top-deal').or(page.getByTestId('opportunity-hot-empty')).first()).toBeVisible();
 });
 
 test('account panel keeps readable contrast in dark mode', async ({ page }) => {

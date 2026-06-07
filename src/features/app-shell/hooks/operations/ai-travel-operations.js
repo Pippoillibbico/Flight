@@ -53,7 +53,7 @@ export function createAiTravelOperations({
           setAiTravelError(content.message);
           setSubMessage(content.message);
         } else {
-          setAiTravelError(String(gatewayResult.error?.message || 'AI request failed.'));
+          setAiTravelError(t('aiTravelRequestFailed'));
         }
         setAiTravelResult(null);
         return;

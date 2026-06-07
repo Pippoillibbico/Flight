@@ -82,7 +82,7 @@ test('tracks search/results lifecycle and booking redirect observability on resu
     };
   });
 
-  await page.getByRole('button', { name: /^Explore$/, exact: true }).click();
+  await page.getByTestId('app-nav-explore').click();
   await page.getByTestId('submit-search').click();
   await expect(page.getByTestId('book-result-trk-1')).toBeVisible();
   await page.getByTestId('book-result-trk-1').click();

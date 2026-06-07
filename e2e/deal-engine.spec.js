@@ -67,7 +67,7 @@ function buildDealSearchResponse() {
 }
 
 async function runSearch(page) {
-  await page.getByRole('button', { name: 'Explore', exact: true }).click();
+  await page.getByTestId('app-nav-explore').click();
   await page.getByRole('button', { name: 'Advanced mode' }).click();
   await page.getByTestId('submit-search').click();
 }

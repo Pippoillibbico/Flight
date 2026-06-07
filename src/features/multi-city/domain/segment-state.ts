@@ -80,12 +80,22 @@ export function updateMultiCitySegmentField(
   value: string
 ): MultiCitySegment[] {
   const safe = Array.isArray(segments) ? segments : [];
+  const current = safe[index];
+  const normalizedValue =
+    field === 'date'
+      ? normalizeIsoDate(value)
+      : String(value || '')
+          .trim()
+          .toUpperCase();
   return safe.map((segment, currentIndex) => {
-    if (currentIndex !== index) return segment;
-    if (field === 'date') return { ...segment, date: normalizeIsoDate(value) };
-    const normalized = String(value || '')
-      .trim()
-      .toUpperCase();
-    return { ...segment, [field]: normalized };
+    if (currentIndex === index) return { ...segment, [field]: normalizedValue };
+    if (
+      field === 'destination' &&
+      currentIndex === index + 1 &&
+      (!segment.origin || segment.origin === current?.destination)
+    ) {
+      return { ...segment, origin: normalizedValue };
+    }
+    return segment;
   });
 }

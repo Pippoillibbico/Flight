@@ -3,7 +3,12 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { refreshOurAirportsCatalog, readOurAirportsCatalog } from '../server/lib/ourairports-catalog.js';
+import {
+  isCommercialOurAirportsEntry,
+  listCommercialOurAirportsIataFromCsv,
+  refreshOurAirportsCatalog,
+  readOurAirportsCatalog
+} from '../server/lib/ourairports-catalog.js';
 
 const CSV_FIXTURES = {
   'airports.csv': [
@@ -53,8 +58,10 @@ test('ourairports refresh stores useful flight catalog and audits ignored datase
 
     const catalog = await readOurAirportsCatalog({ catalogPath });
     assert.equal(catalog.airportsByIata.FCO.municipality, 'Rome');
+    assert.equal(catalog.airportsByIata.FCO.scheduledService, 'yes');
     assert.equal(catalog.sourceChecksum, result.sourceChecksum);
     assert.equal(catalog.airportsByIata.RTY.countryCode, 'AU');
+    assert.equal(catalog.airportsByIata.RTY.scheduledService, 'no');
     assert.equal(catalog.airportsByIata.QWE, undefined);
     assert.equal(catalog.countries.IT.name, 'Italy');
     assert.equal(catalog.regions['IT-62'].name, 'Lazio');
@@ -63,6 +70,13 @@ test('ourairports refresh stores useful flight catalog and audits ignored datase
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test('ourairports commercial airport list only includes scheduled destinations with a municipality', () => {
+  assert.deepEqual(listCommercialOurAirportsIataFromCsv(CSV_FIXTURES['airports.csv']), ['FCO']);
+  assert.equal(isCommercialOurAirportsEntry({ municipality: 'Rome', scheduledService: 'yes' }), true);
+  assert.equal(isCommercialOurAirportsEntry({ municipality: 'Merty Merty', scheduledService: 'no' }), false);
+  assert.equal(isCommercialOurAirportsEntry({ municipality: '', scheduledService: 'yes' }), false);
 });
 
 test('ourairports refresh skips catalog rewrite when source datasets are unchanged', async () => {

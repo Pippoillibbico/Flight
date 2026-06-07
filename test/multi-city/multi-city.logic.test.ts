@@ -157,6 +157,20 @@ test('updateMultiCitySegmentField only updates the targeted segment and field', 
   assert.equal(updated[1]?.date, '2026-06-12');
 });
 
+test('destination update fills the next empty origin without overwriting a manual choice', () => {
+  const source = [
+    { id: 'segment-1', origin: 'MXP', destination: '', date: '2026-06-10' },
+    { id: 'segment-2', origin: '', destination: 'MAD', date: '2026-06-12' }
+  ];
+  const connected = updateMultiCitySegmentField(source, 0, 'destination', 'lis');
+  assert.equal(connected[0]?.destination, 'LIS');
+  assert.equal(connected[1]?.origin, 'LIS');
+
+  const manuallyChanged = updateMultiCitySegmentField(connected, 1, 'origin', 'FCO');
+  const preserved = updateMultiCitySegmentField(manuallyChanged, 0, 'destination', 'ATH');
+  assert.equal(preserved[1]?.origin, 'FCO');
+});
+
 test('retry policy retries bounded attempts with deterministic backoff', async () => {
   let calls = 0;
   const waits: number[] = [];

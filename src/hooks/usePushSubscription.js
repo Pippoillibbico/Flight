@@ -25,7 +25,12 @@ function urlBase64ToUint8Array(base64String) {
 
 const SW_PATH = '/sw.js';
 
-export function usePushSubscription(token) {
+export function usePushSubscription(token, t = null) {
+  const label = (key, fallback) => {
+    if (typeof t !== 'function') return fallback;
+    const value = t(key);
+    return typeof value === 'string' && value.trim() && value !== key ? value : fallback;
+  };
   const supported =
     typeof window !== 'undefined' &&
     'serviceWorker' in navigator &&
@@ -59,7 +64,7 @@ export function usePushSubscription(token) {
     try {
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') {
-        setError('Notification permission denied.');
+        setError(label('notificationPermissionDenied', 'Notification permission denied.'));
         return;
       }
       const reg = await navigator.serviceWorker.ready;
@@ -73,12 +78,12 @@ export function usePushSubscription(token) {
         keys: subJson.keys
       });
       setSubscribed(true);
-    } catch (err) {
-      setError(err?.message || 'Failed to enable push notifications.');
+    } catch {
+      setError(label('pushEnableError', 'Failed to enable push notifications.'));
     } finally {
       setLoading(false);
     }
-  }, [supported, vapidKey, token]);
+  }, [supported, vapidKey, token, t]);
 
   const unsubscribe = useCallback(async () => {
     if (!supported || !token) return;
@@ -92,12 +97,12 @@ export function usePushSubscription(token) {
         await sub.unsubscribe();
       }
       setSubscribed(false);
-    } catch (err) {
-      setError(err?.message || 'Failed to disable push notifications.');
+    } catch {
+      setError(label('pushDisableError', 'Failed to disable push notifications.'));
     } finally {
       setLoading(false);
     }
-  }, [supported, token]);
+  }, [supported, token, t]);
 
   return { supported: supported && Boolean(vapidKey), subscribed, loading, error, subscribe, unsubscribe };
 }

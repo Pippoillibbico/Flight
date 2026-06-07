@@ -194,6 +194,21 @@ export function resolveOpportunityAiModel(provider) {
   return String(process.env.ANTHROPIC_MODEL_OPPORTUNITY || process.env.ANTHROPIC_MODEL || 'claude-3-5-sonnet-20241022').trim();
 }
 
+export function resolveObservationAirline(observation, metadata = {}) {
+  const candidates = [
+    metadata.airline,
+    metadata.carrier,
+    metadata.marketingCarrier,
+    metadata.marketing_carrier,
+    metadata.operatingCarrier,
+    metadata.operating_carrier,
+    observation?.airline,
+    observation?.carrier
+  ];
+  const airline = candidates.find((candidate) => String(candidate || '').trim());
+  return String(airline || observation?.provider || 'unknown').trim();
+}
+
 export function buildAiCopy(row) {
   const level =
     row.opportunity_level === 'Rare opportunity'
@@ -207,7 +222,8 @@ export function buildAiCopy(row) {
   const period = row.return_date ? `${row.depart_date} - ${row.return_date}` : `partenza ${row.depart_date}`;
 
   const aiTitle = `${level}: ${row.origin_airport} -> ${row.destination_city} a ${Math.round(row.price)} ${row.currency}`;
-  const aiDescription = `Questa opportunit\u00e0 combina prezzo competitivo, rotta ${row.stops === 0 ? 'diretta' : `con ${row.stops} scalo`} e finestra viaggio ${period}.`;
+  const stopLabel = Number(row.stops) === 1 ? 'scalo' : 'scali';
+  const aiDescription = `Questa opportunit\u00e0 combina prezzo competitivo, rotta ${row.stops === 0 ? 'diretta' : `con ${row.stops} ${stopLabel}`} e finestra viaggio ${period}.`;
   const notificationText = `${level}: ${row.origin_airport} -> ${row.destination_airport} da ${Math.round(row.price)} ${row.currency}.`;
   const whyItMatters = `Score ${row.final_score}/100 con prezzo ${Math.round(row.price)} ${row.currency} e qualit\u00e0 itinerario verificata.`;
 

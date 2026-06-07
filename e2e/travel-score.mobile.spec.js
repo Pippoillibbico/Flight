@@ -68,7 +68,7 @@ test('mobile travel score rendering and sorting stay stable', async ({ page }) =
     });
   });
 
-  await page.getByRole('button', { name: 'Explore', exact: true }).click();
+  await page.getByTestId('app-nav-explore').click();
   await page.getByRole('button', { name: 'Advanced mode' }).click();
   await page.getByTestId('submit-search').click();
 

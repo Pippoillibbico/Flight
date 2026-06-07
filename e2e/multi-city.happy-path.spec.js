@@ -14,6 +14,18 @@ test('switch to multi-city shows default 2 segments', async ({ page }) => {
   await expect(segmentOriginLocator(page, 1)).toBeVisible();
 });
 
+test('city suggestions select a readable airport and fill the next origin', async ({ page }) => {
+  await bootMultiCity(page);
+
+  await segmentOriginLocator(page, 0).fill('Milan');
+  await page.getByRole('option', { name: /Milan Malpensa.*MXP/ }).click();
+  await expect(segmentOriginLocator(page, 0)).toHaveValue(/Milan.*MXP/);
+
+  await page.getByLabel('Segment 1 Destination', { exact: true }).fill('Lisbon');
+  await page.getByRole('option', { name: /Lisbon Humberto Delgado.*LIS/ }).click();
+  await expect(segmentOriginLocator(page, 1)).toHaveValue(/Lisbon.*LIS/);
+});
+
 test('add and remove segments in multi-city mode', async ({ page }) => {
   await bootMultiCity(page);
 
@@ -54,7 +66,7 @@ test('remove middle segment keeps remaining values stable', async ({ page }) => 
 
   await removeSegmentButton(page, 1).click();
 
-  await expect(segmentOriginLocator(page, 1)).toHaveValue('MAD');
-  await expect(page.getByLabel('Segment 2 Destination', { exact: true })).toHaveValue('ATH');
+  await expect(segmentOriginLocator(page, 1)).toHaveValue(/MAD/);
+  await expect(page.getByLabel('Segment 2 Destination', { exact: true })).toHaveValue(/ATH/);
   await expect(page.getByLabel('Segment 2 Departure', { exact: true })).toHaveValue('2026-05-14');
 });

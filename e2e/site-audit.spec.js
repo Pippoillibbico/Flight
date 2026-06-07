@@ -18,8 +18,8 @@ async function bootAuthenticatedAppShell(page) {
 test('landing shell renders with stable controls', async ({ page }) => {
   await bootLanding(page, createDefaultState());
   await expect(page.locator('main.landing-shell')).toBeVisible();
-  await expect(page.locator('.landing-cta-primary')).toBeVisible();
-  await expect(page.locator('.landing-cta-ghost')).toBeVisible();
+  await expect(page.locator('.landing-hero-cta > .landing-cta-primary')).toBeVisible();
+  await expect(page.locator('.landing-hero-cta > .landing-cta-ghost')).toBeVisible();
   await expect(page.locator('.landing-accedi-btn')).toBeVisible();
 
   await page.locator('.landing-lang-trigger').click();
@@ -40,11 +40,11 @@ test('auth modal respects dark mode visuals', async ({ page }) => {
 test('login enters app shell and main navigation is available', async ({ page }) => {
   await bootAuthenticatedAppShell(page);
   const mainNav = page.locator('.app-main-nav');
-  await expect(mainNav.getByRole('button', { name: 'Home', exact: true })).toBeVisible();
-  await expect(mainNav.getByRole('button', { name: 'Explore', exact: true })).toBeVisible();
-  await expect(mainNav.getByRole('button', { name: 'Radar', exact: true })).toBeVisible();
-  await expect(mainNav.getByRole('button', { name: 'AI Travel', exact: true })).toBeVisible();
-  await expect(mainNav.getByRole('button', { name: 'Premium', exact: true })).toBeVisible();
+  await expect(mainNav.getByTestId('app-nav-home')).toBeVisible();
+  await expect(mainNav.getByTestId('app-nav-explore')).toBeVisible();
+  await expect(mainNav.getByTestId('app-nav-radar')).toBeVisible();
+  await expect(mainNav.getByTestId('app-nav-ai-travel')).toBeVisible();
+  await expect(mainNav.getByTestId('app-nav-premium')).toBeVisible();
 });
 
 test('feed, detail, radar, ai travel and premium are navigable', async ({ page }) => {

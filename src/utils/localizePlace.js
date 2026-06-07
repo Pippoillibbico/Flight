@@ -225,18 +225,26 @@ const CITY_FALLBACK_TRANSLATIONS = {
   de: {
     lisbon: 'Lissabon',
     athens: 'Athen',
-    london: 'London'
+    london: 'London',
+    milan: 'Mailand',
+    rome: 'Rom'
   },
   fr: {
     lisbon: 'Lisbonne',
     athens: 'Athenes',
-    london: 'Londres'
+    london: 'Londres',
+    milan: 'Milan',
+    rome: 'Rome'
   },
   es: {
-    lisbon: 'Lisboa'
+    lisbon: 'Lisboa',
+    milan: 'Milán',
+    rome: 'Roma'
   },
   pt: {
-    lisbon: 'Lisboa'
+    lisbon: 'Lisboa',
+    milan: 'Milão',
+    rome: 'Roma'
   }
 };
 
@@ -514,12 +522,15 @@ function safeOfferCityLabel(city, language) {
 }
 
 function resolveOfferRouteCities(item, language) {
-  const origin = safeOfferCityLabel(item?.origin_city, language)
-    ? safeOfferCityLabel(item?.origin_city, language)
-    : resolveAirportCityNameForOffer(item?.origin_airport || item?.origin, language, item?.origin);
-  const destination = safeOfferCityLabel(item?.destination_city, language)
-    ? safeOfferCityLabel(item?.destination_city, language)
-    : resolveAirportCityNameForOffer(item?.destination_airport || item?.destination, language, item?.destination);
+  const origin =
+    resolveAirportCityNameForOffer(item?.origin_airport || item?.origin, language, item?.origin_city || item?.origin) ||
+    safeOfferCityLabel(item?.origin_city, language);
+  const destination =
+    resolveAirportCityNameForOffer(
+      item?.destination_airport || item?.destination,
+      language,
+      item?.destination_city || item?.destination
+    ) || safeOfferCityLabel(item?.destination_city, language);
   return { origin, destination };
 }
 

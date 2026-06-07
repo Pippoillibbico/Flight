@@ -1,12 +1,8 @@
-import { Suspense, lazy } from 'react';
 import ExploreDiscoverySection from '../../../components/ExploreDiscoverySection';
 import SearchSection from '../../../components/SearchSection';
 import { localizeClusterDisplayName } from '../../../utils/localizePlace';
 import SearchResultsPanels from './SearchResultsPanels';
 import UserDataPanels from './UserDataPanels';
-
-const AdvancedAnalyticsSection = lazy(() => import('../../../components/AdvancedAnalyticsSection'));
-const prefetchAdvancedAnalyticsChunk = () => import('../../../components/AdvancedAnalyticsSection');
 
 export default function ExploreMainSection({
   t,
@@ -143,9 +139,22 @@ export default function ExploreMainSection({
   watchlist,
   removeWatchlistItem
 }) {
+  const visibleClusterShortcuts = destinationClusters
+    .map((cluster) => ({
+      cluster,
+      label: localizeClusterDisplayName(cluster, language)
+    }))
+    .filter(({ cluster, label }) => {
+      if (!label) return false;
+      const opportunitiesCount = Number(cluster?.opportunities_count || 0);
+      const minPrice = Number(cluster?.min_price);
+      return opportunitiesCount >= 2 || (Number.isFinite(minPrice) && minPrice < 180);
+    })
+    .slice(0, 6);
+
   return (
     <>
-      <section className="panel">
+      <section className="panel explore-page-intro">
         <div className="panel-head">
           <h2>{t('explorePageTitle')}</h2>
           {selectedOpportunityCluster ? (
@@ -155,8 +164,8 @@ export default function ExploreMainSection({
           ) : null}
         </div>
         <p className="muted">{t('explorePageSubtitleExtended')}</p>
-        <div className="item-actions explore-cluster-shortcuts">
-          {destinationClusters.slice(0, 6).map((cluster) => (
+        <div className={`item-actions explore-cluster-shortcuts${visibleClusterShortcuts.length > 0 ? '' : ' empty'}`}>
+          {visibleClusterShortcuts.map(({ cluster, label }) => (
             <button
               key={cluster.slug}
               type="button"
@@ -166,7 +175,7 @@ export default function ExploreMainSection({
                 setActiveMainSection('home');
               }}
             >
-              {localizeClusterDisplayName(cluster, language)}
+              {label}
             </button>
           ))}
         </div>
@@ -232,47 +241,7 @@ export default function ExploreMainSection({
         searchResult={searchResult}
         autoFixSearchFilters={autoFixSearchFilters}
         limitReachedBanner={limitReachedBanner}
-        prefetchAdvancedAnalyticsChunk={prefetchAdvancedAnalyticsChunk}
       />
-
-      {isAdvancedMode ? (
-        <Suspense fallback={<section className="panel"><p className="muted">{t('loadReport')}...</p></section>}>
-          <AdvancedAnalyticsSection
-            t={t}
-            isAuthenticated={isAuthenticated}
-            runFeatureAuditCheck={runFeatureAuditCheck}
-            featureAuditLoading={featureAuditLoading}
-            featureAuditError={featureAuditError}
-            featureAudit={featureAudit}
-            loadMonetizationReport={loadMonetizationReport}
-            monetizationLoading={monetizationLoading}
-            monetizationError={monetizationError}
-            monetizationReport={monetizationReport}
-            loadFunnelReport={loadFunnelReport}
-            funnelLoading={funnelLoading}
-            funnelError={funnelError}
-            funnelReport={funnelReport}
-            loadOutboundReport={loadOutboundReport}
-            outboundReportLoading={outboundReportLoading}
-            exportOutboundReportCsv={exportOutboundReportCsv}
-            outboundCsvLoading={outboundCsvLoading}
-            outboundReportError={outboundReportError}
-            outboundReport={outboundReport}
-            runSecurityAuditCheck={runSecurityAuditCheck}
-            securityAuditLoading={securityAuditLoading}
-            securityAuditError={securityAuditError}
-            securityAudit={securityAudit}
-            refreshSecurityActivity={refreshSecurityActivity}
-            securityInfo={securityInfo}
-            securityError={securityError}
-            securityEvents={securityEvents}
-            refreshSearchHistory={refreshSearchHistory}
-            searchHistory={searchHistory}
-            regionLabel={regionLabel}
-            applySearchPreset={applySearchPreset}
-          />
-        </Suspense>
-      ) : null}
 
       <SearchResultsPanels
         t={t}
@@ -337,4 +306,3 @@ export default function ExploreMainSection({
     </>
   );
 }
-

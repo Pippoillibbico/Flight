@@ -6,7 +6,8 @@ export default defineConfig({
   retries: 0,
   use: {
     baseURL: 'http://127.0.0.1:4173',
-    trace: 'on-first-retry'
+    trace: 'on-first-retry',
+    serviceWorkers: 'block'
   },
   webServer: {
     command: 'npm run build && npm run preview',
@@ -20,4 +21,3 @@ export default defineConfig({
     { name: 'webkit', use: { ...devices['Desktop Safari'] } }
   ]
 });
-

@@ -1160,15 +1160,52 @@ body.app-scroll-lock {
   background: var(--surface-soft);
   padding: 12px;
   display: grid;
+  align-content: start;
   gap: 8px;
+  min-height: 340px;
 }
 
 .explore-budget-list {
   display: grid;
   gap: 8px;
+  min-height: 160px;
   max-height: 440px;
   overflow: auto;
-  padding-right: 2px;
+  padding: 2px 8px 10px 0;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(89, 160, 255, 0.58) transparent;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 18px, #000 calc(100% - 18px), transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 18px, #000 calc(100% - 18px), transparent 100%);
+}
+
+.explore-budget-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.explore-budget-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.explore-budget-list::-webkit-scrollbar-thumb {
+  min-height: 52px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(105, 183, 255, 0.82), rgba(47, 128, 255, 0.42))
+    padding-box;
+}
+
+.explore-budget-list::-webkit-scrollbar-thumb:hover {
+  background:
+    linear-gradient(180deg, rgba(142, 203, 255, 0.95), rgba(69, 151, 255, 0.68))
+    padding-box;
+}
+
+.explore-budget-list::-webkit-scrollbar-button {
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 .explore-budget-item {
@@ -1202,17 +1239,38 @@ body.app-scroll-lock {
   border: 1px solid var(--line);
   border-radius: 14px;
   overflow: hidden;
+  min-height: 240px;
   background: linear-gradient(160deg, rgba(15, 111, 255, 0.06), rgba(15, 111, 255, 0.02));
 }
 
 .explore-map-svg {
   width: 100%;
   display: block;
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
 }
 
 .explore-map-grid-line {
   stroke: rgba(15, 111, 255, 0.12);
   stroke-width: 1;
+}
+
+.explore-map-landmass-layer {
+  pointer-events: none;
+}
+
+.explore-map-landmass {
+  fill: url("#exploreLandmassFill");
+  stroke: rgba(105, 183, 255, 0.22);
+  stroke-width: 1.2;
+  filter: drop-shadow(0 12px 22px rgba(15, 111, 255, 0.10));
+}
+
+.explore-map-landmass.active {
+  fill: url("#exploreLandmassActiveFill");
+  stroke: rgba(116, 195, 255, 0.52);
+  filter: drop-shadow(0 0 16px rgba(90, 166, 255, 0.28));
 }
 
 .explore-map-route-line {
@@ -1221,31 +1279,79 @@ body.app-scroll-lock {
   stroke-dasharray: 5 5;
 }
 
+.explore-map-route-line.preview {
+  stroke: rgba(90, 166, 255, 0.46);
+  stroke-width: 1.8;
+}
+
 .explore-map-origin-dot {
-  fill: #0f6fff;
-  stroke: #ffffff;
+  fill: #ffffff;
+  stroke: #0f6fff;
   stroke-width: 2;
+  cursor: grab;
+  transition: stroke 0.08s ease, filter 0.08s ease, transform 0.08s ease;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.explore-map-origin-dot:hover {
+  stroke: #5fb2ff;
+  filter: drop-shadow(0 0 12px rgba(90, 166, 255, 0.84));
+  transform: scale(1.12);
 }
 
 .explore-map-destination-dot {
-  fill: #2e80ff;
-  stroke: rgba(255, 255, 255, 0.9);
-  stroke-width: 1.5;
-  cursor: pointer;
+  fill: #ffffff;
+  stroke: #0f6fff;
+  stroke-width: 2;
+  pointer-events: none;
   transform-box: fill-box;
   transform-origin: center;
-  transition: transform 0.15s ease, fill 0.15s ease;
+  transition: transform 0.08s ease, fill 0.08s ease, stroke 0.08s ease, filter 0.08s ease;
 }
 
-.explore-map-destination-dot:hover {
+.explore-map-destination-target {
+  cursor: pointer;
+  outline: none;
+}
+
+.explore-map-destination-hit-area {
+  fill: transparent;
+  stroke: transparent;
+  cursor: pointer;
+}
+
+.explore-map-destination-target:hover .explore-map-destination-dot,
+.explore-map-destination-target:focus-visible .explore-map-destination-dot {
   transform: scale(1.35);
-  fill: #1a72ef;
+  fill: #ffffff;
+  stroke: #5fb2ff;
+  filter: drop-shadow(0 0 10px rgba(90, 166, 255, 0.82));
 }
 
 .explore-map-destination-dot.active {
   fill: #ffffff;
   stroke: #0f6fff;
   stroke-width: 2.5;
+}
+
+.explore-map-selection-dot {
+  fill: #ffffff;
+  stroke: #0f6fff;
+  stroke-width: 2.5;
+  cursor: grab;
+  pointer-events: visiblePainted;
+  filter: drop-shadow(0 0 10px rgba(47, 128, 255, 0.52));
+  transition: stroke 0.08s ease, filter 0.08s ease, transform 0.08s ease;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.explore-map-selection-dot:hover,
+.explore-map-selection-dot:focus-visible {
+  stroke: #5fb2ff;
+  filter: drop-shadow(0 0 14px rgba(90, 166, 255, 0.90));
+  transform: scale(1.08);
 }
 
 .explore-map-equator-line {
@@ -1268,6 +1374,15 @@ body.app-scroll-lock {
   user-select: none;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+}
+
+.explore-map-continent-marker {
+  pointer-events: none;
+}
+
+.explore-map-continent-marker line {
+  stroke: rgba(61, 136, 239, 0.20);
+  stroke-width: 1.2;
 }
 
 .premium-panel .premium-grid {

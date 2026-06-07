@@ -111,7 +111,7 @@ export function buildItineraryGenerationPreferences({ searchForm, searchSortBy, 
 
 export function formatGeneratedSummary(language, count) {
   const value = Math.max(0, Math.round(Number(count) || 0));
-  if (String(language || '').toLowerCase() === 'it') return `Trovate ${value} opportunita reali.`;
+  if (String(language || '').toLowerCase() === 'it') return `Trovate ${value} opportunità reali.`;
   return `Found ${value} real opportunities.`;
 }
 

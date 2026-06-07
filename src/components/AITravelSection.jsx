@@ -63,11 +63,11 @@ function AITravelSection(props) {
     <section className="panel ai-travel-panel" data-testid="ai-travel-panel">
       <div className="ai-travel-header">
         <div className="panel-head">
-          <h2>{isFreePlan ? tt('aiTravelFreeTitle', 'Public cached trip ideas') : tt('aiTravelPageTitle', 'Find your next trip with AI')}</h2>
+          <h2>{isFreePlan ? tt('aiTravelFreeTitle', 'Travel ideas to explore') : tt('aiTravelPageTitle', 'Find your next trip with AI')}</h2>
         </div>
         <p className="muted">
           {isFreePlan
-            ? tt('aiTravelFreeSubtitle', 'Free uses public cached opportunities, basic route insights, and price trend previews.')
+            ? tt('aiTravelFreeSubtitle', 'Free includes selected opportunities, essential route insights, and price trend previews.')
             : tt('aiTravelPageSubtitle', 'Describe what you are looking for and let the system find real opportunities already in the feed.')}
         </p>
       </div>
@@ -90,7 +90,7 @@ function AITravelSection(props) {
         </p>
         {isFreePlan ? (
           <p className="muted ai-travel-plan-note" data-testid="ai-travel-plan-note">
-            {tt('aiTravelFreePlanNote', 'Free shows public cached opportunities. Upgrade for live scans, AI tools, and route alerts when delivery is enabled.')}
+            {tt('aiTravelFreePlanNote', 'Upgrade for updated fare checks, richer analysis, and route alerts.')}
           </p>
         ) : null}
         <div className="item-actions ai-travel-actions">

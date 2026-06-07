@@ -256,6 +256,7 @@ export default function LiveDealsRadarSection(props) {
   const [detailViewsCount, setDetailViewsCount] = useState(() => readDetailViewsCount());
   const sessionId = useMemo(() => getLiveDealsSessionId(), []);
   const noDealsTelemetrySentRef = useRef(false);
+  const feedRef = useRef(null);
 
   const isEnglish = String(language || 'it').toLowerCase().startsWith('en');
   const tt = (key, fallback) => {
@@ -343,11 +344,11 @@ export default function LiveDealsRadarSection(props) {
         if (normalized.length > 0 && (!isAuthenticated || String(payload?.meta?.accessTier || '') !== 'paid')) {
           trackCoreEvent('teaser_deal_viewed', normalized[0], { surface: 'live_deals_feed' });
         }
-      } catch (loadError) {
+      } catch {
         if (!mounted) return;
         setDeals([]);
         setFeedMeta({ reason: 'no_data', accessTier: isAuthenticated ? 'paid' : 'anonymous_teaser' });
-        setError(String(loadError?.message || 'Impossibile caricare i deal live in questo momento.'));
+        setError(tt('liveDealsLoadError', isEnglish ? 'Unable to load live deals right now.' : 'Impossibile caricare i deal live in questo momento.'));
       } finally {
         if (mounted) setLoading(false);
       }
@@ -449,8 +450,8 @@ export default function LiveDealsRadarSection(props) {
           ? `Route ${routeLabel(deal.origin, deal.destination)} saved.`
           : `Rotta ${routeLabel(deal.origin, deal.destination)} salvata.`
       );
-    } catch (saveError) {
-      setActionMessage(String(saveError?.message || (isEnglish ? 'Unable to save route.' : 'Impossibile salvare la rotta.')));
+    } catch {
+      setActionMessage(tt('liveDealsSaveRouteError', isEnglish ? 'Unable to save this route.' : 'Impossibile salvare questa rotta.'));
     } finally {
       setBusyRouteSlug('');
     }
@@ -587,6 +588,13 @@ export default function LiveDealsRadarSection(props) {
     });
   }
 
+  function viewLiveDeals() {
+    setSelectedDealId('');
+    window.requestAnimationFrame(() => {
+      feedRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
+
   return (
     <section className="panel live-deals-panel" data-testid="live-deals-panel">
       <div className="live-deals-hero">
@@ -597,11 +605,11 @@ export default function LiveDealsRadarSection(props) {
             'liveDealsHeroSubtitle',
             isEnglish
               ? 'Anomalous fares, real drops and opportunities detected almost in real time.'
-              : 'Prezzi anomali, ribassi reali e opportunita rilevate in tempo quasi reale.'
+              : 'Prezzi anomali, ribassi reali e opportunità rilevate in tempo quasi reale.'
           )}
         </p>
         <div className="item-actions live-deals-hero-actions">
-          <button type="button" className="live-deals-primary-cta" onClick={() => setSelectedDealId('')} data-testid="live-deals-hero-cta">
+          <button type="button" className="live-deals-primary-cta" onClick={viewLiveDeals} data-testid="live-deals-hero-cta">
             {tt('liveDealsHeroCta', isEnglish ? 'View live deals' : 'Guarda i deal live')}
           </button>
           {!canUseRadarPlan ? (
@@ -661,7 +669,7 @@ export default function LiveDealsRadarSection(props) {
       ) : null}
 
       {actionMessage ? <p className="live-deals-message">{actionMessage}</p> : null}
-      {loading ? <p className="muted">{isEnglish ? 'Loading live deals...' : 'Caricamento deal live...'}</p> : null}
+      {loading ? <p className="muted">{tt('liveDealsLoading', isEnglish ? 'Loading live deals...' : 'Caricamento deal live...')}</p> : null}
       {error ? <p className="error">{error}</p> : null}
 
       {!loading && !error && topDeals.length === 0 ? (
@@ -669,14 +677,14 @@ export default function LiveDealsRadarSection(props) {
           {String(feedMeta?.reason || '') === 'provider_unavailable'
             ? (isEnglish
               ? 'Live feed is currently unavailable. Please try again shortly.'
-              : 'Il feed live non e disponibile in questo momento. Riprova tra poco.')
+              : 'Il feed live non è disponibile in questo momento. Riprova tra poco.')
             : (isEnglish
               ? 'No strong opportunities right now. Come back later or enable an alert.'
-              : 'Nessuna opportunita forte ora. Torna piu tardi o attiva un alert.')}
+              : 'Nessuna opportunità forte ora. Torna più tardi o attiva un alert.')}
         </p>
       ) : null}
 
-      <div className="live-deals-feed" data-testid="live-deals-feed">
+      <div ref={feedRef} className="live-deals-feed" data-testid="live-deals-feed">
         {topDeals.map((deal) => {
           const identifier = String(deal.fingerprint || deal.observation_id || deal.routeSlug);
           const saved = savedRoutes.has(deal.routeSlug);
@@ -767,7 +775,7 @@ export default function LiveDealsRadarSection(props) {
               'liveDealsTrustCopy',
               isEnglish
                 ? 'This fare was detected by comparing it with the historical price pattern for this route.'
-                : 'Questo prezzo e stato rilevato dal nostro motore confrontandolo con lo storico della tratta.'
+                : 'Questo prezzo è stato rilevato dal nostro motore confrontandolo con lo storico della tratta.'
             )}
           </div>
           {selectedDeal?.smartDeparture?.alternatives?.length > 0 ? (
@@ -819,7 +827,7 @@ export default function LiveDealsRadarSection(props) {
                   onUpgradePro?.('more_deals');
                 }}
               >
-                {tt('liveDealsUpgradeCta', isEnglish ? 'Unlock more deals' : 'Sblocca piu deal')}
+                {tt('liveDealsUpgradeCta', isEnglish ? 'Unlock more deals' : 'Sblocca più deal')}
               </button>
             ) : null}
           </div>

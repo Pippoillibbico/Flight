@@ -80,7 +80,7 @@ export function useOpportunityFlow({
         }
       } catch (error) {
         if (requestId !== opportunityDetailRequestIdRef.current) return;
-        setOpportunityDetail(null);
+        setOpportunityDetail({ item: null, related: [], requestedId: normalizedOpportunityId });
         setOpportunityDetailUpgradePrompt(null);
         setOpportunityDetailError(resolveApiError(error));
       } finally {

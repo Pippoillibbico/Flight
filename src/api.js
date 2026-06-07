@@ -510,6 +510,7 @@ export const api = {
     const query = new URLSearchParams();
     if (params.origin) query.set('origin', String(params.origin).toUpperCase());
     if (params.budgetMax) query.set('budget_max', String(params.budgetMax));
+    if (params.region && String(params.region).toLowerCase() !== 'all') query.set('region', String(params.region));
     if (params.limit) query.set('limit', String(params.limit));
     const suffix = query.toString() ? `?${query.toString()}` : '';
     return request(`/opportunities/explore/budget${suffix}`, { token, auth: false });
@@ -518,6 +519,7 @@ export const api = {
     const query = new URLSearchParams();
     if (params.origin) query.set('origin', String(params.origin).toUpperCase());
     if (params.budgetMax) query.set('budget_max', String(params.budgetMax));
+    if (params.region && String(params.region).toLowerCase() !== 'all') query.set('region', String(params.region));
     if (params.limit) query.set('limit', String(params.limit));
     const suffix = query.toString() ? `?${query.toString()}` : '';
     return request(`/opportunities/explore/map${suffix}`, { token, auth: false });

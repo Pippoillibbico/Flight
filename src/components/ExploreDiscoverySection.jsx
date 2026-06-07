@@ -1,16 +1,98 @@
 import { z } from 'zod';
+import { useRef, useState } from 'react';
 import { validateProps } from '../utils/validateProps';
 import { localizeCityName, localizeCountryName } from '../utils/localizePlace';
+import AirportAutocomplete from './AirportAutocomplete';
+import { formatAirlineLabel } from './opportunity-feed-helpers';
 
 const WORLD_MAP_WIDTH = 840;
 const WORLD_MAP_HEIGHT = 380;
+
+const WORLD_MAP_LANDMASSES = [
+  {
+    id: 'north-america',
+    region: 'america',
+    d: 'M42 96 C68 62 124 50 176 62 C215 71 238 95 241 121 C244 150 217 165 181 161 C153 158 133 145 101 146 C66 147 36 128 42 96 Z'
+  },
+  {
+    id: 'south-america',
+    region: 'south_america',
+    d: 'M220 168 C247 166 278 196 279 229 C280 252 260 268 258 291 C256 317 239 346 218 343 C199 340 198 311 193 290 C188 268 176 249 180 226 C185 197 198 172 220 168 Z'
+  },
+  {
+    id: 'europe',
+    region: 'eu',
+    d: 'M383 82 C398 64 435 55 461 67 C490 80 500 109 482 130 C466 148 433 139 413 151 C392 163 366 151 362 127 C359 108 369 95 383 82 Z'
+  },
+  {
+    id: 'africa',
+    region: 'africa',
+    d: 'M417 144 C452 129 492 148 507 185 C522 220 494 253 482 288 C470 321 445 335 426 309 C406 282 411 251 396 224 C379 193 387 157 417 144 Z'
+  },
+  {
+    id: 'asia',
+    region: 'asia',
+    d: 'M505 92 C543 61 623 47 681 66 C735 83 771 129 760 169 C751 203 714 196 680 184 C641 170 609 180 574 164 C538 148 489 143 505 92 Z'
+  },
+  {
+    id: 'oceania',
+    region: 'oceania',
+    d: 'M644 264 C666 243 718 241 750 261 C777 279 769 306 733 313 C709 318 688 307 661 313 C635 319 625 282 644 264 Z'
+  }
+];
+
+const WORLD_MAP_CONTINENTS = [
+  {
+    id: 'north-america',
+    label: 'N. America',
+    region: 'america',
+    labelX: 148,
+    labelY: 108
+  },
+  {
+    id: 'south-america',
+    label: 'S. America',
+    region: 'south_america',
+    labelX: 228,
+    labelY: 228
+  },
+  {
+    id: 'europe',
+    label: 'Europe',
+    region: 'eu',
+    labelX: 422,
+    labelY: 80
+  },
+  {
+    id: 'africa',
+    label: 'Africa',
+    region: 'africa',
+    labelX: 442,
+    labelY: 196
+  },
+  {
+    id: 'asia',
+    label: 'Asia',
+    region: 'asia',
+    labelX: 618,
+    labelY: 86
+  },
+  {
+    id: 'oceania',
+    label: 'Oceania',
+    region: 'oceania',
+    labelX: 700,
+    labelY: 252
+  }
+];
+
+const EUROPE_ORIGIN_CODES = new Set(['FCO', 'MXP', 'BLQ', 'VCE', 'NAP']);
 
 const ExploreDiscoverySectionPropsSchema = z
   .object({
     t: z.function().optional(),
     language: z.string().optional().default('it'),
     dataSource: z.enum(['live', 'synthetic', 'internal', 'cached']).optional().default('synthetic'),
-    origins: z.array(z.any()),
     value: z
       .object({
         origin: z.string(),
@@ -45,6 +127,60 @@ function projectPoint(coords) {
     x: clamp(x, 0, WORLD_MAP_WIDTH),
     y: clamp(y, 0, WORLD_MAP_HEIGHT)
   };
+}
+
+function svgPointFromPointer(event) {
+  const svg = event.currentTarget.ownerSVGElement || event.currentTarget;
+  const bounds = svg.getBoundingClientRect();
+  if (bounds.width <= 0 || bounds.height <= 0) return null;
+  return {
+    x: clamp(((event.clientX - bounds.left) / bounds.width) * WORLD_MAP_WIDTH, 0, WORLD_MAP_WIDTH),
+    y: clamp(((event.clientY - bounds.top) / bounds.height) * WORLD_MAP_HEIGHT, 0, WORLD_MAP_HEIGHT)
+  };
+}
+
+function distanceBetweenPoints(left, right) {
+  if (!left || !right) return Number.POSITIVE_INFINITY;
+  return Math.hypot(left.x - right.x, left.y - right.y);
+}
+
+function lineBetweenCircleEdges(start, end, startRadius = 9, endRadius = 9) {
+  const distance = distanceBetweenPoints(start, end);
+  if (!start || !end || !Number.isFinite(distance) || distance <= startRadius + endRadius) {
+    return null;
+  }
+  const dx = (end.x - start.x) / distance;
+  const dy = (end.y - start.y) / distance;
+  return {
+    x1: start.x + dx * startRadius,
+    y1: start.y + dy * startRadius,
+    x2: end.x - dx * endRadius,
+    y2: end.y - dy * endRadius
+  };
+}
+
+function nearestMapPoint(points, target) {
+  if (!target || points.length === 0) return null;
+  return points.reduce((nearest, point) => {
+    if (!nearest) return point;
+    return distanceBetweenPoints(point.destination, target) < distanceBetweenPoints(nearest.destination, target) ? point : nearest;
+  }, null);
+}
+
+function nearestMapRegion(target) {
+  if (!target) return '';
+  const nearest = WORLD_MAP_CONTINENTS.reduce((best, continent) => {
+    const distance = distanceBetweenPoints({ x: continent.labelX, y: continent.labelY }, target);
+    if (!best || distance < best.distance) return { continent, distance };
+    return best;
+  }, null);
+  return nearest?.continent?.region || '';
+}
+
+function continentAnchorPoint(id) {
+  const continent = WORLD_MAP_CONTINENTS.find((item) => item.id === id);
+  if (!continent) return null;
+  return { x: continent.labelX + 26, y: continent.labelY - 3 };
 }
 
 function fallbackCoordsFromSeed(seed) {
@@ -95,19 +231,6 @@ function formatStops(stops, labels) {
   return `${parsed} ${labels.stops}`;
 }
 
-function formatAirlineLabel(value, fallback = 'unknown') {
-  const raw = String(value || '').trim();
-  if (!raw) return fallback;
-  if (raw === 'seed_demo_partner') return 'Partner demo';
-  if (raw === 'unknown') return fallback;
-  if (!raw.includes('_')) return raw;
-  return raw
-    .split('_')
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
-    .join(' ');
-}
-
 function formatTravelWindow(item, labels) {
   if (item?.depart_date && item?.return_date) return `${item.depart_date} - ${item.return_date}`;
   if (item?.depart_date) return `${labels.departure} ${item.depart_date}`;
@@ -119,7 +242,6 @@ function ExploreDiscoverySection(props) {
     t,
     language,
     dataSource,
-    origins,
     value,
     onChange,
     onSubmit,
@@ -142,13 +264,15 @@ function ExploreDiscoverySection(props) {
     subtitle: tt('exploreDiscoverySubtitle', 'Inserisci aeroporto e budget massimo per trovare subito le destinazioni migliori.'),
     dataSourceLive: tt(
       'exploreDiscoveryDataSourceLive',
-      'Dati live dai provider attivi. Le tariffe possono cambiare in tempo reale.'
+      'Prezzi aggiornati: controlla sempre il totale finale prima di prenotare.'
     ),
     dataSourceSynthetic: tt(
       'exploreDiscoveryDataSourceSynthetic',
       'Modalita storico/demo: usa i risultati per orientarti e verifica sempre la tariffa finale prima di prenotare.'
     ),
     origin: tt('exploreDiscoveryOriginLabel', 'Partenza'),
+    originPlaceholder: tt('airportAutocompletePlaceholder', 'Scrivi una citta, ad esempio Milano'),
+    originEmpty: tt('airportAutocompleteEmpty', 'Nessun aeroporto trovato'),
     budget: tt('exploreDiscoveryBudgetLabel', 'Budget massimo (EUR)'),
     cta: tt('exploreDiscoveryCta', 'Trova destinazioni'),
     loading: tt('exploreDiscoveryLoading', 'Ricerca opportunità in corso...'),
@@ -168,16 +292,89 @@ function ExploreDiscoverySection(props) {
     mapHint: tt('exploreDiscoveryMapHint', 'Clicca un punto per selezionare la destinazione più interessante.')
   };
 
+  const budgetMapPoints = budgetItems.map(normalizeMapPoint).filter(Boolean);
   const normalizedPoints = mapPoints.map(normalizeMapPoint).filter(Boolean);
-  const originMarker = normalizedPoints.find((point) => point.origin)?.origin || null;
-  const selectedPoint = normalizedPoints.find((point) => point.id === String(selectedDestination || '').toUpperCase()) || null;
+  const interactivePoints = normalizedPoints.length > 0 ? normalizedPoints : budgetMapPoints;
+  const projectedOriginMarker = interactivePoints.find((point) => point.origin)?.origin || null;
+  const originMarker = EUROPE_ORIGIN_CODES.has(String(value?.origin || '').trim().toUpperCase())
+    ? continentAnchorPoint('europe') || projectedOriginMarker
+    : projectedOriginMarker;
+  const selectedPoint = interactivePoints.find((point) => point.id === String(selectedDestination || '').toUpperCase()) || null;
+  const [hasSubmitted, setHasSubmitted] = useState(false);
+  const [mapPreviewPoint, setMapPreviewPoint] = useState(null);
+  const mapDraggingRef = useRef(false);
+  const showDiscoveryResults = hasSubmitted || budgetItems.length > 0 || interactivePoints.length > 0;
+  const visibleErrors = hasSubmitted
+    ? [...new Set([error, mapError].map((message) => String(message || '').trim()).filter(Boolean))]
+    : [];
+  const visibleMapSelection = mapPreviewPoint || selectedPoint?.destination || null;
+  const displayedBudgetItems = [...budgetItems].sort((left, right) => {
+    const selected = String(selectedDestination || '').toUpperCase();
+    const focusPoint = mapPreviewPoint || selectedPoint?.destination || null;
+    if (focusPoint) {
+      const leftPoint = normalizeMapPoint(left);
+      const rightPoint = normalizeMapPoint(right);
+      const leftDistance = distanceBetweenPoints(leftPoint?.destination, focusPoint);
+      const rightDistance = distanceBetweenPoints(rightPoint?.destination, focusPoint);
+      if (leftDistance !== rightDistance) return leftDistance - rightDistance;
+    }
+    const leftActive = String(left?.destination_airport || '').toUpperCase() === selected;
+    const rightActive = String(right?.destination_airport || '').toUpperCase() === selected;
+    if (leftActive === rightActive) return 0;
+    return leftActive ? -1 : 1;
+  });
+
+  function selectMapDestination(destinationCode) {
+    mapDraggingRef.current = false;
+    setMapPreviewPoint(null);
+    onSelectDestination(destinationCode);
+  }
+
+  function updateMapPreview(event) {
+    const nextPoint = svgPointFromPointer(event);
+    if (!nextPoint) return;
+    setMapPreviewPoint(nextPoint);
+    const nearestPoint = nearestMapPoint(interactivePoints, nextPoint);
+    const nearestDestination = String(nearestPoint?.id || '').toUpperCase();
+    if (nearestDestination && nearestDestination !== String(selectedDestination || '').toUpperCase()) {
+      onSelectDestination(nearestDestination);
+    }
+  }
+
+  function startMapDrag(event) {
+    mapDraggingRef.current = true;
+    const captureTarget = event.currentTarget.ownerSVGElement || event.currentTarget;
+    captureTarget.setPointerCapture?.(event.pointerId);
+    updateMapPreview(event);
+  }
+
+  function moveMapDrag(event) {
+    if (!mapDraggingRef.current) return;
+    updateMapPreview(event);
+  }
+
+  function stopMapDrag(event) {
+    const wasDragging = mapDraggingRef.current;
+    const releasePoint = svgPointFromPointer(event);
+    mapDraggingRef.current = false;
+    const captureTarget = event.currentTarget.ownerSVGElement || event.currentTarget;
+    captureTarget.releasePointerCapture?.(event.pointerId);
+    if (!wasDragging) return;
+    const nextRegion = nearestMapRegion(releasePoint || mapPreviewPoint);
+    const currentRegion = String(value?.region || 'all').trim().toLowerCase() || 'all';
+    if (nextRegion && nextRegion !== currentRegion) {
+      setHasSubmitted(true);
+      onChange({ region: nextRegion });
+      onSubmit({ region: nextRegion });
+    }
+  }
 
   return (
-    <section className="panel explore-discovery-panel">
-      <div className="panel-head">
-        <h2>{labels.title}</h2>
+    <section className="panel explore-discovery-panel" aria-label={labels.title}>
+      <div className="explore-discovery-header">
+        <strong>{labels.title}</strong>
+        <span className="muted">{labels.subtitle}</span>
       </div>
-      <p className="muted">{labels.subtitle}</p>
       <p className={`explore-data-source-note${isLiveData ? ' live' : ' synthetic'}`}>
         {isLiveData ? labels.dataSourceLive : labels.dataSourceSynthetic}
       </p>
@@ -185,21 +382,23 @@ function ExploreDiscoverySection(props) {
         className="explore-discovery-form"
         onSubmit={(event) => {
           event.preventDefault();
+          setHasSubmitted(true);
           onSubmit();
         }}
       >
         <label>
           {labels.origin}
-          <select
+          <AirportAutocomplete
+            ariaLabel={labels.origin}
+            emptyLabel={labels.originEmpty}
+            language={language}
+            placeholder={labels.originPlaceholder}
             value={String(value?.origin || '').toUpperCase()}
-            onChange={(event) => onChange({ origin: String(event.target.value || '').toUpperCase() })}
-          >
-            {origins.map((item) => (
-              <option key={item.code} value={item.code}>
-                {item.code} - {String(item.label || '').replace(` (${item.code})`, '')}
-              </option>
-            ))}
-          </select>
+            onChange={(nextOrigin) => {
+              setHasSubmitted(false);
+              onChange({ origin: String(nextOrigin || '').toUpperCase() });
+            }}
+          />
         </label>
         <label>
           {labels.budget}
@@ -209,26 +408,32 @@ function ExploreDiscoverySection(props) {
             min={50}
             step={10}
             value={value?.budgetMax ?? ''}
-            onChange={(event) => onChange({ budgetMax: event.target.value })}
+            onChange={(event) => {
+              setHasSubmitted(false);
+              onChange({ budgetMax: event.target.value });
+            }}
           />
         </label>
-        <button type="submit" className="ghost" disabled={loading || mapLoading}>
-          {labels.cta}
-        </button>
+        <div className="explore-discovery-actions">
+          <button type="submit" className="explore-discovery-submit" disabled={loading || mapLoading}>
+            {labels.cta}
+          </button>
+        </div>
       </form>
 
-      {error ? <p className="error">{error}</p> : null}
-      {mapError ? <p className="error">{mapError}</p> : null}
-      {loading ? <p className="muted">{labels.loading}</p> : null}
+      <div className={`explore-discovery-status${hasSubmitted ? ' active' : ''}`} role="status" aria-live="polite">
+        {visibleErrors.map((message) => <p key={message} className="error">{message}</p>)}
+        {loading ? <p className="muted">{labels.loading}</p> : null}
+      </div>
 
-      <div className="explore-discovery-grid">
+      {showDiscoveryResults ? <div className="explore-discovery-grid">
         <article className="explore-budget-card">
           <div className="panel-head">
             <h3>{labels.budgetResults}</h3>
           </div>
           {!loading && budgetItems.length === 0 ? <p className="muted">{labels.noItems}</p> : null}
           <div className="explore-budget-list">
-            {budgetItems.map((item) => {
+            {displayedBudgetItems.map((item) => {
               const destinationCode = String(item.destination_airport || '').toUpperCase();
               const active = destinationCode === String(selectedDestination || '').toUpperCase();
               const localizedCountry = localizeCountryName(item.destination_country, language);
@@ -240,7 +445,7 @@ function ExploreDiscoverySection(props) {
                   <button
                     type="button"
                     className="ghost explore-budget-main"
-                    onClick={() => onSelectDestination(destinationCode)}
+                    onClick={() => selectMapDestination(destinationCode)}
                   >
                     <strong>
                       {localizeCityName(item.destination_city, language) || destinationCode}
@@ -268,17 +473,46 @@ function ExploreDiscoverySection(props) {
           </div>
           <p className="muted">{labels.mapHint}</p>
           {mapLoading ? <p className="muted">{labels.mapLoading}</p> : null}
-          {!mapLoading && normalizedPoints.length === 0 ? <p className="muted">{labels.noMap}</p> : null}
-          {normalizedPoints.length > 0 ? (
+          {!mapLoading && interactivePoints.length === 0 ? <p className="muted">{labels.noMap}</p> : null}
+          {interactivePoints.length > 0 ? (
             <div className="explore-map-svg-wrap" role="img" aria-label={labels.mapTitle}>
-              <svg viewBox={`0 0 ${WORLD_MAP_WIDTH} ${WORLD_MAP_HEIGHT}`} className="explore-map-svg">
+              <svg
+                viewBox={`0 0 ${WORLD_MAP_WIDTH} ${WORLD_MAP_HEIGHT}`}
+                className="explore-map-svg"
+                onPointerDown={startMapDrag}
+                onPointerMove={moveMapDrag}
+                onPointerUp={stopMapDrag}
+                onPointerCancel={stopMapDrag}
+                onPointerLeave={stopMapDrag}
+              >
                 <defs>
                   <linearGradient id="exploreMapBg" x1="0%" y1="0%" x2="100%" y2="100%">
                     <stop offset="0%" stopColor="rgba(15,111,255,0.08)" />
                     <stop offset="100%" stopColor="rgba(15,111,255,0.02)" />
                   </linearGradient>
+                  <linearGradient id="exploreLandmassFill" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="rgba(89,160,255,0.18)" />
+                    <stop offset="100%" stopColor="rgba(89,160,255,0.06)" />
+                  </linearGradient>
+                  <linearGradient id="exploreLandmassActiveFill" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="rgba(105,183,255,0.32)" />
+                    <stop offset="100%" stopColor="rgba(47,128,255,0.16)" />
+                  </linearGradient>
                 </defs>
                 <rect x="0" y="0" width={WORLD_MAP_WIDTH} height={WORLD_MAP_HEIGHT} rx="16" fill="url(#exploreMapBg)" />
+                <g className="explore-map-landmass-layer" aria-hidden="true">
+                  {WORLD_MAP_LANDMASSES.map((landmass) => {
+                    const currentRegion = String(value?.region || 'all').trim().toLowerCase();
+                    const isActiveRegion = currentRegion !== 'all' && landmass.region === currentRegion;
+                    return (
+                      <path
+                        key={landmass.id}
+                        d={landmass.d}
+                        className={isActiveRegion ? 'explore-map-landmass active' : 'explore-map-landmass'}
+                      />
+                    );
+                  })}
+                </g>
                 {[1, 2, 3, 4, 5].map((step) => (
                   <line
                     key={`h-${step}`}
@@ -306,29 +540,26 @@ function ExploreDiscoverySection(props) {
                 <line x1="0" x2={WORLD_MAP_WIDTH} y1="240" y2="240" className="explore-map-tropic-line" />
 
                 {/* Continent labels for geographic context */}
-                {[
-                  { label: 'N. America', x: 148, y: 108 },
-                  { label: 'S. America', x: 228, y: 228 },
-                  { label: 'Europe', x: 422, y: 80 },
-                  { label: 'Africa', x: 442, y: 196 },
-                  { label: 'Asia', x: 618, y: 86 },
-                  { label: 'Oceania', x: 700, y: 252 }
-                ].map(({ label, x, y }) => (
-                  <text key={label} x={x} y={y} className="explore-map-continent-label">{label}</text>
+                {WORLD_MAP_CONTINENTS.map(({ id, label, labelX, labelY }) => (
+                  <g key={id} className="explore-map-continent-marker" aria-hidden="true">
+                    <line x1={labelX - 10} x2={labelX + 52} y1={labelY + 7} y2={labelY + 7} />
+                    <text x={labelX} y={labelY} className="explore-map-continent-label">{label}</text>
+                  </g>
                 ))}
 
-                {normalizedPoints.map((point) =>
-                  point.origin ? (
+                {!mapPreviewPoint && originMarker && interactivePoints.map((point) => {
+                  const routeLine = lineBetweenCircleEdges(originMarker, point.destination, 10, 10);
+                  return routeLine ? (
                     <line
                       key={`route-${point.id}`}
-                      x1={point.origin.x}
-                      y1={point.origin.y}
-                      x2={point.destination.x}
-                      y2={point.destination.y}
+                      x1={routeLine.x1}
+                      y1={routeLine.y1}
+                      x2={routeLine.x2}
+                      y2={routeLine.y2}
                       className="explore-map-route-line"
                     />
-                  ) : null
-                )}
+                  ) : null;
+                })}
 
                 {originMarker ? (
                   <circle
@@ -339,16 +570,63 @@ function ExploreDiscoverySection(props) {
                   />
                 ) : null}
 
-                {normalizedPoints.map((point) => {
-                  const isActive = selectedPoint?.id === point.id;
+                {originMarker && mapPreviewPoint ? (() => {
+                  const previewLine = lineBetweenCircleEdges(originMarker, mapPreviewPoint, 10, 10);
+                  return previewLine ? (
+                    <line
+                      x1={previewLine.x1}
+                      y1={previewLine.y1}
+                      x2={previewLine.x2}
+                      y2={previewLine.y2}
+                      className="explore-map-route-line preview"
+                    />
+                  ) : null;
+                })() : null}
+
+                {visibleMapSelection ? (
+                  <circle
+                    cx={visibleMapSelection.x}
+                    cy={visibleMapSelection.y}
+                    r="9"
+                    className="explore-map-selection-dot"
+                  />
+                ) : null}
+
+                {!mapPreviewPoint && interactivePoints.map((point) => {
+                  const isActive = !mapPreviewPoint && selectedPoint?.id === point.id;
                   return (
-                    <g key={`point-${point.id}`}>
+                    <g
+                      key={`point-${point.id}`}
+                      className="explore-map-destination-target"
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`${localizeCityName(point.city, language)} ${formatPrice(point.price, locale)}`}
+                      onPointerDown={(event) => {
+                        event.stopPropagation();
+                        if (isActive) {
+                          startMapDrag(event);
+                          return;
+                        }
+                        selectMapDestination(point.id);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          selectMapDestination(point.id);
+                        }
+                      }}
+                    >
+                      <circle
+                        cx={point.destination.x}
+                        cy={point.destination.y}
+                        r="18"
+                        className="explore-map-destination-hit-area"
+                      />
                       <circle
                         cx={point.destination.x}
                         cy={point.destination.y}
                         r={isActive ? 8 : 6}
                         className={isActive ? 'explore-map-destination-dot active' : 'explore-map-destination-dot'}
-                        onClick={() => onSelectDestination(point.id)}
                       >
                         <title>
                           {localizeCityName(point.city, language)} - {formatPrice(point.price, locale)}
@@ -361,7 +639,7 @@ function ExploreDiscoverySection(props) {
             </div>
           ) : null}
         </article>
-      </div>
+      </div> : null}
     </section>
   );
 }

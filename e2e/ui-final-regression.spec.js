@@ -8,11 +8,11 @@ test.beforeEach(async ({ page }) => {
 test('landing theme toggle is coherent', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
 
-  await expect(page.locator('.landing-cta-primary')).toBeVisible();
-  await expect(page.locator('.landing-cta-ghost')).toBeVisible();
+  await expect(page.locator('.landing-hero-cta > .landing-cta-primary')).toBeVisible();
+  await expect(page.locator('.landing-hero-cta > .landing-cta-ghost')).toBeVisible();
   await expect(page.locator('main.landing-shell')).toHaveClass(/landing-dark/);
 
-  await page.locator('.landing-theme-btn').click();
+  await page.locator('.landing-nav > button.landing-theme-btn').click();
 
   await expect(page.locator('main.landing-shell')).not.toHaveClass(/landing-dark/);
   await expect(page.locator('.landing-accedi-btn')).toBeVisible();
@@ -31,7 +31,7 @@ test('app shell theme toggle remains coherent after login', async ({ page }) => 
   await loginFromUi(page);
   await expect(page.locator('main.page.app-shell')).toHaveClass(/app-dark/);
 
-  await page.locator('.hero-controls .landing-theme-btn').click();
+  await page.locator('.hero-controls > button.landing-theme-btn').click();
 
   await expect(page.locator('main.page.app-shell')).not.toHaveClass(/app-dark/);
   await expect(page.locator('.app-main-nav')).toBeVisible();
@@ -39,8 +39,8 @@ test('app shell theme toggle remains coherent after login', async ({ page }) => 
 
 test('mobile: landing and auth modal remain usable', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.locator('.landing-cta-primary')).toBeVisible();
-  await expect(page.locator('.landing-cta-ghost')).toBeVisible();
+  await expect(page.locator('.landing-hero-cta > .landing-cta-primary')).toBeVisible();
+  await expect(page.locator('.landing-hero-cta > .landing-cta-ghost')).toBeVisible();
 
   const dimensions = await page.evaluate(() => ({
     width: window.innerWidth,

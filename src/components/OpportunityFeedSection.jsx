@@ -62,7 +62,7 @@ const OpportunityFeedSectionPropsSchema = z
     onUpgradePro: z.function(),
     onUpgradeElite: z.function(),
     // 'live' = prices from real providers; 'synthetic' = internal historical dataset.
-    // Drives copy transparency for cached vs provider-backed inventory.
+    // Drives the right user-facing copy for each inventory mode.
     dataSource: z.enum(['live', 'synthetic', 'internal', 'cached']).optional().default('synthetic')
   })
   .passthrough();
@@ -115,13 +115,13 @@ function OpportunityFeedSection(props) {
   const isFreePlan = planType === 'free';
   const labels = {
     eyebrow: isFreePlan
-      ? tt('opportunityFeedEyebrowFree', 'Public cached deals')
+      ? tt('opportunityFeedEyebrowFree', 'Travel opportunities to explore')
       : isLiveData
       ? tt('opportunityFeedEyebrow', 'Provider-validated opportunities')
       : tt('opportunityFeedEyebrowSynthetic', 'Radar intelligence'),
     heroTitle: tt('opportunityFeedHeroTitle', 'Your travel opportunity radar'),
     heroSub: isFreePlan
-      ? tt('opportunityFeedHeroSubFree', 'Public cached deals, basic route insights, cached radar preview, and price trend preview.')
+      ? tt('opportunityFeedHeroSubFree', 'Selected opportunities, essential route insights, and price trend previews.')
       : isLiveData
       ? tt('opportunityFeedHeroSub', 'Our radar scans millions of routes in real time to surface hidden travel opportunities before they disappear.')
       : tt('opportunityFeedHeroSubSynthetic', 'We rank pricing signals, route patterns, and timing windows so you can inspect the best opportunities first.'),
@@ -131,7 +131,7 @@ function OpportunityFeedSection(props) {
       ? tt('opportunityFeedLiveSignalActive', 'Provider checks active when configured')
       : tt('opportunityFeedSignalActive', 'Radar active - analysing routes'),
     liveSignalCount: isFreePlan
-      ? (count) => tt('opportunityFeedCachedDealCount', `${count} public cached deals`).replace('{count}', count)
+      ? (count) => tt('opportunityFeedCachedDealCount', `${count} opportunities to explore`).replace('{count}', count)
       : isLiveData
       ? (count) => tt('opportunityFeedLiveSignalCount', `${count} real fares detected in this scan`).replace('{count}', count)
       : (count) => tt('opportunityFeedSignalCount', `${count} opportunities in current analysis`).replace('{count}', count),
@@ -163,15 +163,15 @@ function OpportunityFeedSection(props) {
       'opportunityFeedUrgencyNoteSynthetic',
       isEnglish ? 'Cached signal: check the current fare before booking.' : 'Dato non live: verifica la tariffa aggiornata prima di prenotare.'
     ),
-    topRailTitle: isFreePlan ? tt('opportunityFeedMoreCachedDeals', 'More public cached deals') : tt('opportunityFeedTopRailTitle', 'Also moving now'),
+    topRailTitle: isFreePlan ? tt('opportunityFeedMoreCachedDeals', 'More opportunities to explore') : tt('opportunityFeedTopRailTitle', 'Also moving now'),
     topRailCta: tt('opportunityFeedTopRailCta', 'Open deal'),
     todayTitle: isFreePlan
-      ? tt('opportunityFeedTodayTitleFree', 'Public cached deals')
+      ? tt('opportunityFeedTodayTitleFree', 'Opportunities worth exploring')
       : isLiveData
       ? tt('opportunityFeedTodayTitle', 'Live opportunity feed')
       : tt('opportunityFeedTodayTitleSynthetic', 'Opportunity feed'),
     todaySub: isFreePlan
-      ? tt('opportunityFeedTodaySubFree', 'Cached public scans with deterministic price signals. Upgrade for live scans, AI tools, and route alerts when delivery is enabled.')
+      ? tt('opportunityFeedTodaySubFree', 'Compare selected routes and price trends. Upgrade for tailored alternatives and route alerts.')
       : isLiveData
       ? tt('opportunityFeedTodaySub', 'Real fares from the latest radar scans, prioritized by value.')
       : tt('opportunityFeedTodaySubSynthetic', 'Ranked opportunities from pricing history and route signals. Confirm the live fare before booking.'),
@@ -184,7 +184,7 @@ function OpportunityFeedSection(props) {
     ).replace('{count}', count),
     activitySignalStrong: tt(
       'opportunityFeedActivitySignalStrong',
-      isEnglish ? 'High opportunity signal' : 'Segnale opportunita alto'
+      isEnglish ? 'High opportunity signal' : 'Segnale opportunità alto'
     ),
     activitySignalRecent: tt(
       'opportunityFeedActivitySignalRecent',
@@ -234,7 +234,7 @@ function OpportunityFeedSection(props) {
     softGateEyebrow: tt('softLoginGateEyebrow', isEnglish ? 'Unlock full feed' : 'Sblocca il feed completo'),
     softGateNote: tt('softLoginGateNote', isEnglish ? 'Fast signup, no payment required for the Free plan.' : 'Registrazione rapida, nessun pagamento richiesto per il piano Free.'),
     trackingLimitTitle: tt('opportunityFeedTrackingLimitTitle', isEnglish ? 'Tracking limit reached' : 'Limite elementi seguiti raggiunto'),
-    trackingLimitFreeMessage: tt('opportunityFeedTrackingLimitFreeMessage', isEnglish ? 'You are tracking {count}/{limit} routes. Upgrade to track more routes and avoid missing drops.' : 'Stai seguendo {count}/{limit} rotte. Passa a PRO per seguire piu rotte e non perdere i cali prezzo.'),
+    trackingLimitFreeMessage: tt('opportunityFeedTrackingLimitFreeMessage', isEnglish ? 'You are tracking {count}/{limit} routes. Upgrade to track more routes and avoid missing drops.' : 'Stai seguendo {count}/{limit} rotte. Passa a PRO per seguire più rotte e non perdere i cali prezzo.'),
     trackingLimitPaidMessage: tt('opportunityFeedTrackingLimitPaidMessage', isEnglish ? 'You are tracking {count}/{limit} routes. Go ELITE to unlock unlimited route tracking and priority deals.' : 'Stai seguendo {count}/{limit} rotte. Passa a ELITE per tracking illimitato e deal prioritari.'),
     trackingLimitProCta: tt('opportunityFeedTrackingLimitProCta', isEnglish ? 'Upgrade to PRO' : 'Passa a PRO'),
     trackingLimitCompareCta: tt('opportunityFeedTrackingLimitCompareCta', isEnglish ? 'Compare PRO value' : 'Confronta PRO'),
@@ -258,7 +258,7 @@ function OpportunityFeedSection(props) {
     const minPrice = Number(cluster?.min_price);
     return opportunitiesCount >= 2 || (Number.isFinite(minPrice) && minPrice < 180);
   });
-  const shouldShowClusters = Boolean(selectedCluster || clustersLoading || clustersError) || visibleClusters.length >= 2;
+  const shouldShowClusters = Boolean(selectedCluster || clustersLoading) || visibleClusters.length >= 2;
   const [trackedClusterSlugs, setTrackedClusterSlugs] = useState(() => new Set(readTrackedRouteSlugs()));
   const [showTrackedLimitPrompt, setShowTrackedLimitPrompt] = useState(false);
   const topDeal = pickTopDeal(visibleItems);
@@ -328,12 +328,12 @@ function OpportunityFeedSection(props) {
         </div>
         {hasHotDeals ? (
           <p className="opportunity-hot-state" data-testid="opportunity-hot-state">{isLiveData ? labels.hotStateLive : labels.hotStateSynthetic}</p>
-        ) : (
+        ) : !topDeal ? (
           <p className="opportunity-hot-empty" data-testid="opportunity-hot-empty">
             {labels.topDealEmpty}
           </p>
-        )}
-        <p className="muted">{labels.topDealSubtitle}</p>
+        ) : null}
+        {topDeal ? <p className="muted">{labels.topDealSubtitle}</p> : null}
         {topDeal ? (
           <>
             <article className="opportunity-top-deal-card" data-testid="opportunity-top-deal">
@@ -409,9 +409,7 @@ function OpportunityFeedSection(props) {
               </div>
             ) : null}
           </>
-        ) : (
-          <p className="muted">{labels.topDealEmpty}</p>
-        )}
+        ) : null}
       </section>
 
       {shouldShowClusters ? (
@@ -452,9 +450,11 @@ function OpportunityFeedSection(props) {
           </article>
         ) : null}
         {clustersLoading ? <p className="muted">{labels.clustersLoading}</p> : null}
-        {errorMessages.map((message) => (
-          <p key={message} className="error">{message}</p>
-        ))}
+        {visibleClusters.length > 0
+          ? errorMessages.map((message) => (
+              <p key={message} className="error">{message}</p>
+            ))
+          : null}
         {!clustersLoading && !clustersError && visibleClusters.length === 0 ? (
           <p className="muted">{labels.noClusters}</p>
         ) : null}

@@ -2,6 +2,12 @@ import { addDays, differenceInCalendarDays, format, parseISO } from 'date-fns';
 import { extractUpgradeContext } from '../../../utils/handleApiError';
 import { TELEMETRY_EVENTS } from '../../../shared/telemetry/events.js';
 
+function createLocalError(code) {
+  const error = new Error(code);
+  error.code = code;
+  return error;
+}
+
 export function useSearchFlowActions({
   api,
   token,
@@ -165,12 +171,12 @@ export function useSearchFlowActions({
     setSearchLoading(true);
     try {
       if (String(searchForm.tripType || 'round_trip') === 'one_way') {
-        throw new Error('Just Go richiede un intervallo andata/ritorno.');
+        throw createLocalError('just_go_round_trip_required');
       }
       const tripLengthDays = Math.max(2, differenceInCalendarDays(parseISO(searchForm.dateTo), parseISO(searchForm.dateFrom)));
       const budgetMax = searchForm.maxBudget ? Number(searchForm.maxBudget) : 0;
       if (!Number.isFinite(budgetMax) || budgetMax <= 0) {
-        throw new Error(t('justGoBudgetRequired'));
+        throw createLocalError('just_go_budget_required');
       }
 
       const result = await api.justGoDecision(

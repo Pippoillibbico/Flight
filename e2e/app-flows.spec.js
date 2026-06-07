@@ -49,8 +49,8 @@ test('free plan shows localized upgrade prompts and cached triangulation preview
   await page.getByTestId('triangulation-run').click();
   await expect(page.getByTestId('triangulation-preview-list')).toBeVisible();
   await expect(page.getByTestId('triangulation-preview-list')).toContainText('Roma -> Budapest -> Bangkok');
-  await expect(page.getByTestId('triangulation-preview-list')).toContainText('Strategia indicativa basata su rotte frequenti e dati cached');
-  await expect(page.locator('.triangulation-panel .upgrade-prompt')).toContainText('Il piano Free mostra solo preview cached/static');
+  await expect(page.getByTestId('triangulation-preview-list')).toContainText('Strategia indicativa basata su rotte frequenti e storico prezzi');
+  await expect(page.locator('.triangulation-panel .upgrade-prompt')).toContainText('Passa a PRO per confrontare prezzi aggiornati');
 });
 
 test('free user can start PRO checkout through a locally intercepted Stripe page', async ({ page }) => {
@@ -90,9 +90,9 @@ test('English Free triangulation preview stays cached and does not leak Italian 
   const preview = page.getByTestId('triangulation-preview-list');
   await expect(preview).toBeVisible();
   await expect(preview).toContainText('Rome -> Budapest -> Bangkok');
-  await expect(preview).toContainText('Indicative strategy based on frequent routes and cached data');
+  await expect(preview).toContainText('Indicative strategy based on frequent routes and price history');
   await expect(preview).not.toContainText('Strategia indicativa');
-  await expect(page.locator('.triangulation-panel .upgrade-prompt')).toContainText('Free shows only cached/static previews');
+  await expect(page.locator('.triangulation-panel .upgrade-prompt')).toContainText('Upgrade to compare updated prices');
 });
 
 test('tracked-route Free soft limit triggers contextual upgrade without bypassing checkout', async ({ page }) => {
@@ -121,7 +121,7 @@ test('tracked-route Free soft limit triggers contextual upgrade without bypassin
 
   await page.getByTestId('opportunity-track-limit-upgrade-pro').click();
   await expect(page.getByTestId('upgrade-flow-modal-pro')).toBeVisible();
-  await expect(page.getByTestId('upgrade-flow-description')).toContainText('AI live');
+  await expect(page.getByTestId('upgrade-flow-description')).toContainText('AI Flight Hacker');
 });
 
 test('cluster selection filters feed opportunities', async ({ page }) => {

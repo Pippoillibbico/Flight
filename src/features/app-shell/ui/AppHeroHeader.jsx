@@ -18,23 +18,9 @@ export default function AppHeroHeader({
   heroSubText,
   isLiveDataSource,
   heroDataSourceNote,
-  radarMatchesCount,
-  radarSessionActivated,
-  userPlanType,
-  activeMainSection,
   setActiveMainSection,
   setShowLandingPage
 }) {
-  const heroLabels = {
-    radarSnapshots: t('heroRadarSnapshots'),
-    sessionActive: t('heroSessionActive'),
-    activateRadar: t('heroActivateRadarHint'),
-    currentPlan: t('heroCurrentPlan'),
-    upgradeHint: t('heroUpgradeHint')
-  };
-
-  const radarMatchCount = Number(radarMatchesCount) || 0;
-  const shouldShowRadarPreview = isAuthenticated || radarMatchCount > 0 || radarSessionActivated;
   const goHome = () => {
     setActiveMainSection('home');
     if (typeof setShowLandingPage === 'function') {
@@ -54,7 +40,7 @@ export default function AppHeroHeader({
         <a
           href="/"
           className="hero-brand-logo landing-brand-home-link"
-          aria-label="Torna alla home"
+          aria-label={t('navHome')}
           onClick={(event) => {
             event.preventDefault();
             goHome();
@@ -156,78 +142,6 @@ export default function AppHeroHeader({
           </p>
         ) : null}
       </div>
-      {!adminRouteRequested ? (
-        <div className="app-hero-cinematic-row">
-          <div className="app-hero-cinematic-main">
-            <div className="item-actions app-hero-direct-actions">
-              <button type="button" onClick={() => setActiveMainSection('explore')}>
-                {t('landingHeroCta')}
-              </button>
-              <button type="button" className="ghost" onClick={() => setActiveMainSection('premium')}>
-                {t('premiumPageTitle')}
-              </button>
-            </div>
-          </div>
-          <div className="app-hero-preview-grid">
-            {shouldShowRadarPreview ? (
-              <article className="app-hero-preview-card">
-                <p className="app-hero-preview-label">{heroLabels.radarSnapshots}</p>
-                <strong className="app-hero-preview-value">{radarMatchCount}</strong>
-                <p className="app-hero-preview-copy">{radarSessionActivated ? heroLabels.sessionActive : heroLabels.activateRadar}</p>
-              </article>
-            ) : null}
-            <article className="app-hero-preview-card app-hero-preview-card-accent">
-              <p className="app-hero-preview-label">{heroLabels.currentPlan}</p>
-              <strong className="app-hero-preview-value">{String(userPlanType || 'free').toUpperCase()}</strong>
-              <p className="app-hero-preview-copy">{heroLabels.upgradeHint}</p>
-            </article>
-          </div>
-        </div>
-      ) : null}
-      {!adminRouteRequested ? (
-        <div className="app-main-nav">
-          <button
-            type="button"
-            className={activeMainSection === 'home' ? 'tab active' : 'tab'}
-            onClick={() => setActiveMainSection('home')}
-            data-testid="app-nav-home"
-          >
-            {t('navHome')}
-          </button>
-          <button
-            type="button"
-            className={activeMainSection === 'explore' ? 'tab active' : 'tab'}
-            onClick={() => setActiveMainSection('explore')}
-            data-testid="app-nav-explore"
-          >
-            {t('navExplore')}
-          </button>
-          <button
-            type="button"
-            className={activeMainSection === 'radar' ? 'tab active' : 'tab'}
-            onClick={() => setActiveMainSection('radar')}
-            data-testid="app-nav-radar"
-          >
-            {t('navRadar')}
-          </button>
-          <button
-            type="button"
-            className={activeMainSection === 'ai-travel' ? 'tab active' : 'tab'}
-            onClick={() => setActiveMainSection('ai-travel')}
-            data-testid="app-nav-ai-travel"
-          >
-            {t('navAiTravel')}
-          </button>
-          <button
-            type="button"
-            className={activeMainSection === 'premium' ? 'tab active' : 'tab'}
-            onClick={() => setActiveMainSection('premium')}
-            data-testid="app-nav-premium"
-          >
-            {t('navPremium')}
-          </button>
-        </div>
-      ) : null}
     </header>
   );
 }

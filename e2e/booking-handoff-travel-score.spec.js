@@ -62,7 +62,7 @@ function buildSearchResponse() {
 }
 
 async function searchWithMockedFlights(page, response = buildSearchResponse()) {
-  const exploreTab = page.getByRole('button', { name: 'Explore', exact: true });
+  const exploreTab = page.getByTestId('app-nav-explore');
   await exploreTab.click();
   await expect(page.getByTestId('submit-search')).toBeVisible();
 
@@ -201,7 +201,7 @@ test('booking handoff failure shows recoverable error and allows retry on valid 
     });
   });
 
-  await page.getByRole('button', { name: 'Explore', exact: true }).click();
+  await page.getByTestId('app-nav-explore').click();
   await expect(page.getByTestId('submit-search')).toBeVisible();
 
   await page.route('**/api/search', async (route) => {
@@ -347,7 +347,7 @@ test('opportunity detail booking failure is recoverable via related opportunity 
   await expect(page.getByTestId('retry-book-opportunity-detail')).toBeVisible();
 
   await page.getByTestId('related-opportunity-opp-valid').click();
-  await expect(page.getByTestId('opportunity-detail-route')).toContainText('FCO -> LIS');
+  await expect(page.getByTestId('opportunity-detail-route')).toContainText('Rome -> Lisbon');
   await expect(page.getByTestId('opportunity-booking-error')).toHaveCount(0);
 
   const [popup] = await Promise.all([page.waitForEvent('popup'), page.getByTestId('book-opportunity-detail').click()]);
@@ -366,7 +366,7 @@ test('travel score is visible and sorting by score reorders results', async ({ p
   await loginFromUi(page);
   await ensureHomeSection(page);
 
-  await page.getByRole('button', { name: 'Explore', exact: true }).click();
+  await page.getByTestId('app-nav-explore').click();
   await page.getByRole('button', { name: 'Advanced mode' }).click();
   await searchWithMockedFlights(page);
 
@@ -385,7 +385,7 @@ test('different itineraries produce different travel score ordering', async ({ p
   await loginFromUi(page);
   await ensureHomeSection(page);
 
-  await page.getByRole('button', { name: 'Explore', exact: true }).click();
+  await page.getByTestId('app-nav-explore').click();
   await page.getByRole('button', { name: 'Advanced mode' }).click();
   await searchWithMockedFlights(page);
 

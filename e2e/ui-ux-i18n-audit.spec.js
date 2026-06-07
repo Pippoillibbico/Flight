@@ -244,7 +244,10 @@ test.describe('Playwright UI/UX/i18n audit suite', () => {
       await expect(page.locator('.opportunity-detail-panel')).toBeVisible();
       await runVisibleTextAudit(page, `detail:${language}`);
 
-      await appShell.getByTestId('app-nav-radar').click({ force: true });
+      const radarNav = appShell.getByTestId('app-nav-radar');
+      await radarNav.scrollIntoViewIfNeeded();
+      await expect(radarNav).toBeVisible();
+      await radarNav.click();
       await expect(page.locator('.radar-panel')).toBeVisible();
       const saveRadarResponse = page.waitForResponse((response) => {
         return (

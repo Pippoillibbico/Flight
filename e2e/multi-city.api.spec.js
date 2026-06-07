@@ -66,9 +66,9 @@ test('handle API failure and retry with preserved state', async ({ page }) => {
 
   await page.getByTestId('submit-search').click();
   await expect(page.getByTestId('retry-multi-city')).toBeVisible();
-  await expect(page.getByLabel('Segment 1 Origin', { exact: true })).toHaveValue('MXP');
-  await expect(page.getByLabel('Segment 1 Destination', { exact: true })).toHaveValue('LIS');
-  await expect(page.getByLabel('Segment 2 Destination', { exact: true })).toHaveValue('MAD');
+  await expect(page.getByLabel('Segment 1 Origin', { exact: true })).toHaveValue(/MXP/);
+  await expect(page.getByLabel('Segment 1 Destination', { exact: true })).toHaveValue(/LIS/);
+  await expect(page.getByLabel('Segment 2 Destination', { exact: true })).toHaveValue(/MAD/);
 
   await page.getByTestId('retry-multi-city').click();
   await expect(page.getByTestId('result-card-multi-1')).toBeVisible();

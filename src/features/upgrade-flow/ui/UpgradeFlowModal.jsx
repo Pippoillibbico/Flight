@@ -132,7 +132,7 @@ function UpgradeFlowModal(props) {
     <div className="account-drawer-backdrop" onClick={onClose}>
       <aside
         ref={dialogRef}
-        className="account-drawer"
+        className="account-drawer upgrade-flow-drawer"
         role="dialog"
         aria-modal="true"
         aria-label={content.title}
@@ -140,8 +140,8 @@ function UpgradeFlowModal(props) {
         onClick={(event) => event.stopPropagation()}
       >
         <section className="panel account-panel onboarding-panel upgrade-flow-panel" data-testid="upgrade-flow-modal">
-          <div className="panel-head">
-            <div>
+          <div className="panel-head upgrade-flow-header">
+            <div className="upgrade-flow-heading">
               <p className="upgrade-flow-eyebrow">{planSpotlightLabel}</p>
               <p className="premium-plan-tag" data-testid="upgrade-flow-plan-tag">{content.badgeLabel}</p>
               <h2 data-testid="upgrade-flow-title">{content.title}</h2>
@@ -153,17 +153,19 @@ function UpgradeFlowModal(props) {
 
           {step === 'details' ? (
             <>
-              <p className="muted" data-testid="upgrade-flow-description">{content.description}</p>
-              <p className="upgrade-flow-value-note" data-testid="upgrade-flow-value-note">
-                {valueNoteLabel}
-              </p>
-              <ul className="premium-feature-list upgrade-flow-benefits">
-                {content.benefits.map((benefit, index) => (
-                  <li key={`${content.planType}-benefit-${index}`} data-testid={`upgrade-flow-benefit-${index}`}>
-                    {benefit}
-                  </li>
-                ))}
-              </ul>
+              <div className="upgrade-flow-intro">
+                <p className="muted upgrade-flow-description" data-testid="upgrade-flow-description">{content.description}</p>
+                <p className="upgrade-flow-value-note" data-testid="upgrade-flow-value-note">
+                  {valueNoteLabel}
+                </p>
+                <ul className="premium-feature-list upgrade-flow-benefits">
+                  {content.benefits.map((benefit, index) => (
+                    <li key={`${content.planType}-benefit-${index}`} data-testid={`upgrade-flow-benefit-${index}`}>
+                      {benefit}
+                    </li>
+                  ))}
+                </ul>
+              </div>
               {comparisonRows.length > 0 ? (
                 <section className="upgrade-flow-plan-compare" data-testid="upgrade-flow-plan-compare">
                   <p className="upgrade-flow-compare-title">{planComparisonLabel}</p>
@@ -207,15 +209,17 @@ function UpgradeFlowModal(props) {
                   </div>
                 </section>
               ) : null}
-              <p className="upgrade-flow-trust-line">{trustLineLabel}</p>
-              <div className="item-actions">
-                <button type="button" onClick={onPrimaryAction} disabled={checkoutLoading} data-testid="upgrade-flow-primary">
-                  {checkoutLoading ? checkoutLoadingLabel : content.primaryCtaLabel}
-                </button>
-                <button className="ghost" type="button" onClick={onOpenPremiumSection} data-testid="upgrade-flow-secondary">
-                  {comparePlansLabel}
-                </button>
-              </div>
+              <footer className="upgrade-flow-footer">
+                <p className="upgrade-flow-trust-line">{trustLineLabel}</p>
+                <div className="item-actions upgrade-flow-actions">
+                  <button type="button" onClick={onPrimaryAction} disabled={checkoutLoading} data-testid="upgrade-flow-primary">
+                    {checkoutLoading ? checkoutLoadingLabel : content.primaryCtaLabel}
+                  </button>
+                  <button className="ghost" type="button" onClick={onOpenPremiumSection} data-testid="upgrade-flow-secondary">
+                    {comparePlansLabel}
+                  </button>
+                </div>
+              </footer>
             </>
           ) : (
             <>

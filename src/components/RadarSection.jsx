@@ -91,7 +91,7 @@ function RadarSection(props) {
     'RadarSection'
   );
   const tt = (key, fallback) => (typeof t === 'function' ? t(key) : fallback) || fallback;
-  const push = usePushSubscription(token);
+  const push = usePushSubscription(token, t);
   const debugDisabled = !canUseRadar;
   const radarTierMessage =
     radarMessagingTier === 'priority'

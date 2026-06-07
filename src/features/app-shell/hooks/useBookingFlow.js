@@ -128,7 +128,8 @@ export function useBookingFlow({
   );
 
   const bookingHandoffFailureMessage = useCallback(() => {
-    return t('bookingHandoffError') || 'Unable to open booking right now. Please try again.';
+    const message = typeof t === 'function' ? t('bookingHandoffError') : '';
+    return message && message !== 'bookingHandoffError' ? message : 'Unable to open booking right now. Please try again.';
   }, [t]);
 
   const resolveBookingHandoff = useCallback(

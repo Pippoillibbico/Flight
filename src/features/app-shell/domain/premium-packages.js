@@ -38,20 +38,20 @@ export function createPremiumPackages({
   const formatAnnualEquivalent = (amount) => label('premiumAnnualEquivalentPrefix', 'Equivalent to EUR {amount}/month with one annual payment.').replace('{amount}', amount);
   const formatAnnualSave = (amount) => label('premiumAnnualSavePrefix', 'Save EUR {amount} per year vs monthly.').replace('{amount}', amount);
   const freeIncluded = [
-    label('pricingFreeFeature1', 'Cached previews, snapshots, and precomputed results'),
-    label('pricingFreeFeature2', 'Static recommendations and local search'),
-    label('pricingFreeFeature3', 'No live AI, live flight provider calls, live triangulation, or live monitoring')
+    label('pricingFreeFeature1', 'Travel ideas and opportunities worth exploring'),
+    label('pricingFreeFeature2', 'Route and destination previews'),
+    label('pricingFreeFeature3', 'AI and live fare checks available with Premium')
   ];
   const proIncluded = [
-    label('pricingProFeature1', 'Live AI and provider-backed flight search when configured'),
-    label('pricingProFeature2', 'Live intelligent triangulations'),
-    label('pricingProFeature3', 'Live intelligent triangulations and flexible period scans within quota'),
-    label('pricingProFeature4', 'AI route explanations and advanced search tools')
+    label('pricingProFeature1', 'AI Flight Hacker turns your request into routes worth comparing'),
+    label('pricingProFeature2', 'Live fare checks across available services'),
+    label('pricingProFeature3', 'Smart triangulations and flexible dates'),
+    label('pricingProFeature4', 'Clear guidance on savings, risks, and alternatives')
   ];
   const creatorIncluded = [
-    label('pricingEliteFeature1', 'Everything in PRO'),
-    label('pricingEliteFeature2', 'Advanced automations and advanced alerts'),
-    label('pricingEliteFeature3', 'Triangulation monitoring for creators, digital nomads, and power users')
+    label('pricingEliteFeature1', 'Everything included in PRO'),
+    label('pricingEliteFeature2', 'Advanced alerts for the routes you care about'),
+    label('pricingEliteFeature3', 'Monitoring for the best triangulations')
   ];
   return [
     {
@@ -59,8 +59,8 @@ export function createPremiumPackages({
       badge: label('premiumPlanBadgeFree', 'Starter'),
       badgeDetail: label('premiumPlanBadgeDetailFree', 'For first-time users'),
       planName: 'FREE',
-      subtitle: label('pricingFreeSub', 'Free previews based on cached data, snapshots, and static recommendations. No live search or live AI included.'),
-      valueTitle: label('premiumValueTitleFree', 'Zero variable-cost preview'),
+      subtitle: label('pricingFreeSub', 'Explore travel ideas and free previews. Upgrade to Premium when you want live fare checks and smarter route comparisons.'),
+      valueTitle: label('premiumValueTitleFree', 'A first look, at no cost'),
       valueItems: freeIncluded.slice(1),
       meterStops: ['3/day', '7/day', '15/day'],
       monthly: {
@@ -81,11 +81,11 @@ export function createPremiumPackages({
         billingSubNote: label('premiumBillingSubFreeAnnual', 'FREE plan stays unchanged across billing cycles.'),
         saveNote: label('premiumSaveNoteFree', 'Always free.')
       },
-      compareNote: label('premiumCompareNoteFree', 'Best for trying the platform with zero variable-cost usage.'),
+      compareNote: label('premiumCompareNoteFree', 'Perfect for discovering Jetly and starting to explore.'),
       included: freeIncluded,
       missing: [
         label('premiumMissingLiveAi', 'Live AI'),
-        label('premiumMissingLiveProvider', 'Live flight provider search'),
+        label('premiumMissingLiveProvider', 'Updated fare checks'),
         label('premiumMissingLiveTriangulation', 'Live triangulations and live alerts')
       ],
       ctaLabel: t('pricingFreeCta'),
@@ -99,8 +99,8 @@ export function createPremiumPackages({
       badge: label('premiumPlanBadgePro', 'Most popular'),
       badgeDetail: label('premiumPlanBadgeDetailPro', 'For regular travelers'),
       planName: 'PRO',
-      subtitle: label('pricingProSub', 'Smart search with AI and live capabilities within plan quota.'),
-      valueTitle: label('premiumValueTitlePro', 'Live search and AI'),
+      subtitle: label('pricingProSub', 'For travelers who want to uncover better opportunities, compare more routes, and decide with confidence.'),
+      valueTitle: label('premiumValueTitlePro', 'More routes. More opportunities. More control.'),
       valueItems: proIncluded.slice(1),
       meterStops: ['12', '9', '7'],
       monthly: {
@@ -121,7 +121,7 @@ export function createPremiumPackages({
         billingSubNote: formatAnnualEquivalent(proAnnualMonthlyEur),
         saveNote: formatAnnualSave(proAnnualSaveEur)
       },
-      compareNote: label('premiumCompareNotePro', 'Ideal for live research, route explanations, and flexible scans within quota.'),
+      compareNote: label('premiumCompareNotePro', 'The right choice if you search often and want to compare more alternatives.'),
       included: proIncluded,
       missing: [
         label('premiumMissingAdvancedAutomations', 'Advanced automations'),
@@ -137,10 +137,10 @@ export function createPremiumPackages({
     {
       id: 'elite',
       badge: label('premiumPlanBadgeElite', 'Best value'),
-      badgeDetail: label('premiumPlanBadgeDetailElite', 'For power workflows'),
+      badgeDetail: label('premiumPlanBadgeDetailElite', 'For frequent travelers'),
       planName: 'ELITE',
-      subtitle: label('pricingEliteSub', 'Automation, advanced alerts, and continuous monitoring for power users.'),
-      valueTitle: label('premiumValueTitleElite', 'Creator-grade automation'),
+      subtitle: label('pricingEliteSub', 'For frequent travelers who want a radar that keeps watching the best opportunities.'),
+      valueTitle: label('premiumValueTitleElite', 'A radar that keeps working while you travel'),
       valueItems: creatorIncluded.slice(1),
       meterStops: ['29', '24', '21'],
       monthly: {
@@ -149,7 +149,7 @@ export function createPremiumPackages({
         price: `EUR ${eliteMonthlyEur}`,
         priceSuffix: label('landingPricingMonthly', '/month'),
         billingNote: label('landingPricingMonthlyBillingNote', 'Billed monthly'),
-        billingSubNote: label('premiumBillingSubElite', 'Priority intelligence and advanced planning unlocked.'),
+        billingSubNote: label('premiumBillingSubElite', 'Keep monitoring and alerts working in the background.'),
         saveNote: label('premiumSaveNoteElite', 'Priority intelligence unlocked.')
       },
       annual: {
@@ -161,7 +161,7 @@ export function createPremiumPackages({
         billingSubNote: formatAnnualEquivalent(eliteAnnualMonthlyEur),
         saveNote: formatAnnualSave(eliteAnnualSaveEur)
       },
-      compareNote: label('premiumCompareNoteElite', 'For creators, digital nomads, and power users who need monitoring and automation.'),
+      compareNote: label('premiumCompareNoteElite', 'For travelers who want monitoring and alerts to keep working in the background.'),
       included: creatorIncluded,
       missing: [],
       ctaLabel: t('pricingEliteCta'),

@@ -68,8 +68,8 @@ function TriangulationSection(props) {
       } else {
         setPayload(intake);
       }
-    } catch (err) {
-      setError(err?.message || label('triangulationUnavailable', 'Triangulation is not available right now.'));
+    } catch {
+      setError(label('triangulationUnavailable', 'Triangulation is not available right now.'));
     } finally {
       setLoading(false);
     }
@@ -89,8 +89,8 @@ function TriangulationSection(props) {
         </p>
         <p className="muted ai-travel-plan-note">
           {isFreePlan
-            ? label('triangulationFreePlanNote', 'Free preview based on frequent routes and cached data. No live search, live AI, or updated prices are included in Free.')
-            : label('triangulationPaidPlanNote', 'Live triangulations with AI, provider search, and price comparison within plan limits.')}
+            ? label('triangulationFreePlanNote', 'Free preview based on frequent routes and price history. Updated checks are available with PRO.')
+            : label('triangulationPaidPlanNote', 'Compare smarter routes with updated prices and clearer trade-offs.')}
         </p>
         <div className="triangulation-how-it-works" aria-label={label('triangulationHowItWorksAria', 'How AI Flight Hacker works')}>
           <span>{label('triangulationStepUnderstand', '1. Understands the request')}</span>
@@ -124,7 +124,7 @@ function TriangulationSection(props) {
       {payload?.upgradeRequired ? (
         <UpgradePrompt
           title={label('triangulationUpgradeTitle', 'Live triangulation is available with Pro')}
-          message={label('triangulationUpgradeMessage', 'Free shows only cached/static previews without live AI or live provider calls.')}
+          message={label('triangulationUpgradeMessage', 'Upgrade to compare updated prices and unlock smarter route alternatives.')}
           primaryLabel={label('opportunityFeedUpgradePrimaryCta', 'Upgrade to PRO')}
           secondaryLabel={label('opportunityFeedUpgradeSecondaryCta', 'Discover ELITE')}
           t={t}
@@ -138,7 +138,7 @@ function TriangulationSection(props) {
             <article key={item.route} className="watch-item triangulation-result-card">
               <div>
                 <strong>{readPreviewRouteLabel(item)}</strong>
-                <p className="muted">{label('triangulationPreviewStaticNote', 'Indicative strategy based on frequent routes and cached data. Prices are not live.')}</p>
+                <p className="muted">{label('triangulationPreviewStaticNote', 'Indicative strategy based on frequent routes and price history. Check the updated fare before booking.')}</p>
               </div>
               <span className="triangulation-pill">{readRiskLabel(item.risk)}</span>
             </article>

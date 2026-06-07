@@ -69,7 +69,7 @@ async function mockGeneratorFeed(page, items) {
 }
 
 async function openAiTravelAndRun(page, prompt = 'Find value-focused trips from FCO') {
-  await page.getByRole('button', { name: 'AI Travel', exact: true }).click();
+  await page.getByTestId('app-nav-ai-travel').click();
   await page.getByTestId('ai-travel-prompt-input').fill(prompt);
   await page.getByTestId('ai-travel-run').click();
 }

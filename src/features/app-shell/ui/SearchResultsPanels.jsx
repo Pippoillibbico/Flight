@@ -126,10 +126,6 @@ export default function SearchResultsPanels({
             {t('searchModeLabel')}: {searchResult.meta.searchMode || t('notAvailable')} | {t('bookabilityLabel')}: {searchResult.meta.bookability}
           </p>
         ) : null}
-        {searchResult?.inventory?.providerValidated?.degradedReason ? (
-          <p className="muted">{t('providerValidationDegradedLabel')}: {String(searchResult.inventory.providerValidated.degradedReason)}</p>
-        ) : null}
-
         {searchResult.flights.length === 0 ? <p className="muted">{t('noResults')}</p> : null}
         {bookingHandoffError ? <p className="error" data-testid="booking-handoff-error">{bookingHandoffError}</p> : null}
 

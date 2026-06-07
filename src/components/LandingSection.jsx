@@ -322,6 +322,7 @@ function LandingSection(props) {
           alt=""
           aria-hidden="true"
           loading="eager"
+          style={{ maxWidth: '100%' }}
         />
         <div className="landing-hero-deco" aria-hidden="true">
           <svg viewBox="0 0 520 320" fill="none" xmlns="http://www.w3.org/2000/svg">

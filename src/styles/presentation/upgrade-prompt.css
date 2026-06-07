@@ -266,3 +266,337 @@
     font-size: 11px;
   }
 }
+
+/* Upgrade drawer: keep the purchase decision readable even on compact screens. */
+.upgrade-flow-drawer {
+  width: min(560px, 100vw);
+  padding: 10px;
+}
+
+.account-drawer .upgrade-flow-panel {
+  --upgrade-accent: #2f7df4;
+  --upgrade-accent-soft: rgba(47, 125, 244, 0.12);
+  --upgrade-border: rgba(79, 124, 196, 0.24);
+  --upgrade-surface: rgba(247, 250, 255, 0.92);
+  position: relative;
+  gap: 18px;
+  padding: 0;
+  overflow-x: hidden;
+  border-radius: 24px;
+  box-shadow: -24px 0 70px rgba(14, 45, 88, 0.2);
+}
+
+.account-drawer .upgrade-flow-panel::before {
+  content: "";
+  position: absolute;
+  z-index: 5;
+  inset: 0 0 auto;
+  height: 3px;
+  background: linear-gradient(90deg, #2f7df4, #65a9ff 55%, #5edfc6);
+}
+
+.upgrade-flow-header {
+  position: sticky;
+  z-index: 4;
+  top: 0;
+  align-items: start;
+  margin: 0;
+  padding: 24px 24px 20px;
+  border-bottom: 1px solid var(--upgrade-border);
+  background:
+    radial-gradient(420px 160px at 18% 0%, var(--upgrade-accent-soft), transparent 75%),
+    rgba(249, 252, 255, 0.94);
+  backdrop-filter: blur(16px);
+}
+
+.upgrade-flow-heading {
+  display: grid;
+  gap: 7px;
+}
+
+.upgrade-flow-header .upgrade-flow-eyebrow {
+  margin: 0;
+  color: #3265a5;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.upgrade-flow-header .premium-plan-tag {
+  width: fit-content;
+  margin: 0;
+  padding: 4px 11px;
+  border: 1px solid rgba(47, 125, 244, 0.35);
+  border-radius: 999px;
+  background: var(--upgrade-accent-soft);
+  color: #235ea9;
+}
+
+.upgrade-flow-header h2 {
+  margin: 0;
+  font-size: clamp(27px, 5vw, 34px);
+  line-height: 1.05;
+  letter-spacing: -0.04em;
+}
+
+.upgrade-flow-header > .ghost {
+  min-width: auto;
+  border-radius: 999px;
+  padding-inline: 16px;
+}
+
+.upgrade-flow-intro,
+.upgrade-flow-plan-compare,
+.upgrade-flow-cart {
+  margin-inline: 24px;
+}
+
+.upgrade-flow-intro {
+  display: grid;
+  gap: 14px;
+}
+
+.upgrade-flow-description {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.account-drawer .upgrade-flow-value-note {
+  position: relative;
+  margin: 0;
+  padding: 13px 15px 13px 48px;
+  border: 1px solid rgba(47, 125, 244, 0.28);
+  border-radius: 14px;
+  background: linear-gradient(135deg, var(--upgrade-accent-soft), rgba(94, 223, 198, 0.08));
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1.4;
+}
+
+.account-drawer .upgrade-flow-value-note::before {
+  content: "\2726";
+  position: absolute;
+  top: 50%;
+  left: 15px;
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  transform: translateY(-50%);
+  border-radius: 8px;
+  background: var(--upgrade-accent);
+  color: #fff;
+  font-size: 13px;
+}
+
+.account-drawer .upgrade-flow-benefits {
+  gap: 0;
+  margin: 0;
+  border-block: 1px solid var(--upgrade-border);
+}
+
+.account-drawer .upgrade-flow-benefits li {
+  position: relative;
+  min-height: 0;
+  padding: 12px 4px 12px 38px;
+  border: 0;
+  border-bottom: 1px solid var(--upgrade-border);
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.account-drawer .upgrade-flow-benefits li:last-child {
+  border-bottom: 0;
+}
+
+.account-drawer .upgrade-flow-benefits li::before {
+  content: "\2713";
+  position: absolute;
+  left: 3px;
+  display: grid;
+  width: 23px;
+  height: 23px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--upgrade-accent-soft);
+  color: var(--upgrade-accent);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.account-drawer .upgrade-flow-plan-compare {
+  gap: 10px;
+  padding: 16px;
+  border-radius: 18px;
+  background: var(--upgrade-surface);
+}
+
+.upgrade-flow-compare-grid {
+  gap: 0;
+}
+
+.upgrade-flow-compare-head,
+.upgrade-flow-compare-row {
+  grid-template-columns: minmax(112px, 1.35fr) repeat(3, minmax(58px, 0.85fr));
+  gap: 5px;
+  min-width: 0;
+}
+
+.upgrade-flow-compare-head > span,
+.upgrade-flow-compare-row > span {
+  min-width: 0;
+  padding: 7px 5px;
+  overflow-wrap: anywhere;
+}
+
+.upgrade-flow-compare-head > span:nth-child(3),
+.upgrade-flow-compare-row > span:nth-child(3) {
+  border-radius: 8px;
+  background: var(--upgrade-accent-soft);
+  color: #1f63bb;
+  font-weight: 800;
+}
+
+.upgrade-flow-compare-row {
+  border-bottom: 1px solid var(--upgrade-border);
+}
+
+.upgrade-flow-compare-row:last-child {
+  border-bottom: 0;
+}
+
+.upgrade-flow-current-plan {
+  width: fit-content;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: var(--upgrade-accent-soft);
+}
+
+.account-drawer .upgrade-flow-cart {
+  border-radius: 18px;
+  background: linear-gradient(145deg, #fff, #f2f7ff);
+}
+
+.upgrade-flow-footer {
+  position: sticky;
+  z-index: 4;
+  bottom: 0;
+  display: grid;
+  gap: 11px;
+  margin-top: 2px;
+  padding: 15px 24px 20px;
+  border-top: 1px solid var(--upgrade-border);
+  background: rgba(249, 252, 255, 0.94);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 -16px 36px rgba(20, 59, 110, 0.08);
+}
+
+.upgrade-flow-footer .upgrade-flow-trust-line {
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.upgrade-flow-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.upgrade-flow-actions button:first-child {
+  min-height: 48px;
+  border-radius: 13px;
+  box-shadow: 0 10px 24px rgba(47, 125, 244, 0.24);
+}
+
+.upgrade-flow-actions .ghost {
+  border-radius: 13px;
+}
+
+.app-shell.app-dark .account-drawer .upgrade-flow-panel {
+  --upgrade-accent: #72aaff;
+  --upgrade-accent-soft: rgba(91, 153, 255, 0.15);
+  --upgrade-border: rgba(133, 167, 218, 0.26);
+  --upgrade-surface: rgba(16, 27, 44, 0.86);
+  box-shadow: -28px 0 80px rgba(0, 0, 0, 0.42);
+}
+
+.app-shell.app-dark .upgrade-flow-header,
+.app-shell.app-dark .upgrade-flow-footer {
+  border-color: var(--upgrade-border);
+  background:
+    radial-gradient(420px 160px at 18% 0%, rgba(64, 128, 229, 0.18), transparent 75%),
+    rgba(12, 21, 34, 0.94);
+}
+
+.app-shell.app-dark .upgrade-flow-header .premium-plan-tag {
+  border-color: rgba(114, 170, 255, 0.38);
+  color: #cfe2ff;
+}
+
+.app-shell.app-dark .account-drawer .upgrade-flow-value-note {
+  border-color: rgba(114, 170, 255, 0.34);
+  background: linear-gradient(135deg, rgba(62, 126, 224, 0.16), rgba(56, 207, 181, 0.06));
+}
+
+.app-shell.app-dark .account-drawer .upgrade-flow-benefits li {
+  color: #d7e6fa;
+}
+
+.app-shell.app-dark .upgrade-flow-compare-head > span:nth-child(3),
+.app-shell.app-dark .upgrade-flow-compare-row > span:nth-child(3) {
+  color: #d9e9ff;
+}
+
+.app-shell.app-dark .account-drawer .upgrade-flow-cart {
+  background: linear-gradient(145deg, rgba(18, 31, 50, 0.98), rgba(13, 24, 39, 0.98));
+}
+
+@media (max-width: 560px) {
+  .upgrade-flow-drawer {
+    padding: 0;
+  }
+
+  .account-drawer .upgrade-flow-panel {
+    border-radius: 0;
+  }
+
+  .upgrade-flow-header {
+    padding: 20px 16px 16px;
+  }
+
+  .upgrade-flow-intro,
+  .upgrade-flow-plan-compare,
+  .upgrade-flow-cart {
+    margin-inline: 16px;
+  }
+
+  .account-drawer .upgrade-flow-plan-compare {
+    padding: 13px 10px;
+  }
+
+  .upgrade-flow-compare-head,
+  .upgrade-flow-compare-row {
+    grid-template-columns: minmax(84px, 1.25fr) repeat(3, minmax(48px, 0.8fr));
+    gap: 2px;
+    font-size: 10.5px;
+  }
+
+  .upgrade-flow-compare-head > span,
+  .upgrade-flow-compare-row > span {
+    padding-inline: 3px;
+  }
+
+  .upgrade-flow-footer {
+    padding: 13px 16px 16px;
+  }
+
+  .upgrade-flow-actions {
+    grid-template-columns: 1fr;
+  }
+}

@@ -51,6 +51,38 @@ function uniq(items) {
   return [...new Set(items.filter(Boolean).map((item) => String(item).trim()))];
 }
 
+function normalizeFailureSignature(value) {
+  return String(value || '')
+    .replace(/\u001b\[[0-9;]*m/g, '')
+    .replace(/â€º/g, '›')
+    .replace(/(?:\s*(?:─|â”€))+\s*$/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function mergeKnownRegressions(entries) {
+  const merged = new Map();
+  for (const entry of entries || []) {
+    const signature = normalizeFailureSignature(entry?.signature);
+    if (!signature) continue;
+    const key = `${entry.stage}::${signature}`;
+    const existing = merged.get(key);
+    if (!existing) {
+      merged.set(key, { ...entry, signature });
+      continue;
+    }
+    const hasOpenEntry = existing.status === 'open' || entry.status === 'open';
+    existing.firstSeen = [existing.firstSeen, entry.firstSeen].filter(Boolean).sort()[0] || null;
+    existing.lastSeen = [existing.lastSeen, entry.lastSeen].filter(Boolean).sort().at(-1) || null;
+    existing.occurrences = Number(existing.occurrences || 0) + Number(entry.occurrences || 0);
+    existing.status = hasOpenEntry ? 'open' : 'fixed';
+    existing.fixedAt = hasOpenEntry
+      ? null
+      : [existing.fixedAt, entry.fixedAt].filter(Boolean).sort().at(-1) || null;
+  }
+  return [...merged.values()];
+}
+
 function appendNodeOption(existing, option) {
   const text = String(existing || '').trim();
   if (!text) return option;
@@ -300,9 +332,11 @@ function buildFailureRows(stageResults) {
   for (const stage of stageResults) {
     if (stage.exitCode === 0 || stage.skipped) continue;
     for (const signature of stage.failures) {
+      const normalizedSignature = normalizeFailureSignature(signature);
+      if (!normalizedSignature) continue;
       rows.push({
         stage: stage.id,
-        signature
+        signature: normalizedSignature
       });
     }
   }
@@ -314,7 +348,7 @@ function updateRegressionMemory(memory, stageResults) {
   const currentFailures = buildFailureRows(stageResults);
   const activeKeys = new Set(currentFailures.map((item) => `${item.stage}::${item.signature}`));
   const knownByKey = new Map(
-    (memory.knownRegressions || []).map((entry) => [`${entry.stage}::${entry.signature}`, entry])
+    mergeKnownRegressions(memory.knownRegressions).map((entry) => [`${entry.stage}::${entry.signature}`, entry])
   );
 
   for (const item of currentFailures) {

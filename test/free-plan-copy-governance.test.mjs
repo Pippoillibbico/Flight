@@ -31,9 +31,9 @@ test('Free plan pricing copy does not promise paid live capabilities', async () 
   }
 });
 
-test('Free plan copy explicitly states cached/static/local-only scope', async () => {
+test('Free plan copy clearly positions paid live capabilities as a Premium upgrade', async () => {
   const landing = await readFile('src/features/app-shell/domain/landing-content.js', 'utf8');
-  assert.match(landing, /Cached previews, snapshots, and precomputed results/);
-  assert.match(landing, /Static recommendations and local search/);
-  assert.match(landing, /No live AI, live provider search, live triangulation, or live monitoring/);
+  assert.match(landing, /Travel ideas and opportunities worth exploring/);
+  assert.match(landing, /Route and destination previews/);
+  assert.match(landing, /AI and live fare checks available with Premium/);
 });

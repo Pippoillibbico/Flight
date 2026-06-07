@@ -127,6 +127,56 @@ test('Blocco 2 guard files do not contain mojibake markers', async () => {
   }
 });
 
+test('Italian visible copy keeps required accents in language pack and UI fallbacks', async () => {
+  const missingAccentWords = [
+    'opportunita',
+    'piu',
+    'disponibilita',
+    'funzionalita',
+    'citta',
+    'priorita',
+    'modalita',
+    'visibilita',
+    'profondita'
+  ];
+  const sources = [
+    JSON.stringify(it.messages || {}),
+    await readFile('src/components/LiveDealsRadarSection.jsx', 'utf8'),
+    await readFile('src/components/OpportunityFeedSection.jsx', 'utf8'),
+    await readFile('src/components/opportunity-feed-helpers.js', 'utf8'),
+    await readFile('src/features/app-shell/domain/app-helpers.js', 'utf8')
+  ];
+
+  for (const word of missingAccentWords) {
+    const pattern = new RegExp(`(?:^|[^A-Za-zÀ-ÿ])${word}(?:$|[^A-Za-zÀ-ÿ])`, 'i');
+    for (const source of sources) {
+      assert.equal(pattern.test(source), false, `Italian visible copy contains missing accent: ${word}`);
+    }
+  }
+});
+
+test('secondary language packs keep common diacritics and contain no corrupted words', () => {
+  const missingAccentWords = {
+    de: ['fuer', 'vollstaendig', 'verfuegbar', 'plaene', 'prioritaet', 'ueber'],
+    fr: ['acces', 'fonctionnalites', 'apercus', 'donnees', 'opportunites', 'periode'],
+    es: ['configuracion', 'busqueda', 'analisis', 'triangulacion', 'comparacion', 'tambien'],
+    pt: ['nao', 'voce', 'preco', 'analise', 'previa', 'triangulacoes', 'comparacao']
+  };
+
+  for (const [language, words] of Object.entries(missingAccentWords)) {
+    const source = JSON.stringify(languagePacks[language].messages || {});
+    for (const word of words) {
+      const pattern = new RegExp(`(?:^|[^A-Za-z\u00C0-\u00FF])${word}(?:$|[^A-Za-z\u00C0-\u00FF])`, 'i');
+      assert.equal(pattern.test(source), false, `${language} visible copy contains missing diacritic: ${word}`);
+    }
+    assert.equal(
+      /[A-Za-z\u00C0-\u00FF]\?[A-Za-z\u00C0-\u00FF]|\?-[A-Za-z\u00C0-\u00FF]|^\?[A-Za-z\u00C0-\u00FF]/.test(source),
+      false,
+      `${language} visible copy contains a corrupted word`
+    );
+  }
+});
+
 test('AI Travel free-plan operation does not reintroduce direct user-facing fallback copy', async () => {
   const source = await readFile('src/features/app-shell/hooks/operations/ai-travel-operations.js', 'utf8');
   assert.equal(
@@ -284,4 +334,64 @@ test('Opportunity feed hot-state copy is localized, not hardcoded in JSX', async
   assert.match(source, /opportunityFeedHotStateLive/);
   assert.match(source, /opportunityFeedHotStateSynthetic/);
   assert.equal(source.includes("{isLiveData ? 'Live opportunities detected' : 'High-signal opportunities detected'}"), false);
+});
+
+test('Opportunity feed renders its top-deal empty state only once', async () => {
+  const source = await readFile('src/components/OpportunityFeedSection.jsx', 'utf8');
+  const renderOccurrences = source.match(/\{labels\.topDealEmpty\}/g) || [];
+
+  assert.equal(renderOccurrences.length, 1);
+});
+
+test('landing feature cards keep a clear four-step order', async () => {
+  const source = await readFile('src/features/app-shell/domain/landing-content.js', 'utf8');
+  const cardKeys = Array.from(source.matchAll(/title: t\('(landingFeature(?:1|Ai|2|3)Title)'\)/g), (match) => match[1]);
+
+  assert.deepEqual(cardKeys, [
+    'landingFeature1Title',
+    'landingFeatureAiTitle',
+    'landingFeature2Title',
+    'landingFeature3Title'
+  ]);
+});
+
+test('secondary languages localize visible search and discovery flow copy', () => {
+  const visibleKeys = [
+    'searchQuickStartTitle',
+    'searchQuickStartCopy',
+    'searchTrustNote',
+    'searchAiAssistantSummary',
+    'searchAiAssistantSummaryNote',
+    'opportunityFeedActivitySignalStrong',
+    'opportunityFeedActivitySignalRecent',
+    'opportunityFeedActivitySignalVolatility',
+    'opportunityFeedUrgencyLabel',
+    'opportunityFeedUrgencyNoteSynthetic',
+    'exploreDiscoveryDataSourceLive',
+    'exploreDiscoveryDataSourceSynthetic'
+  ];
+
+  for (const [language, pack] of Object.entries({ de, es, fr, pt })) {
+    for (const key of visibleKeys) {
+      assert.notEqual(pack.messages[key], en.messages[key], `${language} still uses English fallback for ${key}`);
+    }
+  }
+});
+
+test('Explore search UX hides empty summary, stabilizes submit feedback, and leaves date picker clicks native', async () => {
+  const appSource = await readFile('src/App.jsx', 'utf8');
+  const searchSource = await readFile('src/components/SearchSection.jsx', 'utf8');
+  const discoverySource = await readFile('src/components/ExploreDiscoverySection.jsx', 'utf8');
+  const styles = await readFile('src/styles/presentation/explore-search-polish.css', 'utf8');
+
+  assert.match(appSource, /if \(!searchResult\.meta\) return '';/);
+  assert.match(appSource, /if \(!\/\^\[A-Z\]\{3\}\$\/\.test\(String\(exploreDiscoveryInput\.origin \|\| ''\)\.trim\(\)\.toUpperCase\(\)\)\) return;/);
+  assert.doesNotMatch(searchSource, /onPointerDown=\{closeOpenDatePickerOnRepeatPointerDown\}/);
+  assert.match(searchSource, /\{offerSummary \? <span className="summary">\{offerSummary\}<\/span> : null\}/);
+  assert.match(discoverySource, /explore-discovery-status\$\{hasSubmitted \? ' active' : ''\}/);
+  assert.match(discoverySource, /const visibleErrors = hasSubmitted/);
+  assert.match(discoverySource, /<div className="explore-discovery-actions">/);
+  assert.match(styles, /\.explore-discovery-status\.active\s*\{\s*min-height: 20px;/);
+  assert.match(styles, /\.explore-discovery-actions\s*\{[\s\S]*?grid-column: 1 \/ -1;[\s\S]*?justify-content: flex-start;/);
+  assert.match(styles, /background-image: url\(.+\) !important;/);
 });

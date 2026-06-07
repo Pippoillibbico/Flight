@@ -14,6 +14,7 @@ import { bootstrapConsentPolicy, clearConsent, isConsentGiven } from './utils/co
 import { readLocalStorageItem, removeLocalStorageItem, writeLocalStorageItem } from './utils/browserStorage';
 import AdminMainSection from './features/app-shell/ui/AdminMainSection';
 import AppHeroHeader from './features/app-shell/ui/AppHeroHeader';
+import AppMainNav from './features/app-shell/ui/AppMainNav';
 import AiTravelMainSection from './features/app-shell/ui/AiTravelMainSection';
 import ExploreMainSection from './features/app-shell/ui/ExploreMainSection';
 import HomeMainSection from './features/app-shell/ui/HomeMainSection';
@@ -551,12 +552,6 @@ function App() {
       .config()
       .then((payload) => {
         setConfig(payload);
-        const fallbackOrigin = payload.origins[0]?.code || 'MXP';
-        setSearchForm((prev) => ({ ...prev, origin: fallbackOrigin }));
-        setExploreDiscoveryInput((prev) => ({
-          ...prev,
-          origin: /^[A-Za-z]{3}$/.test(String(prev.origin || '')) ? String(prev.origin).toUpperCase() : fallbackOrigin
-        }));
       })
       .catch(() => {
         setConfig({
@@ -702,7 +697,7 @@ function App() {
     ? t('appHeroSubLive') || 'Live provider mode active. Radar is scanning current fares.'
     : t('appHeroSubSynthetic') || 'Historical/demo mode active. Use signals to explore and verify final live fare before booking.';
   const heroDataSourceNote = isLiveDataSource
-    ? t('appDataSourceLiveNote') || 'Connected to live providers.'
+    ? t('appDataSourceLiveNote') || 'Updated fares available.'
     : t('appDataSourceSyntheticNote') || 'Using historical signals: useful for discovery, not a final booking quote.';
   const authTitle = authMode === 'login' ? t('signIn') : t('register');
   const authUi = {
@@ -721,7 +716,7 @@ function App() {
   const processedCheckoutSessionRef = useRef(null);
 
   const offerSummary = useMemo(() => {
-    if (!searchResult.meta) return t('noSearch');
+    if (!searchResult.meta) return '';
     return `${searchResult.meta.count} ${t('offers')} | ${t('stay')} ${searchResult.meta.stayDays} ${t('days')}`;
   }, [searchResult.meta, language, i18nPack]);
 
@@ -1155,6 +1150,7 @@ function App() {
     if (activeMainSection !== 'explore') return;
     if (exploreBudgetLoading || exploreMapLoading) return;
     if (exploreBudgetItems.length > 0 || exploreMapPoints.length > 0) return;
+    if (!/^[A-Z]{3}$/.test(String(exploreDiscoveryInput.origin || '').trim().toUpperCase())) return;
     loadExploreDiscovery().catch(() => {});
   }, [activeMainSection, showLandingPage]);
 
@@ -1182,7 +1178,8 @@ function App() {
     setActiveMainSection,
     activeMainSection,
     isAdvancedMode,
-    prefetchAdvancedAnalyticsChunk
+    prefetchAdvancedAnalyticsChunk,
+    t
   });
 
   const {
@@ -1560,11 +1557,21 @@ function App() {
         heroDataSourceNote={heroDataSourceNote}
         radarMatchesCount={radarMatches.length}
         radarSessionActivated={radarSessionActivated}
-        userPlanType={userPlanType}
-        activeMainSection={activeMainSection}
         setActiveMainSection={setActiveMainSection}
         setShowLandingPage={setShowLandingPage}
       />
+
+      {!adminRouteRequested ? (
+        <AppMainNav
+          t={t}
+          isAuthenticated={isAuthenticated}
+          radarMatchesCount={radarMatches.length}
+          radarSessionActivated={radarSessionActivated}
+          userPlanType={userPlanType}
+          activeMainSection={activeMainSection}
+          setActiveMainSection={setActiveMainSection}
+        />
+      ) : null}
 
       {isAuthenticated && quota ? (
         <QuotaWarningBanner

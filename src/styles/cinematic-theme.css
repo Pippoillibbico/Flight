@@ -32,9 +32,9 @@ body.app-dark-active {
 .page.app-shell.app-dark {
   position: relative;
   isolation: isolate;
-  max-width: 1320px;
-  padding: 32px 24px 56px;
-  gap: 20px;
+  max-width: 1250px;
+  padding: 30px 20px 40px;
+  gap: 18px;
 }
 
 .page.app-shell.app-dark::before,
@@ -88,7 +88,7 @@ body.app-dark-active {
     radial-gradient(840px 320px at 92% -6%, rgba(68, 128, 238, 0.22), transparent 70%),
     radial-gradient(540px 220px at 8% 100%, rgba(237, 79, 168, 0.12), transparent 72%);
   box-shadow: var(--cine-shadow-lg);
-  padding: 32px;
+  padding: 28px;
 }
 
 .app-shell.app-dark .hero::before {
@@ -110,29 +110,29 @@ body.app-dark-active {
 
 .app-shell.app-dark .app-hero-headline-group {
   display: grid;
-  gap: 10px;
-  max-width: 66ch;
+  gap: 8px;
+  max-width: 740px;
 }
 
 .app-shell.app-dark .hero h1 {
-  margin: 2px 0 0;
-  font-size: clamp(38px, 5.2vw, 60px);
-  line-height: 1.02;
-  letter-spacing: -0.03em;
+  margin: 12px 0 10px;
+  font-size: clamp(42px, 4.6vw, 68px);
+  line-height: 1.03;
+  letter-spacing: 0;
   color: var(--cine-text);
   text-wrap: balance;
 }
 
 .app-shell.app-dark .hero-sub {
-  max-width: 60ch;
-  font-size: 16px;
-  line-height: 1.56;
+  max-width: 700px;
+  font-size: clamp(17px, 1.45vw, 22px);
+  line-height: 1.45;
   color: #cfdeef;
 }
 
 .app-shell.app-dark .hero-data-source-note {
   width: fit-content;
-  margin-top: 4px;
+  margin-top: 2px;
   border: 1px solid rgba(120, 157, 206, 0.5);
   background: rgba(20, 34, 52, 0.76);
   color: #d3e5ff;
@@ -237,12 +237,13 @@ body.app-dark-active {
 }
 
 .app-shell.app-dark .app-main-nav {
-  margin-top: 18px;
+  margin-top: 26px;
   width: fit-content;
   max-width: 100%;
   padding: 6px;
   border-radius: 16px;
-  border: 1px solid rgba(113, 145, 193, 0.46);
+  border: 0;
+  box-shadow: inset 0 0 0 1px rgba(113, 145, 193, 0.46);
   background: rgba(12, 19, 30, 0.74);
   backdrop-filter: blur(6px);
   gap: 6px;
@@ -803,6 +804,11 @@ body.app-dark-active {
 
 .hero .app-main-nav {
   margin-top: 26px;
+}
+
+/* Theme colors must switch immediately; the global button transition made this bar flash. */
+.app-shell .app-main-nav .tab {
+  transition: transform 0.18s ease;
 }
 
 .app-shell:not(.app-dark) .hero .app-hero-preview-card,

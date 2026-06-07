@@ -30,7 +30,8 @@ const DEFAULT_RADAR_DRAFT = {
 };
 
 const DEFAULT_EXPLORE_DISCOVERY_INPUT = {
-  origin: 'MXP',
+  origin: '',
+  region: 'all',
   budgetMax: '450',
   limit: 24
 };

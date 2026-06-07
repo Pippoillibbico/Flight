@@ -154,7 +154,8 @@ export function useAppBrowserEffects({
   setActiveMainSection,
   activeMainSection,
   isAdvancedMode,
-  prefetchAdvancedAnalyticsChunk
+  prefetchAdvancedAnalyticsChunk,
+  t
 }) {
   useEffect(() => {
     if (!showAccountPanel) return undefined;
@@ -164,15 +165,15 @@ export function useAppBrowserEffects({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [showAccountPanel, user, setShowAccountPanel, loadBillingPricing]);
+  }, [showAccountPanel, user, setShowAccountPanel]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
     const oauth = params.get('oauth');
-    const reason = params.get('reason');
     if (oauth === 'error') {
-      setAuthError(reason ? `OAuth error: ${reason}` : 'OAuth sign-in failed.');
+      const message = typeof t === 'function' ? t('oauthSignInFailed') : '';
+      setAuthError(message && message !== 'oauthSignInFailed' ? message : 'Social sign-in failed. Please try again.');
       setShowAccountPanel(true);
     }
     if (oauth === 'success') {
@@ -195,7 +196,8 @@ export function useAppBrowserEffects({
     setToken,
     cookieSessionToken,
     persistPostAuthAction,
-    persistPostAuthSection
+    persistPostAuthSection,
+    t
   ]);
 
   useEffect(() => {

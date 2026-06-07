@@ -34,6 +34,8 @@ import {
 } from '../lib/free-cost-metrics.js';
 import { getCacheClient } from '../lib/free-cache.js';
 import { followMetadataSchema } from '../lib/follow-metadata.js';
+import { ROUTES } from '../data/local-flight-data.js';
+import { loadOurAirportsCatalog } from '../lib/ourairports-catalog.js';
 
 const ORIGIN_COORDS = {
   FCO: { lat: 41.8003, lng: 12.2389 },
@@ -96,10 +98,55 @@ const aiQuerySchema = z.object({
 const budgetExploreSchema = z.object({
   origin: z.string().trim().length(3),
   budget_max: z.coerce.number().positive(),
+  region: z.string().trim().min(2).max(40).optional(),
   limit: z.coerce.number().int().min(1).max(80).optional().default(20)
 }).strict();
 
 const OPPORTUNITY_FEED_SOURCE = 'travel_opportunities';
+const EXPLORE_CACHE_SCHEMA_VERSION = 'region-fallback-v4';
+
+const EXPLORE_REGION_FALLBACK_ROUTES = [
+  {
+    origin: 'FCO',
+    destinationIata: 'CAI',
+    destinationName: 'Cairo',
+    country: 'Egypt',
+    region: 'africa',
+    priceLow: 260,
+    tripType: 'round_trip',
+    stops: 1
+  },
+  {
+    origin: 'FCO',
+    destinationIata: 'EZE',
+    destinationName: 'Buenos Aires',
+    country: 'Argentina',
+    region: 'south_america',
+    priceLow: 690,
+    tripType: 'round_trip',
+    stops: 1
+  },
+  {
+    origin: 'FCO',
+    destinationIata: 'GIG',
+    destinationName: 'Rio de Janeiro',
+    country: 'Brazil',
+    region: 'south_america',
+    priceLow: 640,
+    tripType: 'round_trip',
+    stops: 1
+  },
+  {
+    origin: 'FCO',
+    destinationIata: 'LIM',
+    destinationName: 'Lima',
+    country: 'Peru',
+    region: 'south_america',
+    priceLow: 610,
+    tripType: 'round_trip',
+    stops: 1
+  }
+];
 
 function readNumberFromItem(item, keys) {
   for (const key of keys) {
@@ -222,13 +269,80 @@ async function writeCachedJson(cache, key, ttlSec, payload) {
 
 function findOriginCoords(iata) {
   const key = String(iata || '').trim().toUpperCase();
-  return ORIGIN_COORDS[key] || null;
+  if (ORIGIN_COORDS[key]) return ORIGIN_COORDS[key];
+  const airport = loadOurAirportsCatalog()?.airportsByIata?.[key];
+  const lat = Number(airport?.latitude);
+  const lng = Number(airport?.longitude);
+  return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
 }
 
 function findCountryCoords(countryName) {
   const key = String(countryName || '').trim().toLowerCase();
   if (!key) return null;
   return countryCoords.get(key) || null;
+}
+
+function nextExploreDepartureWindow() {
+  const start = new Date();
+  start.setUTCDate(start.getUTCDate() + 28);
+  const end = new Date(start);
+  end.setUTCDate(end.getUTCDate() + 5);
+  return {
+    departDate: start.toISOString().slice(0, 10),
+    returnDate: end.toISOString().slice(0, 10)
+  };
+}
+
+function readRouteFallbackPrice(route, month = new Date().getUTCMonth() + 1) {
+  const band = route?.seasonalPriceBands?.[String(month)];
+  const price = Number(route?.priceLow || band?.low || band?.avgPrice || 0);
+  return Number.isFinite(price) && price > 0 ? Math.round(price) : null;
+}
+
+function toFallbackExploreDestinations({ origin, region, budgetMax, limit }) {
+  const safeOrigin = String(origin || '').trim().toUpperCase();
+  const safeRegion = String(region || '').trim().toLowerCase();
+
+  const budget = Number(budgetMax);
+  const maxPrice = Number.isFinite(budget) && budget > 0 ? budget : Number.POSITIVE_INFINITY;
+  const routePool = [
+    ...ROUTES.map((route) => ({ ...route, isLocalRoute: true })),
+    ...EXPLORE_REGION_FALLBACK_ROUTES
+  ];
+  const isRegionFiltered = Boolean(safeRegion && safeRegion !== 'all');
+  const scopedRoutes = isRegionFiltered
+    ? routePool.filter((route) => String(route.region || '').trim().toLowerCase() === safeRegion)
+    : routePool;
+  const selectedRoutes = scopedRoutes.filter((route) => String(route.origin || '').trim().toUpperCase() === safeOrigin);
+  if (selectedRoutes.length === 0) return [];
+  const { departDate, returnDate } = nextExploreDepartureWindow();
+
+  const candidates = selectedRoutes
+    .map((route) => {
+      const minPrice = readRouteFallbackPrice(route);
+      if (!minPrice) return null;
+      const destinationRegion = String(route.region || safeRegion || '').trim().toLowerCase();
+      return {
+        destination_airport: String(route.destinationIata || '').trim().toUpperCase(),
+        destination_city: route.destinationName || route.destinationIata,
+        destination_country: route.country || null,
+        destination_region: destinationRegion || null,
+        min_price: minPrice,
+        currency: 'EUR',
+        trip_type: route.tripType || 'round_trip',
+        depart_date: departDate,
+        return_date: returnDate,
+        stops: Number.isFinite(Number(route.stops)) ? Number(route.stops) : 1,
+        airline: 'route_signal',
+        baggage_included: null,
+        opportunity_count: 1
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.min_price - b.min_price);
+
+  const withinBudget = candidates.filter((item) => item.min_price <= maxPrice);
+  return withinBudget.slice(0, Math.max(1, Number(limit) || 20));
 }
 
 export function buildOpportunitiesRouter({
@@ -299,7 +413,8 @@ export function buildOpportunitiesRouter({
         cluster: parsed.data.cluster,
         budgetBucket: parsed.data.budget_bucket,
         entity: parsed.data.entity,
-        limit: parsed.data.limit
+        limit: parsed.data.limit,
+        publicDiscoveryOnly: true
       });
 
       const auth = typeof optionalAuth === 'function' ? optionalAuth(req) : null;
@@ -379,9 +494,11 @@ export function buildOpportunitiesRouter({
     const parsed = budgetExploreSchema.safeParse(req.query);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid query.' });
     try {
+      const requestedRegion = String(parsed.data.region || '').trim().toLowerCase();
+      const regionFilter = requestedRegion && requestedRegion !== 'all' ? requestedRegion : '';
       const version = getOpportunityFeedVersion();
-      const fingerprint = sortedQueryFingerprint(parsed.data);
-      const cacheKey = `opps:explore:budget:v${version}:${fingerprint}`;
+      const fingerprint = sortedQueryFingerprint({ ...parsed.data, region: regionFilter });
+      const cacheKey = `opps:explore:budget:${EXPLORE_CACHE_SCHEMA_VERSION}:v${version}:${fingerprint}`;
       const cached = await readCachedJson(cache, cacheKey);
       if (cached) {
         res.setHeader('Cache-Control', `private, max-age=${exploreCacheTtlSec}`);
@@ -390,10 +507,19 @@ export function buildOpportunitiesRouter({
       const items = await listPublishedOpportunities({
         originAirport: parsed.data.origin,
         maxPrice: parsed.data.budget_max,
+        region: regionFilter,
         limit: Math.max(parsed.data.limit * 6, 120)
       });
       const destinations = toExploreDestinations(items, parsed.data.limit);
-      const payload = { origin: parsed.data.origin, budget_max: parsed.data.budget_max, items: destinations };
+      const resolvedDestinations = destinations.length > 0
+        ? destinations
+        : toFallbackExploreDestinations({
+            origin: parsed.data.origin,
+            region: regionFilter,
+            budgetMax: parsed.data.budget_max,
+            limit: parsed.data.limit
+          });
+      const payload = { origin: parsed.data.origin, budget_max: parsed.data.budget_max, region: regionFilter || 'all', items: resolvedDestinations };
       await writeCachedJson(cache, cacheKey, exploreCacheTtlSec, payload);
       res.setHeader('Cache-Control', `private, max-age=${exploreCacheTtlSec}`);
       return res.json(payload);
@@ -406,9 +532,11 @@ export function buildOpportunitiesRouter({
     const parsed = budgetExploreSchema.safeParse(req.query);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid query.' });
     try {
+      const requestedRegion = String(parsed.data.region || '').trim().toLowerCase();
+      const regionFilter = requestedRegion && requestedRegion !== 'all' ? requestedRegion : '';
       const version = getOpportunityFeedVersion();
-      const fingerprint = sortedQueryFingerprint(parsed.data);
-      const cacheKey = `opps:explore:map:v${version}:${fingerprint}`;
+      const fingerprint = sortedQueryFingerprint({ ...parsed.data, region: regionFilter });
+      const cacheKey = `opps:explore:map:${EXPLORE_CACHE_SCHEMA_VERSION}:v${version}:${fingerprint}`;
       const cached = await readCachedJson(cache, cacheKey);
       if (cached) {
         res.setHeader('Cache-Control', `private, max-age=${exploreCacheTtlSec}`);
@@ -417,10 +545,20 @@ export function buildOpportunitiesRouter({
       const items = await listPublishedOpportunities({
         originAirport: parsed.data.origin,
         maxPrice: parsed.data.budget_max,
+        region: regionFilter,
         limit: Math.max(parsed.data.limit * 8, 180)
       });
       const originCoords = findOriginCoords(parsed.data.origin);
-      const points = toExploreDestinations(items, parsed.data.limit).map((item) => ({
+      const destinations = toExploreDestinations(items, parsed.data.limit);
+      const resolvedDestinations = destinations.length > 0
+        ? destinations
+        : toFallbackExploreDestinations({
+            origin: parsed.data.origin,
+            region: regionFilter,
+            budgetMax: parsed.data.budget_max,
+            limit: parsed.data.limit
+          });
+      const points = resolvedDestinations.map((item) => ({
         ...item,
         destination_coords: findCountryCoords(item.destination_country),
         origin_coords: originCoords
@@ -428,6 +566,7 @@ export function buildOpportunitiesRouter({
       const payload = {
         origin: parsed.data.origin,
         budget_max: parsed.data.budget_max,
+        region: regionFilter || 'all',
         points
       };
       await writeCachedJson(cache, cacheKey, exploreCacheTtlSec, payload);

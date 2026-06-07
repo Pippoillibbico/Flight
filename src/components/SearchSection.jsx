@@ -1,10 +1,34 @@
 import { z } from 'zod';
+import { useState } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { validateProps } from '../utils/validateProps';
+import AirportAutocomplete from './AirportAutocomplete';
 
 const FunctionPropSchema = z.custom((value) => typeof value === 'function', {
   message: 'Expected function prop.'
 });
+
+function openNativeDatePicker(event) {
+  const input = event.currentTarget;
+  if (input.disabled || typeof input.showPicker !== 'function') return;
+  try {
+    input.showPicker();
+  } catch {
+    // Some browsers already open the picker for the same click.
+  }
+}
+
+const MULTI_CITY_ERROR_KEYS = {
+  'Itinerary must include between 2 and 6 segments.': 'multiCityErrorSegmentCount',
+  'Origin is required.': 'multiCityErrorOriginRequired',
+  'Origin must be a 3-letter IATA code.': 'multiCityErrorOriginInvalid',
+  'Destination is required.': 'multiCityErrorDestinationRequired',
+  'Destination must be a 3-letter IATA code.': 'multiCityErrorDestinationInvalid',
+  'Date is required.': 'multiCityErrorDateRequired',
+  'Date must be a valid YYYY-MM-DD value.': 'multiCityErrorDateInvalid',
+  'Origin and destination cannot be the same.': 'multiCityErrorSameAirport',
+  'Segment date cannot be earlier than previous segment.': 'multiCityErrorChronology'
+};
 
 const SearchSectionPropsSchema = z
   .object({
@@ -79,7 +103,8 @@ function SearchSection(props) {
     travelTimeLabel,
     MOOD_OPTIONS,
     CLIMATE_PREF_OPTIONS,
-    defaultSearch
+    defaultSearch,
+    language
   } = useAppContext();
   const {
     uiMode,
@@ -112,7 +137,6 @@ function SearchSection(props) {
     showCountrySuggestions,
     setShowCountrySuggestions,
     countrySuggestions,
-    submitJustGo,
     searchLoading,
     createDurationAlert,
     upgradeToPremium,
@@ -127,88 +151,162 @@ function SearchSection(props) {
   const isMultiCityMode = searchMode === 'multi_city';
   const canAddMultiCity = multiCitySegments.length < 6;
   const canRemoveMultiCity = multiCitySegments.length > 2;
-  const isSubmitDisabled = searchLoading || (isMultiCityMode && !multiCityValidation.valid);
+  const isInvalidMultiCity = isMultiCityMode && !multiCityValidation.valid;
+  const isSubmitDisabled = searchLoading || isInvalidMultiCity;
+  const incompleteMultiCitySegments = multiCityValidation.segmentErrors.filter((entry) => Object.values(entry).some(Boolean)).length;
+  const [multiCityRevealErrors, setMultiCityRevealErrors] = useState(false);
+  // Advanced-mode disclosure panels: open by default, but user can collapse and the choice sticks.
+  const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(true);
+  const [advancedToolsOpen, setAdvancedToolsOpen] = useState(true);
+  // Advanced filters: count how many are narrowing the search (differ from defaults), so the
+  // user always knows filters are applied — even in simple mode where they're hidden.
+  const langIsEnglish = String(language || 'it').toLowerCase().startsWith('en');
+  const activeFiltersLabel = langIsEnglish ? 'active' : 'attivi';
+  const resetAdvancedLabel = langIsEnglish ? 'Reset advanced filters' : 'Azzera filtri avanzati';
+  const activeAdvancedFilters = (() => {
+    const f = searchForm || {};
+    let count = 0;
+    if (String(f.connectionType ?? 'all') !== 'all') count += 1;
+    if (String(f.travelTime ?? 'all') !== 'all') count += 1;
+    if (String(f.periodPreset ?? 'custom') !== 'custom') count += 1;
+    if (String(f.region ?? 'all') !== 'all') count += 1;
+    if (String(f.country ?? '').trim() !== '') count += 1;
+    if (String(f.cabinClass ?? 'economy') !== 'economy') count += 1;
+    if (Number(f.maxBudget) > 0) count += 1;
+    const stops = String(f.maxStops ?? '').trim();
+    if (stops !== '' && stops !== '2') count += 1;
+    if (Number(f.minComfortScore) > 0) count += 1;
+    return count;
+  })();
+  const resetAdvancedFilters = () => {
+    setSearchForm((previous) => ({
+      ...previous,
+      connectionType: 'all',
+      travelTime: 'all',
+      periodPreset: 'custom',
+      region: 'all',
+      country: '',
+      cabinClass: 'economy',
+      maxBudget: '',
+      maxStops: '2',
+      minComfortScore: '',
+      mood: 'relax',
+      climatePreference: 'indifferent',
+      pace: 'normal',
+      packageCount: 3,
+      aiProvider: 'none'
+    }));
+  };
   const quickStartTitle = t('searchQuickStartTitle') || 'Fast path to your first useful result';
   const quickStartCopy =
     t('searchQuickStartCopy') || '1) Pick origin and dates 2) Run search 3) Track or book the best opportunity.';
   const aiAssistantSummary = t('searchAiAssistantSummary') || 'Optional: describe your trip in one sentence';
   const aiAssistantSummaryNote = t('searchAiAssistantSummaryNote') || 'We can auto-fill filters from your intent.';
   const searchTrustNote =
-    t('searchTrustNote') || 'Results depend on connected providers. Always verify final fare before purchase.';
+    t('searchTrustNote') || 'Prices can change quickly. Always verify the final fare before purchase.';
+
+  function translateMultiCityError(message) {
+    const key = MULTI_CITY_ERROR_KEYS[message];
+    return key ? t(key) || message : message;
+  }
+
+  function visibleMultiCityError(message) {
+    if (!message) return '';
+    return multiCityRevealErrors ? translateMultiCityError(message) : '';
+  }
+
+  function updateMultiCityField(index, field, value) {
+    setMultiCitySegmentValue(index, field, value);
+  }
+
+  function handleSearchSubmit(event) {
+    if (isInvalidMultiCity) {
+      event.preventDefault();
+      setMultiCityRevealErrors(true);
+      return;
+    }
+    if (isMultiCityMode) setMultiCityRevealErrors(true);
+    submitSearch(event);
+  }
+
+  function revealMultiCityErrors() {
+    if (isInvalidMultiCity && !searchLoading) setMultiCityRevealErrors(true);
+  }
+
+  function activateSearchMode(mode) {
+    setMultiCityRevealErrors(false);
+    setSearchMode(mode);
+  }
+
+  function removeMultiCitySegment(index) {
+    deleteMultiCitySegment(index);
+  }
+
+  function retryMultiCity() {
+    setMultiCityRevealErrors(true);
+    retryMultiCitySearch();
+  }
+
   return (
 <section className="panel search-panel">
           <div className="panel-head">
             <h2>{t('search')}</h2>
             <div className="search-head-tools">
-              <span className="summary">{offerSummary}</span>
-              <div className="mode-switch" role="group" aria-label={t('mode')}>
-                <button type="button" className={uiMode === 'simple' ? 'tab active' : 'tab'} onClick={() => setUiMode('simple')}>
-                  {t('simpleMode')}
-                </button>
-                <button
-                  type="button"
-                  className={uiMode === 'advanced' ? 'tab active' : 'tab'}
-                  onMouseEnter={() => prefetchAdvancedAnalyticsChunk?.()}
-                  onFocus={() => prefetchAdvancedAnalyticsChunk?.()}
-                  onClick={() => setUiMode('advanced')}
-                >
-                  {t('advancedMode')}
-                </button>
-                <InfoTip text={tt('mode_help')} />
-              </div>
+              {offerSummary ? <span className="summary">{offerSummary}</span> : null}
             </div>
           </div>
           <p className="muted">{t('explorePageSubtitle')}</p>
+          <div className="search-mode-choice">
+            <div className="mode-switch" role="group" aria-label={t('mode')}>
+              <button type="button" className={uiMode === 'simple' ? 'tab active' : 'tab'} onClick={() => setUiMode('simple')}>
+                <span>{t('simpleMode')}</span>
+                <small>{t('simpleModeHint')}</small>
+              </button>
+              <button
+                type="button"
+                className={uiMode === 'advanced' ? 'tab active' : 'tab'}
+                onMouseEnter={() => prefetchAdvancedAnalyticsChunk?.()}
+                onFocus={() => prefetchAdvancedAnalyticsChunk?.()}
+                onClick={() => setUiMode('advanced')}
+              >
+                <span>{t('advancedMode')}</span>
+                <small>{t('advancedModeHint')}</small>
+              </button>
+              <InfoTip text={tt('mode_help')} />
+            </div>
+          </div>
+          <div className={`search-mode-explainer ${isAdvancedMode ? 'advanced' : 'simple'}`} data-testid="search-mode-explainer">
+            <strong>{isAdvancedMode ? t('advancedModeExplainerTitle') : t('simpleModeExplainerTitle')}</strong>
+            <p>{isAdvancedMode ? t('advancedModeExplainerCopy') : t('simpleModeExplainerCopy')}</p>
+          </div>
+          {!isAdvancedMode && activeAdvancedFilters > 0 ? (
+            <div
+              className="search-active-filters-hint"
+              data-testid="advanced-filters-active-hint"
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap', margin: '0.5rem 0', padding: '0.5rem 0.75rem', borderRadius: '8px', background: 'rgba(255,193,7,0.12)', border: '1px solid rgba(255,193,7,0.35)', fontSize: '0.85rem' }}
+            >
+              <span>
+                {langIsEnglish
+                  ? `${activeAdvancedFilters} advanced filter${activeAdvancedFilters > 1 ? 's' : ''} still active and hidden in simple mode.`
+                  : `${activeAdvancedFilters} ${activeAdvancedFilters > 1 ? 'filtri avanzati attivi' : 'filtro avanzato attivo'}, nascosti in modalità semplice.`}
+              </span>
+              <button type="button" className="ghost" onClick={resetAdvancedFilters} data-testid="reset-advanced-filters-simple">
+                {resetAdvancedLabel}
+              </button>
+            </div>
+          ) : null}
           <div className="search-quick-start" data-testid="search-quick-start">
             <p className="search-quick-start-title">{quickStartTitle}</p>
             <p className="search-quick-start-copy">{quickStartCopy}</p>
           </div>
 
-          <form className="search-grid" onSubmit={submitSearch}>
-            <details className="ai-intake-row search-ai-assistant" open={isAdvancedMode ? true : undefined}>
-              <summary className="search-ai-assistant-summary">
-                <span>{aiAssistantSummary}</span>
-                <small>{aiAssistantSummaryNote}</small>
-              </summary>
-              <label>
-                {t('aiPlannerTitle')}
-                <p className="ai-planner-hint">{t('aiPlannerHint')}</p>
-                <textarea
-                  className="ai-intake-box"
-                  placeholder={t('aiInputPlaceholder')}
-                  value={intakePrompt}
-                  onChange={(e) => setIntakePrompt(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      analyzeIntentPrompt();
-                    }
-                  }}
-                />
-              </label>
-              <div className="ai-intake-chips">
-                {quickIntakePrompts.map((preset) => (
-                  <button key={preset} type="button" className="ghost" onClick={() => runQuickIntakePrompt(preset)} disabled={intakeLoading}>
-                    {preset}
-                  </button>
-                ))}
-              </div>
-              <div className="item-actions">
-                <button type="button" className="ghost" onClick={() => analyzeIntentPrompt()} disabled={intakeLoading}>
-                  {intakeLoading ? t('aiAnalyzing') : t('aiAnalyze')}
-                </button>
-              </div>
-              {intakeInfo ? (
-                <p className="ai-intake-result" role="status" aria-live="polite">{intakeInfo}</p>
-              ) : null}
-            </details>
-
+          <form className="search-grid" onSubmit={handleSearchSubmit}>
             <div className="trip-mode-toggle" role="group" aria-label={t('tripModeLabel') || 'Search mode'}>
               <button
                 type="button"
                 data-testid="single-trip-toggle"
                 className={`${isMultiCityMode ? 'tab' : 'tab active'} search-mode-toggle-btn`}
-                onClick={() => setSearchMode('single')}
+                onClick={() => activateSearchMode('single')}
               >
                 {t('singleTripLabel') || 'Single trip'}
               </button>
@@ -216,7 +314,7 @@ function SearchSection(props) {
                 type="button"
                 data-testid="multi-city-toggle"
                 className={`${isMultiCityMode ? 'tab active' : 'tab'} search-mode-toggle-btn`}
-                onClick={() => setSearchMode('multi_city')}
+                onClick={() => activateSearchMode('multi_city')}
               >
                 {t('multiCityLabel') || 'Multi-city'}
               </button>
@@ -225,53 +323,70 @@ function SearchSection(props) {
             {isMultiCityMode ? (
               <div className="multi-city-block" data-testid="multi-city-panel">
                 <div className="multi-city-head">
-                  <strong>{t('multiCityLabel') || 'Multi-city'}</strong>
-                  <span className="muted">{t('multiCityHint') || 'Define 2 to 6 travel segments in chronological order.'}</span>
+                  <div>
+                    <strong>{t('multiCityLabel') || 'Multi-city'}</strong>
+                    <span className="multi-city-count">{multiCitySegments.length}/6</span>
+                  </div>
+                  <span className="muted">{t('multiCityHint') || 'Add each flight in travel order. The next departure is filled in for you.'}</span>
+                  <span className="multi-city-airport-hint">{t('airportAutocompleteHint') || 'Type a city and choose the airport from the suggestions.'}</span>
+                  <span className={`multi-city-completion${multiCityValidation.valid ? ' complete' : ''}`}>
+                    {multiCityValidation.valid
+                      ? t('multiCityReady')
+                      : (t('multiCityIncompleteSegments') || '{count} flights to complete').replace('{count}', incompleteMultiCitySegments)}
+                  </span>
                 </div>
                 <div className="multi-city-list">
                   {multiCitySegments.map((segment, index) => {
                     const segmentError = multiCityValidation.segmentErrors[index] || {};
+                    const originError = visibleMultiCityError(segmentError.origin);
+                    const destinationError = visibleMultiCityError(segmentError.destination);
+                    const dateError = visibleMultiCityError(segmentError.date);
                     return (
                       <article key={segment.id} className="multi-city-row" data-testid={`multi-city-segment-${index}`}>
                         <header className="multi-city-row-head">
-                          <strong>{(t('segmentLabel') || 'Segment')} {index + 1}</strong>
-                          <button
-                            type="button"
-                            className="ghost"
-                            data-testid={`remove-segment-${index}`}
-                            aria-label={`${t('removeSegmentCta') || 'Remove segment'} ${index + 1}`}
-                            onClick={() => deleteMultiCitySegment(index)}
-                            disabled={!canRemoveMultiCity || searchLoading}
-                          >
-                            {t('removeSegmentCta') || 'Remove'}
-                          </button>
+                          <div className="multi-city-step-title">
+                            <span className="multi-city-step-number">{index + 1}</span>
+                            <strong>{(t('segmentLabel') || 'Segment')} {index + 1}</strong>
+                          </div>
+                          {canRemoveMultiCity ? (
+                            <button
+                              type="button"
+                              className="ghost"
+                              data-testid={`remove-segment-${index}`}
+                              aria-label={`${t('removeSegmentCta') || 'Remove segment'} ${index + 1}`}
+                              onClick={() => removeMultiCitySegment(index)}
+                              disabled={searchLoading}
+                            >
+                              {t('removeSegmentCta') || 'Remove'}
+                            </button>
+                          ) : null}
                         </header>
                         <div className="multi-city-row-grid">
                           <label>
                             {t('origin')}
-                            <input
-                              data-testid={`segment-origin-${index}`}
-                              aria-label={`${t('segmentLabel') || 'Segment'} ${index + 1} ${t('origin')}`}
-                              autoComplete="off"
-                              placeholder="MXP"
-                              maxLength={3}
+                            <AirportAutocomplete
+                              testId={`segment-origin-${index}`}
+                              ariaLabel={`${t('segmentLabel') || 'Segment'} ${index + 1} ${t('origin')}`}
+                              emptyLabel={t('airportAutocompleteEmpty') || 'No airports found'}
+                              language={language}
+                              placeholder={t('airportAutocompletePlaceholder') || 'Type a city, for example Milan'}
                               value={segment.origin}
-                              onChange={(e) => setMultiCitySegmentValue(index, 'origin', e.target.value)}
+                              onChange={(value) => updateMultiCityField(index, 'origin', value)}
                             />
-                            {segmentError.origin ? <span className="error inline-error" data-testid={`segment-origin-error-${index}`}>{segmentError.origin}</span> : null}
+                            {originError ? <span className="error inline-error" data-testid={`segment-origin-error-${index}`}>{originError}</span> : null}
                           </label>
                           <label>
                             {t('destinationLabel') || 'Destination'}
-                            <input
-                              data-testid={`segment-destination-${index}`}
-                              aria-label={`${t('segmentLabel') || 'Segment'} ${index + 1} ${t('destinationLabel') || 'Destination'}`}
-                              autoComplete="off"
-                              placeholder="LIS"
-                              maxLength={3}
+                            <AirportAutocomplete
+                              testId={`segment-destination-${index}`}
+                              ariaLabel={`${t('segmentLabel') || 'Segment'} ${index + 1} ${t('destinationLabel') || 'Destination'}`}
+                              emptyLabel={t('airportAutocompleteEmpty') || 'No airports found'}
+                              language={language}
+                              placeholder={t('airportAutocompletePlaceholder') || 'Type a city, for example Lisbon'}
                               value={segment.destination}
-                              onChange={(e) => setMultiCitySegmentValue(index, 'destination', e.target.value)}
+                              onChange={(value) => updateMultiCityField(index, 'destination', value)}
                             />
-                            {segmentError.destination ? <span className="error inline-error" data-testid={`segment-destination-error-${index}`}>{segmentError.destination}</span> : null}
+                            {destinationError ? <span className="error inline-error" data-testid={`segment-destination-error-${index}`}>{destinationError}</span> : null}
                           </label>
                           <label>
                             {t('departure')}
@@ -280,19 +395,20 @@ function SearchSection(props) {
                               aria-label={`${t('segmentLabel') || 'Segment'} ${index + 1} ${t('departure')}`}
                               type="date"
                               value={segment.date}
-                              onChange={(e) => setMultiCitySegmentValue(index, 'date', e.target.value)}
+                              onClick={openNativeDatePicker}
+                              onChange={(e) => updateMultiCityField(index, 'date', e.target.value)}
                             />
-                            {segmentError.date ? <span className="error inline-error" data-testid={`segment-date-error-${index}`}>{segmentError.date}</span> : null}
+                            {dateError ? <span className="error inline-error" data-testid={`segment-date-error-${index}`}>{dateError}</span> : null}
                           </label>
                         </div>
                       </article>
                     );
                   })}
                 </div>
-                {multiCityValidation.formErrors.length > 0 ? (
+                {multiCityRevealErrors && multiCityValidation.formErrors.length > 0 ? (
                   <div className="multi-city-form-errors">
                     {multiCityValidation.formErrors.map((entry) => (
-                      <p key={entry} className="error inline-error">{entry}</p>
+                      <p key={entry} className="error inline-error">{translateMultiCityError(entry)}</p>
                     ))}
                   </div>
                 ) : null}
@@ -314,13 +430,14 @@ function SearchSection(props) {
               <>
                 <label>
                   {t('origin')}
-                  <select className="origin-select" value={searchForm.origin} onChange={(e) => setSearchForm((p) => ({ ...p, origin: e.target.value }))}>
-                    {config.origins.map((o) => (
-                      <option key={o.code} value={o.code}>
-                        {o.code} - {o.label.replace(` (${o.code})`, '')}
-                      </option>
-                    ))}
-                  </select>
+                  <AirportAutocomplete
+                    ariaLabel={t('origin')}
+                    emptyLabel={t('airportAutocompleteEmpty') || 'No airports found'}
+                    language={language}
+                    placeholder={t('airportAutocompletePlaceholder') || 'Type a city, for example Milan'}
+                    value={searchForm.origin}
+                    onChange={(value) => setSearchForm((previous) => ({ ...previous, origin: value }))}
+                  />
                 </label>
 
                 <label>
@@ -364,33 +481,11 @@ function SearchSection(props) {
               </>
             ) : null}
 
-            <label>
-              {t('connectionType')} <InfoTip text={tt('connection_help')} />
-              <select value={searchForm.connectionType} onChange={(e) => setSearchForm((p) => ({ ...p, connectionType: e.target.value }))}>
-                {config.connectionTypes.map((type) => (
-                  <option key={type} value={type}>
-                    {connectionLabel(type)}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label>
-              {t('travelTime')} <InfoTip text={tt('time_help')} />
-              <select value={searchForm.travelTime} onChange={(e) => setSearchForm((p) => ({ ...p, travelTime: e.target.value }))}>
-                {config.travelTimes.map((timeBand) => (
-                  <option key={timeBand} value={timeBand}>
-                    {travelTimeLabel(timeBand)}
-                  </option>
-                ))}
-              </select>
-            </label>
-
             {!isMultiCityMode ? (
               <>
                 <label>
                   {t('departure')}
-                  <input type="date" value={searchForm.dateFrom} onChange={(e) => setSearchForm((p) => ({ ...p, periodPreset: 'custom', dateFrom: e.target.value }))} />
+                  <input type="date" value={searchForm.dateFrom} onClick={openNativeDatePicker} onChange={(e) => setSearchForm((p) => ({ ...p, periodPreset: 'custom', dateFrom: e.target.value }))} />
                 </label>
 
                 <label>
@@ -410,36 +505,71 @@ function SearchSection(props) {
                     type="date"
                     value={searchForm.tripType === 'one_way' ? '' : searchForm.dateTo}
                     disabled={searchForm.tripType === 'one_way'}
+                    onClick={openNativeDatePicker}
                     onChange={(e) => setSearchForm((p) => ({ ...p, periodPreset: 'custom', dateTo: e.target.value }))}
                   />
                 </label>
 
-                <label>
-                  {t('period')}
-                  <select value={searchForm.periodPreset || 'custom'} onChange={(e) => applyPeriodPreset(e.target.value)}>
-                    <option value="custom">{t('periodCustom')}</option>
-                    <option value="weekend">{t('periodWeekend')}</option>
-                    <option value="week">{t('periodWeek')}</option>
-                    <option value="two_weeks">{t('periodTwoWeeks')}</option>
-                    <option value="one_month">{t('periodOneMonth')}</option>
-                    <option value="three_months">{t('periodThreeMonths')}</option>
-                    <option value="six_months">{t('periodSixMonths')}</option>
-                    <option value="one_year">{t('periodOneYear')}</option>
-                  </select>
-                </label>
               </>
             ) : null}
 
-            {isAdvancedMode ? (
-              <label>
-                {t('travellers')}
-                <input type="number" inputMode="numeric" min={1} max={9} value={searchForm.travellers} onChange={(e) => setSearchForm((p) => ({ ...p, travellers: Math.max(1, Math.min(9, Number(e.target.value) || 1)) }))} />
-              </label>
-            ) : null}
+            <label>
+              {t('travellers')}
+              <input type="number" inputMode="numeric" min={1} max={9} value={searchForm.travellers} onChange={(e) => setSearchForm((p) => ({ ...p, travellers: Math.max(1, Math.min(9, Number(e.target.value) || 1)) }))} />
+            </label>
 
-            <details className="advanced-block" open={isAdvancedMode ? true : undefined}>
-              <summary>{t('advancedFilters')}</summary>
-              <div className="advanced-grid">
+            {isAdvancedMode ? (
+              <details className="advanced-block search-advanced-filters" data-testid="advanced-filters-panel" open={advancedFiltersOpen} onToggle={(event) => setAdvancedFiltersOpen(event.currentTarget.open)}>
+                <summary>
+                  <span>{t('advancedFilters')}{activeAdvancedFilters > 0 ? ` · ${activeAdvancedFilters} ${activeFiltersLabel}` : ''}</span>
+                  <small>{t('advancedFiltersHint')}</small>
+                </summary>
+                {activeAdvancedFilters > 0 ? (
+                  <div className="advanced-filters-actions" style={{ display: 'flex', justifyContent: 'flex-end', margin: '0.25rem 0 0.5rem' }}>
+                    <button type="button" className="ghost" onClick={resetAdvancedFilters} data-testid="reset-advanced-filters">
+                      {resetAdvancedLabel} ({activeAdvancedFilters})
+                    </button>
+                  </div>
+                ) : null}
+                <div className="advanced-grid">
+                <label>
+                  {t('connectionType')} <InfoTip text={tt('connection_help')} />
+                  <select value={searchForm.connectionType} onChange={(e) => setSearchForm((p) => ({ ...p, connectionType: e.target.value }))}>
+                    {config.connectionTypes.map((type) => (
+                      <option key={type} value={type}>
+                        {connectionLabel(type)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label>
+                  {t('travelTime')} <InfoTip text={tt('time_help')} />
+                  <select value={searchForm.travelTime} onChange={(e) => setSearchForm((p) => ({ ...p, travelTime: e.target.value }))}>
+                    {config.travelTimes.map((timeBand) => (
+                      <option key={timeBand} value={timeBand}>
+                        {travelTimeLabel(timeBand)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                {!isMultiCityMode ? (
+                  <label>
+                    {t('period')}
+                    <select value={searchForm.periodPreset || 'custom'} onChange={(e) => applyPeriodPreset(e.target.value)}>
+                      <option value="custom">{t('periodCustom')}</option>
+                      <option value="weekend">{t('periodWeekend')}</option>
+                      <option value="week">{t('periodWeek')}</option>
+                      <option value="two_weeks">{t('periodTwoWeeks')}</option>
+                      <option value="one_month">{t('periodOneMonth')}</option>
+                      <option value="three_months">{t('periodThreeMonths')}</option>
+                      <option value="six_months">{t('periodSixMonths')}</option>
+                      <option value="one_year">{t('periodOneYear')}</option>
+                    </select>
+                  </label>
+                ) : null}
+
                 <label>
                   {t('area')}
                   <select value={searchForm.region} onChange={(e) => setSearchForm((p) => ({ ...p, region: e.target.value, country: '' }))}>
@@ -569,8 +699,8 @@ function SearchSection(props) {
                   {t('aiProviderLabel')}
                   <select value={searchForm.aiProvider} onChange={(e) => setSearchForm((p) => ({ ...p, aiProvider: e.target.value }))}>
                     <option value="none">{t('none')}</option>
-                    <option value="chatgpt">ChatGPT (OpenAI API)</option>
-                    <option value="claude">Claude (Anthropic API)</option>
+                    <option value="chatgpt">{t('aiModeFast')}</option>
+                    <option value="claude">{t('aiModeDeep')}</option>
                     <option value="auto">{t('auto')}</option>
                   </select>
                 </label>
@@ -587,8 +717,49 @@ function SearchSection(props) {
                   </span>
                   <InfoTip text={tt('overtourism_help')} />
                 </label>
+                </div>
+              </details>
+            ) : null}
+
+            <section className="ai-intake-row search-ai-assistant">
+              <div className="search-ai-assistant-copy">
+                <span className="search-ai-assistant-badge">AI</span>
+                <div>
+                  <strong>{aiAssistantSummary}</strong>
+                  <p>{aiAssistantSummaryNote}</p>
+                </div>
               </div>
-            </details>
+              <label className="search-ai-prompt-field">
+                <span>{t('aiPlannerTitle')}</span>
+                <textarea
+                  className="ai-intake-box"
+                  placeholder={t('aiInputPlaceholder')}
+                  value={intakePrompt}
+                  onChange={(e) => setIntakePrompt(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      analyzeIntentPrompt();
+                    }
+                  }}
+                />
+              </label>
+              <div className="search-ai-footer">
+                <div className="ai-intake-chips">
+                  {quickIntakePrompts.slice(0, 2).map((preset) => (
+                    <button key={preset} type="button" className="ghost" onClick={() => runQuickIntakePrompt(preset)} disabled={intakeLoading}>
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+                <button type="button" className="search-ai-analyze-cta" onClick={() => analyzeIntentPrompt()} disabled={intakeLoading}>
+                  {intakeLoading ? t('aiAnalyzing') : t('aiAnalyze')}
+                </button>
+              </div>
+              {intakeInfo ? (
+                <p className="ai-intake-result" role="status" aria-live="polite">{intakeInfo}</p>
+              ) : null}
+            </section>
 
             <div className="search-actions">
               <label className="check-row check-row-annotated">
@@ -599,14 +770,20 @@ function SearchSection(props) {
                 </span>
               </label>
               <div className="item-actions">
-                <button type="submit" data-testid="submit-search" disabled={isSubmitDisabled}>
-                  {searchLoading ? t('searching') : t('landingHeroCta')}
-                </button>
-                {!isMultiCityMode ? (
-                  <button type="button" className="ghost" onClick={submitJustGo} disabled={searchLoading}>
-                    {searchLoading ? t('deciding') : t('justGo')}
+                <span
+                  className="submit-search-shell"
+                  data-testid="submit-search-action"
+                  onClick={revealMultiCityErrors}
+                >
+                  <button
+                    type="submit"
+                    data-testid="submit-search"
+                    aria-disabled={isSubmitDisabled}
+                    disabled={searchLoading}
+                  >
+                    {searchLoading ? t('searching') : t('landingHeroCta')}
                   </button>
-                ) : null}
+                </span>
                 <button type="button" className="ghost" onClick={() => setSearchForm((prev) => ({ ...defaultSearch, origin: prev.origin }))}>
                   {t('resetFilters')}
                 </button>
@@ -614,40 +791,11 @@ function SearchSection(props) {
             </div>
           </form>
 
-          {!isMultiCityMode ? (
-          <div className="date-presets">
-            <span className="muted">{t('datePresets')}</span>
-            <div className="item-actions">
-              <button type="button" className="ghost" onClick={() => applyPeriodPreset('weekend')}>
-                {t('presetWeekend')}
-              </button>
-              <button type="button" className="ghost" onClick={() => applyPeriodPreset('week')}>
-                {t('presetWeek')}
-              </button>
-              <button type="button" className="ghost" onClick={() => applyPeriodPreset('two_weeks')}>
-                {t('presetTwoWeeks')}
-              </button>
-              <button type="button" className="ghost" onClick={() => applyPeriodPreset('one_month')}>
-                {t('presetOneMonth')}
-              </button>
-              <button type="button" className="ghost" onClick={() => applyPeriodPreset('three_months')}>
-                {t('presetThreeMonths')}
-              </button>
-              <button type="button" className="ghost" onClick={() => applyPeriodPreset('six_months')}>
-                {t('presetSixMonths')}
-              </button>
-              <button type="button" className="ghost" onClick={() => applyPeriodPreset('one_year')}>
-                {t('presetOneYear')}
-              </button>
-            </div>
-          </div>
-          ) : null}
-
           {isAdvancedMode ? (
-            <details className="advanced-block" open>
+            <details className="advanced-block search-advanced-tools" open={advancedToolsOpen} onToggle={(event) => setAdvancedToolsOpen(event.currentTarget.open)}>
               <summary>{t('advancedTools')}</summary>
               {!canUseProFeatures ? <p className="muted">{t('premiumRequired')}</p> : null}
-              <div className="item-actions">
+              <div className="item-actions search-advanced-tools-actions">
                 <button type="button" className="ghost" onClick={createDurationAlert} disabled={!canUseProFeatures}>
                   {t('durationAlert')}
                 </button>
@@ -682,7 +830,7 @@ function SearchSection(props) {
           ) : searchError ? <p className="error">{searchError}</p> : null}
           {isMultiCityMode && multiCityRetryVisible ? (
             <div className="item-actions">
-              <button type="button" className="ghost" data-testid="retry-multi-city" onClick={retryMultiCitySearch} disabled={searchLoading}>
+              <button type="button" className="ghost" data-testid="retry-multi-city" onClick={retryMultiCity} disabled={searchLoading}>
                 {t('retryActionLabel') || 'Retry search'}
               </button>
             </div>

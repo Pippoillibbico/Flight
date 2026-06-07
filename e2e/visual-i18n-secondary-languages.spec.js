@@ -79,12 +79,8 @@ async function assertReadableVisibleText(page, label) {
 
 async function assertPrimaryActionsReadable(page, label) {
   const actions = page.locator('button:visible, a:visible');
-  const count = await actions.count();
-  expect(count, `${label} should expose at least one visible action`).toBeGreaterThan(0);
-
-  for (let index = 0; index < count; index += 1) {
-    const action = actions.nth(index);
-    const report = await action.evaluate((element) => {
+  const reports = await actions.evaluateAll((elements) =>
+    elements.map((element) => {
       const rect = element.getBoundingClientRect();
       const style = window.getComputedStyle(element);
       return {
@@ -98,7 +94,11 @@ async function assertPrimaryActionsReadable(page, label) {
         display: style.display,
         visibility: style.visibility
       };
-    });
+    })
+  );
+  expect(reports.length, `${label} should expose at least one visible action`).toBeGreaterThan(0);
+
+  for (const report of reports) {
     if (!report.text) continue;
     expect(
       report.scrollWidth,
