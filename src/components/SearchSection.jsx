@@ -18,6 +18,13 @@ function openNativeDatePicker(event) {
   }
 }
 
+function destinationSuggestionIcon(type) {
+  const normalized = String(type || '').trim().toLowerCase();
+  if (normalized === 'country') return '◎';
+  if (normalized === 'anywhere') return '*';
+  return '✈';
+}
+
 const MULTI_CITY_ERROR_KEYS = {
   'Itinerary must include between 2 and 6 segments.': 'multiCityErrorSegmentCount',
   'Origin is required.': 'multiCityErrorOriginRequired',
@@ -450,7 +457,7 @@ function SearchSection(props) {
                       onFocus={() => setShowDestinationSuggestions(true)}
                       onBlur={() => setTimeout(() => setShowDestinationSuggestions(false), 120)}
                       onChange={(e) => {
-                        setSearchForm((p) => ({ ...p, destinationQuery: e.target.value }));
+                        setSearchForm((p) => ({ ...p, destinationQuery: e.target.value, country: '' }));
                         setShowDestinationSuggestions(true);
                       }}
                     />
@@ -466,13 +473,17 @@ function SearchSection(props) {
                               onClick={() => {
                                 setSearchForm((p) => ({
                                   ...p,
-                                  destinationQuery: s.type === 'country' ? s.label : s.value,
-                                  country: s.type === 'country' ? s.value : p.country
+                                  destinationQuery: s.type === 'anywhere' ? s.label : s.type === 'country' ? s.label : s.value,
+                                  country: s.type === 'anywhere' ? '' : s.type === 'country' ? s.value : p.country
                                 }));
                                 setShowDestinationSuggestions(false);
                               }}
                             >
-                              {s.label}
+                              <span className="suggest-item-icon" aria-hidden="true">{destinationSuggestionIcon(s.type)}</span>
+                              <span className="suggest-item-copy">
+                                <strong>{s.title || s.label}</strong>
+                                {s.subtitle ? <small>{s.subtitle}</small> : null}
+                              </span>
                             </button>
                           ))
                         ) : (

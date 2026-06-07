@@ -403,9 +403,9 @@ export function getDestinationSuggestions({ query, region = 'all', country, limi
     if (!destinationMatchesQuery(route, q)) continue;
 
     const candidates = [
-      { type: 'city', value: route.destinationName, label: `${route.destinationName} (${route.country})` },
-      { type: 'country', value: route.country, label: route.country },
-      { type: 'iata', value: route.destinationIata, label: `${route.destinationIata} (${route.destinationName})` }
+      { type: 'city', value: route.destinationName, label: `${route.destinationName} (${route.country})`, iata: route.destinationIata, country: route.country },
+      { type: 'country', value: route.country, label: route.country, country: route.country },
+      { type: 'iata', value: route.destinationIata, label: `${route.destinationIata} (${route.destinationName})`, iata: route.destinationIata, country: route.country }
     ];
 
     for (const candidate of candidates) {

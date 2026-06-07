@@ -252,6 +252,14 @@ body.app-scroll-lock {
   color: #ffffff;
 }
 
+.app-shell.app-dark .suggest-item-icon {
+  color: #9fb3ca;
+}
+
+.app-shell.app-dark .suggest-item-copy small {
+  color: #b7c7da;
+}
+
 .app-shell.app-dark .ghost {
   background: #1a2330;
   border-color: #47566a;
@@ -3211,9 +3219,12 @@ select:focus {
   border-bottom: 1px solid #e6eeff;
   background: #fff;
   color: var(--ink);
-  min-height: 40px;
-  padding: 8px 10px;
+  min-height: 62px;
+  padding: 10px 14px;
   border-radius: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .suggest-item:last-child {
@@ -3230,6 +3241,34 @@ select:focus {
 .suggest-item:hover {
   background: #dfeaff;
   color: #0a3f8f;
+}
+
+.suggest-item-icon {
+  flex: 0 0 26px;
+  color: #5d6b7c;
+  font-size: 24px;
+  line-height: 1;
+  text-align: center;
+}
+
+.suggest-item-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.suggest-item-copy strong {
+  color: inherit;
+  font-size: 16px;
+  line-height: 1.2;
+  font-weight: 800;
+}
+
+.suggest-item-copy small {
+  color: #4c5563;
+  font-size: 14px;
+  line-height: 1.2;
 }
 
 .alert-form {

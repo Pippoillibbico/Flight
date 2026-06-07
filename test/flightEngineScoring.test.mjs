@@ -78,6 +78,14 @@ test('destination suggestions include country matches such as Brazil', () => {
   assert.equal(suggestions.some((item) => item.type === 'country' && item.value === 'Brazil'), true);
 });
 
+test('destination suggestions include display metadata for city rows', () => {
+  const suggestions = getDestinationSuggestions({ query: 'lis', region: 'all', limit: 8 });
+  const lisbon = suggestions.find((item) => item.type === 'city' && item.value === 'Lisbon');
+  assert.equal(Boolean(lisbon), true);
+  assert.equal(lisbon.iata, 'LIS');
+  assert.equal(lisbon.country, 'Portugal');
+});
+
 test('searchFlights accepts a country as destination query', () => {
   const result = searchFlights({
     origin: 'FCO',

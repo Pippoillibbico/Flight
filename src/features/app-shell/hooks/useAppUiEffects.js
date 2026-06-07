@@ -3,6 +3,24 @@ import { localizeCountryByIso2 } from '../../../utils/localizePlace';
 import { readRememberedEmail } from '../../personal-hub/storage';
 import { readStoredPostAuthContext } from './useAuthFlowCoordinator';
 
+const ANYWHERE_SUGGESTION_LABELS = {
+  en: { title: 'Anywhere', subtitle: 'Search every destination' },
+  it: { title: 'Ovunque', subtitle: 'Cerca in tutte le destinazioni' },
+  de: { title: 'Ueberall', subtitle: 'Alle Ziele durchsuchen' },
+  fr: { title: 'Partout', subtitle: 'Rechercher toutes les destinations' },
+  es: { title: 'Cualquier lugar', subtitle: 'Buscar todos los destinos' },
+  pt: { title: 'Qualquer lugar', subtitle: 'Pesquisar todos os destinos' }
+};
+
+function readAnywhereSuggestion(language) {
+  return ANYWHERE_SUGGESTION_LABELS[String(language || 'en').toLowerCase()] || ANYWHERE_SUGGESTION_LABELS.en;
+}
+
+function parseSuggestionCountry(label) {
+  const match = String(label || '').trim().match(/^(.*)\(([^()]+)\)$/);
+  return match ? String(match[2] || '').trim() : '';
+}
+
 export function useAssistantWelcomeEffect({ language, i18nPack, t, setIntakeMessages }) {
   useEffect(() => {
     setIntakeMessages((prev) => {
@@ -44,6 +62,13 @@ export function useAppSuggestionEffects({
       api
         .suggestions({ q, region: searchForm.region, country: canonicalCountry, limit: 12 })
         .then((destinationRes) => {
+          const anywhere = readAnywhereSuggestion(language);
+          const anywhereToken = normalizeSuggestionToken(anywhere.title);
+          const englishAnywhereToken = normalizeSuggestionToken(ANYWHERE_SUGGESTION_LABELS.en.title);
+          const anywhereItems =
+            anywhereToken.startsWith(queryToken) || englishAnywhereToken.startsWith(queryToken)
+              ? [{ type: 'anywhere', value: '', label: anywhere.title, subtitle: anywhere.subtitle, relevanceScore: 4 }]
+              : [];
           const destinationItems = Array.isArray(destinationRes?.items)
             ? destinationRes.items
                 .map((item) => {
@@ -52,6 +77,19 @@ export function useAppSuggestionEffects({
                   const type = String(item?.type || 'destination').trim().toLowerCase();
                   const label = type === 'country' ? localizeCountryByIso2('', baseLabel, language) : localizeDestinationSuggestionLabel(baseLabel);
                   if (!value || !label) return null;
+                  const rawCountry = String(item?.country || '').trim() || parseSuggestionCountry(baseLabel);
+                  const localizedCountry = rawCountry ? localizeCountryByIso2('', rawCountry, language) : '';
+                  const iata = String(item?.iata || '').trim().toUpperCase();
+                  const title =
+                    type === 'city' && iata
+                      ? `${label.replace(/\s*\([^()]+\)\s*$/, '').trim()} (${iata})`
+                      : type === 'iata' && baseLabel.includes('(')
+                      ? `${String(baseLabel.match(/\(([^()]+)\)/)?.[1] || value).trim()} (${value})`
+                      : label.replace(/\s*\([^()]+\)\s*$/, '').trim();
+                  const subtitle =
+                    type === 'country'
+                      ? localizeCountryByIso2('', value, language)
+                      : localizedCountry || (type === 'iata' ? value : '');
 
                   const normalizedLabel = normalizeSuggestionToken(label);
                   const normalizedValue = normalizeSuggestionToken(value);
@@ -65,7 +103,7 @@ export function useAppSuggestionEffects({
 
                   if (!fullStarts && !tokenStarts && !partialContains) return null;
                   const relevanceScore = fullStarts ? 3 : tokenStarts ? 2 : 1;
-                  return { type, value, label, relevanceScore };
+                  return { type, value, label, title, subtitle, relevanceScore };
                 })
                 .filter(Boolean)
                 .sort((a, b) => {
@@ -76,14 +114,14 @@ export function useAppSuggestionEffects({
 
           const merged = [];
           const seen = new Set();
-          for (const item of destinationItems) {
+          for (const item of [...anywhereItems, ...destinationItems]) {
             const cityToken = resolveSuggestionCityToken(item);
             const normalizedValue = normalizeSuggestionToken(item.value);
-            const dedupeKey = cityToken ? `city:${cityToken}` : `value:${normalizedValue}`;
+            const dedupeKey = item.type === 'anywhere' ? 'special:anywhere' : cityToken ? `city:${cityToken}` : `value:${normalizedValue}`;
             if (!dedupeKey || dedupeKey.endsWith(':')) continue;
             if (seen.has(dedupeKey)) continue;
             seen.add(dedupeKey);
-            merged.push({ type: item.type, value: item.value, label: item.label });
+            merged.push({ type: item.type, value: item.value, label: item.label, title: item.title || item.label, subtitle: item.subtitle || '' });
             if (merged.length >= 10) break;
           }
           setDestinationSuggestions(merged);

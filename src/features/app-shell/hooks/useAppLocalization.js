@@ -105,7 +105,13 @@ export function useAppLocalization() {
   const connectionLabel = (code) => CONNECTION_LABELS_I18N[language]?.[code] || CONNECTION_LABELS_I18N.en[code] || code;
   const travelTimeLabel = (code) => TRAVEL_TIME_LABELS_I18N[language]?.[code] || TRAVEL_TIME_LABELS_I18N.en[code] || code;
   const canonicalCountryFilter = (value) => toCanonicalCountryName(String(value || '').trim(), language).trim();
-  const canonicalDestinationQuery = (value) => toCanonicalCountryName(String(value || '').trim(), language).trim();
+  const canonicalDestinationQuery = (value) => {
+    const raw = String(value || '').trim();
+    const normalized = normalizeSuggestionToken(raw);
+    const anywhereLabels = ['anywhere', 'ovunque', 'ueberall', 'uberall', 'partout', 'cualquier lugar', 'qualquer lugar'];
+    if (anywhereLabels.some((label) => normalized === normalizeSuggestionToken(label))) return '';
+    return toCanonicalCountryName(raw, language).trim();
+  };
   const localizeDestinationSuggestionLabel = (value) => {
     const raw = String(value || '').trim();
     if (!raw) return '';

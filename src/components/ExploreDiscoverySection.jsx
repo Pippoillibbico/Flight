@@ -48,48 +48,42 @@ const WORLD_MAP_CONTINENTS = [
     label: 'N. America',
     region: 'america',
     labelX: 148,
-    labelY: 108,
-    labelWidth: 90
+    labelY: 108
   },
   {
     id: 'south-america',
     label: 'S. America',
     region: 'south_america',
     labelX: 232,
-    labelY: 242,
-    labelWidth: 88
+    labelY: 242
   },
   {
     id: 'europe',
     label: 'Europe',
     region: 'eu',
     labelX: 422,
-    labelY: 100,
-    labelWidth: 70
+    labelY: 100
   },
   {
     id: 'africa',
     label: 'Africa',
     region: 'africa',
     labelX: 452,
-    labelY: 218,
-    labelWidth: 70
+    labelY: 218
   },
   {
     id: 'asia',
     label: 'Asia',
     region: 'asia',
     labelX: 618,
-    labelY: 112,
-    labelWidth: 58
+    labelY: 112
   },
   {
     id: 'oceania',
     label: 'Oceania',
     region: 'oceania',
     labelX: 704,
-    labelY: 286,
-    labelWidth: 80
+    labelY: 286
   }
 ];
 
@@ -565,7 +559,7 @@ function ExploreDiscoverySection(props) {
                 <line x1="0" x2={WORLD_MAP_WIDTH} y1="240" y2="240" className="explore-map-tropic-line" />
 
                 {/* Continent labels for geographic context */}
-                {WORLD_MAP_CONTINENTS.map(({ id, label, labelX, labelY, labelWidth }) => (
+                {WORLD_MAP_CONTINENTS.map(({ id, label, labelX, labelY }) => (
                   <g key={id} className="explore-map-continent-marker" aria-hidden="true">
                     <text x={labelX} y={labelY} className="explore-map-continent-label">{label}</text>
                   </g>
