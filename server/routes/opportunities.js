@@ -103,9 +103,57 @@ const budgetExploreSchema = z.object({
 }).strict();
 
 const OPPORTUNITY_FEED_SOURCE = 'travel_opportunities';
-const EXPLORE_CACHE_SCHEMA_VERSION = 'region-fallback-v4';
+const EXPLORE_CACHE_SCHEMA_VERSION = 'region-fallback-v5';
+
+const EXPLORE_REGION_ALIASES = new Map([
+  ['europe', 'eu'],
+  ['north_america', 'america'],
+  ['north-america', 'america'],
+  ['americas', 'america'],
+  ['south-america', 'south_america']
+]);
 
 const EXPLORE_REGION_FALLBACK_ROUTES = [
+  {
+    origin: 'FCO',
+    destinationIata: 'LIS',
+    destinationName: 'Lisbon',
+    country: 'Portugal',
+    region: 'eu',
+    priceLow: 90,
+    tripType: 'round_trip',
+    stops: 0
+  },
+  {
+    origin: 'FCO',
+    destinationIata: 'ATH',
+    destinationName: 'Athens',
+    country: 'Greece',
+    region: 'eu',
+    priceLow: 120,
+    tripType: 'round_trip',
+    stops: 0
+  },
+  {
+    origin: 'FCO',
+    destinationIata: 'JFK',
+    destinationName: 'New York',
+    country: 'United States',
+    region: 'america',
+    priceLow: 420,
+    tripType: 'round_trip',
+    stops: 1
+  },
+  {
+    origin: 'FCO',
+    destinationIata: 'YYZ',
+    destinationName: 'Toronto',
+    country: 'Canada',
+    region: 'america',
+    priceLow: 480,
+    tripType: 'round_trip',
+    stops: 1
+  },
   {
     origin: 'FCO',
     destinationIata: 'CAI',
@@ -113,6 +161,46 @@ const EXPLORE_REGION_FALLBACK_ROUTES = [
     country: 'Egypt',
     region: 'africa',
     priceLow: 260,
+    tripType: 'round_trip',
+    stops: 1
+  },
+  {
+    origin: 'FCO',
+    destinationIata: 'BKK',
+    destinationName: 'Bangkok',
+    country: 'Thailand',
+    region: 'asia',
+    priceLow: 520,
+    tripType: 'round_trip',
+    stops: 1
+  },
+  {
+    origin: 'FCO',
+    destinationIata: 'TYO',
+    destinationName: 'Tokyo',
+    country: 'Japan',
+    region: 'asia',
+    priceLow: 620,
+    tripType: 'round_trip',
+    stops: 1
+  },
+  {
+    origin: 'FCO',
+    destinationIata: 'SYD',
+    destinationName: 'Sydney',
+    country: 'Australia',
+    region: 'oceania',
+    priceLow: 820,
+    tripType: 'round_trip',
+    stops: 1
+  },
+  {
+    origin: 'FCO',
+    destinationIata: 'AKL',
+    destinationName: 'Auckland',
+    country: 'New Zealand',
+    region: 'oceania',
+    priceLow: 900,
     tripType: 'round_trip',
     stops: 1
   },
@@ -147,6 +235,12 @@ const EXPLORE_REGION_FALLBACK_ROUTES = [
     stops: 1
   }
 ];
+
+function normalizeExploreRegion(region) {
+  const raw = String(region || '').trim().toLowerCase();
+  if (!raw || raw === 'all') return '';
+  return EXPLORE_REGION_ALIASES.get(raw) || raw;
+}
 
 function readNumberFromItem(item, keys) {
   for (const key of keys) {
@@ -299,21 +393,24 @@ function readRouteFallbackPrice(route, month = new Date().getUTCMonth() + 1) {
   return Number.isFinite(price) && price > 0 ? Math.round(price) : null;
 }
 
-function toFallbackExploreDestinations({ origin, region, budgetMax, limit }) {
+function toFallbackExploreDestinations({ origin, region, budgetMax, limit, allowMapAnchorFallback = false }) {
   const safeOrigin = String(origin || '').trim().toUpperCase();
-  const safeRegion = String(region || '').trim().toLowerCase();
+  const safeRegion = normalizeExploreRegion(region);
 
   const budget = Number(budgetMax);
   const maxPrice = Number.isFinite(budget) && budget > 0 ? budget : Number.POSITIVE_INFINITY;
   const routePool = [
     ...ROUTES.map((route) => ({ ...route, isLocalRoute: true })),
-    ...EXPLORE_REGION_FALLBACK_ROUTES
+    ...EXPLORE_REGION_FALLBACK_ROUTES.map((route) => ({ ...route, isExploreRegionFallback: true }))
   ];
   const isRegionFiltered = Boolean(safeRegion && safeRegion !== 'all');
   const scopedRoutes = isRegionFiltered
     ? routePool.filter((route) => String(route.region || '').trim().toLowerCase() === safeRegion)
     : routePool;
-  const selectedRoutes = scopedRoutes.filter((route) => String(route.origin || '').trim().toUpperCase() === safeOrigin);
+  const exactOriginRoutes = scopedRoutes.filter((route) => String(route.origin || '').trim().toUpperCase() === safeOrigin);
+  const selectedRoutes = exactOriginRoutes.length > 0
+    ? exactOriginRoutes
+    : scopedRoutes.filter((route) => Boolean(route.isExploreRegionFallback));
   if (selectedRoutes.length === 0) return [];
   const { departDate, returnDate } = nextExploreDepartureWindow();
 
@@ -342,6 +439,9 @@ function toFallbackExploreDestinations({ origin, region, budgetMax, limit }) {
     .sort((a, b) => a.min_price - b.min_price);
 
   const withinBudget = candidates.filter((item) => item.min_price <= maxPrice);
+  if (allowMapAnchorFallback && isRegionFiltered && withinBudget.length === 0) {
+    return candidates.slice(0, Math.max(1, Number(limit) || 20));
+  }
   return withinBudget.slice(0, Math.max(1, Number(limit) || 20));
 }
 
@@ -494,7 +594,7 @@ export function buildOpportunitiesRouter({
     const parsed = budgetExploreSchema.safeParse(req.query);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid query.' });
     try {
-      const requestedRegion = String(parsed.data.region || '').trim().toLowerCase();
+      const requestedRegion = normalizeExploreRegion(parsed.data.region);
       const regionFilter = requestedRegion && requestedRegion !== 'all' ? requestedRegion : '';
       const version = getOpportunityFeedVersion();
       const fingerprint = sortedQueryFingerprint({ ...parsed.data, region: regionFilter });
@@ -532,7 +632,7 @@ export function buildOpportunitiesRouter({
     const parsed = budgetExploreSchema.safeParse(req.query);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid query.' });
     try {
-      const requestedRegion = String(parsed.data.region || '').trim().toLowerCase();
+      const requestedRegion = normalizeExploreRegion(parsed.data.region);
       const regionFilter = requestedRegion && requestedRegion !== 'all' ? requestedRegion : '';
       const version = getOpportunityFeedVersion();
       const fingerprint = sortedQueryFingerprint({ ...parsed.data, region: regionFilter });
@@ -556,7 +656,8 @@ export function buildOpportunitiesRouter({
             origin: parsed.data.origin,
             region: regionFilter,
             budgetMax: parsed.data.budget_max,
-            limit: parsed.data.limit
+            limit: parsed.data.limit,
+            allowMapAnchorFallback: true
           });
       const points = resolvedDestinations.map((item) => ({
         ...item,
