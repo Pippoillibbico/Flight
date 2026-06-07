@@ -17,6 +17,7 @@ import {
   recordProviderCallByPlan
 } from '../lib/free-cost-metrics.js';
 import { isLiveFlightProviderEnabled } from '../lib/live-flight-provider.js';
+import { getSmartDeparture } from '../lib/smart-departure-service.js';
 import { z } from 'zod';
 
 function round4(value) {
@@ -597,6 +598,27 @@ export function buildSearchRouter({
         }
       });
     } catch {}
+
+    try {
+      const locale = String(req.headers['accept-language'] || '').toLowerCase().startsWith('it') ? 'it' : 'en';
+      enhancedResult.flights = await Promise.all(
+        (enhancedResult.flights || []).map(async (flight, index) => {
+          if (index >= 12) return flight;
+          const smartDeparture = await getSmartDeparture({
+            userPlan: resolvedPlanId,
+            locale,
+            primaryFlight: flight,
+            searchInput,
+            travellers: searchInput.travellers,
+            cabinClass: searchInput.cabinClass,
+            user: req.user || null
+          });
+          return { ...flight, smartDeparture };
+        })
+      );
+    } catch {
+      // Smart Departure must never block the core search response.
+    }
 
     // Strip internal pricing audit fields before sending to the client.
     // The frontend must never see providerCost or marginApplied.

@@ -1,3 +1,5 @@
+import { searchFlights as searchFlightsFromEngine } from './flight-engine.js';
+
 const STRATEGIC_AIRPORTS = ['MXP', 'BGY', 'VIE', 'BUD', 'BCN'];
 const MIN_SAVING_ABS_EUR = 60;
 const MIN_SAVING_PCT = 12;
@@ -33,6 +35,14 @@ function maxAlternativesByPlan(user) {
   const plan = resolvePlanFromUser(user);
   if (plan === 'free') return 2;
   return 3;
+}
+
+function maxAlternativesByPlanId(planId) {
+  if (!String(planId || '').trim()) return 1;
+  const plan = normalizePlan(planId);
+  if (plan === 'free') return 2;
+  if (plan === 'pro' || plan === 'creator') return 3;
+  return 1;
 }
 
 function shouldKeepAlternative(savingAbs, savingPct) {
@@ -183,6 +193,38 @@ function buildSmartDeparturePayload({ origin, basePrice, alternatives }) {
   };
 }
 
+function buildLocalizedSummary(best, locale) {
+  if (!best) return null;
+  if (String(locale || '').toLowerCase().startsWith('it')) {
+    return `Partendo da ${best.originIata} risparmi circa ${Math.round(best.savingAbs)}€.`;
+  }
+  return `Starting from ${best.originIata} saves about €${Math.round(best.savingAbs)}.`;
+}
+
+function buildEngineLiveSearchFn(searchInput) {
+  return ({ origin, destination, departureDate, returnDate, travellers, cabinClass }) => {
+    const result = searchFlightsFromEngine({
+      ...(searchInput || {}),
+      origin,
+      region: searchInput?.region || 'all',
+      destinationQuery: destination,
+      dateFrom: departureDate || searchInput?.dateFrom,
+      dateTo: returnDate || searchInput?.dateTo,
+      cheapOnly: false,
+      maxBudget: undefined,
+      travellers: travellers || searchInput?.travellers || 1,
+      cabinClass: cabinClass || searchInput?.cabinClass || 'economy'
+    });
+    const best = (result?.flights || []).find((flight) => normalizeIata(flight?.destinationIata) === normalizeIata(destination));
+    if (!best) return null;
+    return {
+      price: best.price,
+      qualityScore: best.comfortScore || best.score || 0,
+      bookingLink: best.bookingLink || best.link || null
+    };
+  };
+}
+
 export async function getSmartDeparture({
   origin,
   destination,
@@ -192,11 +234,24 @@ export async function getSmartDeparture({
   travellers = 1,
   cabinClass = 'economy',
   user = null,
-  liveSearchFn = null
+  liveSearchFn = null,
+  userPlan = null,
+  locale = 'it',
+  primaryFlight = null,
+  searchInput = null
 }) {
-  const normalizedOrigin = normalizeIata(origin);
-  const normalizedDestination = normalizeIata(destination);
-  const price = toNumber(basePrice);
+  const resolvedOrigin = origin || primaryFlight?.origin || searchInput?.origin;
+  const resolvedDestination =
+    destination ||
+    primaryFlight?.destinationIata ||
+    searchInput?.destinationIata ||
+    searchInput?.destinationQuery;
+  const resolvedDepartureDate = departureDate || searchInput?.dateFrom || primaryFlight?.departureDate;
+  const resolvedReturnDate = returnDate || searchInput?.dateTo || primaryFlight?.returnDate || null;
+  const resolvedBasePrice = basePrice ?? primaryFlight?.price;
+  const normalizedOrigin = normalizeIata(resolvedOrigin);
+  const normalizedDestination = normalizeIata(resolvedDestination);
+  const price = toNumber(resolvedBasePrice);
 
   if (!normalizedOrigin || !normalizedDestination || price === null) {
     return {
@@ -210,42 +265,64 @@ export async function getSmartDeparture({
     };
   }
 
-  const plan = resolvePlanFromUser(user);
-  const maxByPlan = maxAlternativesByPlan(user);
-  const key = cacheKey({ origin, destination, departureDate, returnDate });
+  const plan = user ? resolvePlanFromUser(user) : normalizePlan(userPlan);
+  const maxByPlan = user ? maxAlternativesByPlan(user) : maxAlternativesByPlanId(userPlan);
+  const key = cacheKey({
+    origin: normalizedOrigin,
+    destination: normalizedDestination,
+    departureDate: resolvedDepartureDate,
+    returnDate: resolvedReturnDate
+  });
   const cached = readCachedAlternatives(key);
 
   // Free safety gate: anonymous/free must use cached/precomputed mode only.
   if (!user || plan === 'free') {
     const fromCache = Array.isArray(cached)
       ? cached
-      : buildSyntheticAlternatives({ origin, destination, departureDate, returnDate, basePrice: price });
+      : buildSyntheticAlternatives({
+          origin: normalizedOrigin,
+          destination: normalizedDestination,
+          departureDate: resolvedDepartureDate,
+          returnDate: resolvedReturnDate,
+          basePrice: price
+        });
     if (!cached) writeCachedAlternatives(key, fromCache);
     const alternatives = fromCache.slice(0, maxByPlan);
-    return buildSmartDeparturePayload({ origin: normalizedOrigin, basePrice: price, alternatives });
+    const payload = buildSmartDeparturePayload({ origin: normalizedOrigin, basePrice: price, alternatives });
+    const summary = buildLocalizedSummary(payload.bestAlternative, locale);
+    return { ...payload, summaryMessage: summary, summary };
   }
 
   // Pro/Creator: can use live search when available, with safe fallback to cache/synthetic.
+  const resolvedLiveSearchFn = liveSearchFn || (searchInput ? buildEngineLiveSearchFn(searchInput) : null);
   const liveAlternatives = await resolveLiveAlternatives({
     origin: normalizedOrigin,
     destination: normalizedDestination,
-    departureDate,
-    returnDate,
+    departureDate: resolvedDepartureDate,
+    returnDate: resolvedReturnDate,
     basePrice: price,
     travellers,
     cabinClass,
-    liveSearchFn
+    liveSearchFn: resolvedLiveSearchFn
   });
 
   const resolved = liveAlternatives.length > 0
     ? liveAlternatives
     : Array.isArray(cached)
       ? cached
-      : buildSyntheticAlternatives({ origin, destination, departureDate, returnDate, basePrice: price });
+      : buildSyntheticAlternatives({
+          origin: normalizedOrigin,
+          destination: normalizedDestination,
+          departureDate: resolvedDepartureDate,
+          returnDate: resolvedReturnDate,
+          basePrice: price
+        });
 
   if (!cached && resolved.length > 0) writeCachedAlternatives(key, resolved);
   const alternatives = resolved.slice(0, maxByPlan);
-  return buildSmartDeparturePayload({ origin: normalizedOrigin, basePrice: price, alternatives });
+  const payload = buildSmartDeparturePayload({ origin: normalizedOrigin, basePrice: price, alternatives });
+  const summary = buildLocalizedSummary(payload.bestAlternative, locale);
+  return { ...payload, summaryMessage: summary, summary };
 }
 
 export { STRATEGIC_AIRPORTS, MIN_SAVING_ABS_EUR, MIN_SAVING_PCT, MAX_ALTERNATIVES };
